@@ -53,8 +53,10 @@ local function diff(instanceMap, virtualInstances, rootId)
 		end
 
 		local changedClassName = nil
+		local requiresRecreate = false
 		if virtualInstance.ClassName ~= instance.ClassName then
 			changedClassName = virtualInstance.ClassName
+			requiresRecreate = true
 		end
 
 		local changedName = nil
@@ -71,8 +73,11 @@ local function diff(instanceMap, virtualInstances, rootId)
 				local ok, decodedValue = decodeValue(virtualValue, instanceMap)
 
 				if ok then
-					if existingValue ~= decodedValue then
+					if existingValue ~= decodedValue or requiresRecreate then
 						changedProperties[propertyName] = virtualValue
+						if propertyName == "MeshId" then
+							requiresRecreate = true
+						end
 					end
 				else
 					local propertyType = next(virtualValue)
@@ -96,10 +101,11 @@ local function diff(instanceMap, virtualInstances, rootId)
 			end
 		end
 
-		if changedName ~= nil or changedClassName ~= nil or not isEmpty(changedProperties) then
+		if changedName ~= nil or requiresRecreate or not isEmpty(changedProperties) then
 			table.insert(patch.updated, {
 				id = id,
 				changedName = changedName,
+				requiresRecreate = requiresRecreate,
 				changedClassName = changedClassName,
 				changedProperties = changedProperties,
 				changedMetadata = nil,
