@@ -2,6 +2,7 @@ use std::{
     borrow::Cow,
     collections::HashSet,
     io,
+    net::IpAddr,
     path::{Path, PathBuf},
     sync::{Arc, Mutex, MutexGuard},
     time::Instant,
@@ -126,11 +127,10 @@ impl ServeSession {
         let instance_context = InstanceContext::default();
 
         log::trace!("Generating snapshot of instances from VFS");
-        let snapshot = snapshot_from_vfs(&instance_context, &vfs, &start_path)?
-            .expect("snapshot did not return an instance");
+        let snapshot = snapshot_from_vfs(&instance_context, &vfs, &start_path)?;
 
         log::trace!("Computing initial patch set");
-        let patch_set = compute_patch_set(&snapshot, &tree, root_id);
+        let patch_set = compute_patch_set(snapshot.as_ref(), &tree, root_id);
 
         log::trace!("Applying initial patch set");
         apply_patch_set(&mut tree, patch_set);
@@ -211,6 +211,14 @@ impl ServeSession {
 
     pub fn serve_place_ids(&self) -> Option<&HashSet<u64>> {
         self.root_project.serve_place_ids.as_ref()
+    }
+
+    pub fn serve_address(&self) -> Option<IpAddr> {
+        self.root_project.serve_address
+    }
+
+    pub fn root_dir(&self) -> &Path {
+        self.root_project.folder_location()
     }
 }
 

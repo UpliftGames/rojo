@@ -1,4 +1,4 @@
-//! Defines Rojo's CLI through structopt types.
+//! Defines Rojo's CLI through clap types.
 
 mod build;
 mod doc;
@@ -6,11 +6,12 @@ mod fmt_project;
 mod init;
 mod plugin;
 mod serve;
+mod sourcemap;
 mod upload;
 
 use std::{borrow::Cow, env, path::Path, str::FromStr};
 
-use structopt::StructOpt;
+use clap::Parser;
 use thiserror::Error;
 
 pub use self::build::BuildCommand;
@@ -19,17 +20,18 @@ pub use self::fmt_project::FmtProjectCommand;
 pub use self::init::{InitCommand, InitKind};
 pub use self::plugin::{PluginCommand, PluginSubcommand};
 pub use self::serve::ServeCommand;
+pub use self::sourcemap::SourcemapCommand;
 pub use self::upload::UploadCommand;
 
-/// Command line options that Rojo accepts, defined using the structopt crate.
-#[derive(Debug, StructOpt)]
-#[structopt(name = "Rojo", about, author)]
+/// Command line options that Rojo accepts, defined using the clap crate.
+#[derive(Debug, Parser)]
+#[clap(name = "Rojo", version, about, author)]
 pub struct Options {
-    #[structopt(flatten)]
+    #[clap(flatten)]
     pub global: GlobalOptions,
 
     /// Subcommand to run in this invocation.
-    #[structopt(subcommand)]
+    #[clap(subcommand)]
     pub subcommand: Subcommand,
 }
 
@@ -40,6 +42,7 @@ impl Options {
             Subcommand::Serve(subcommand) => subcommand.run(self.global),
             Subcommand::Build(subcommand) => subcommand.run(),
             Subcommand::Upload(subcommand) => subcommand.run(),
+            Subcommand::Sourcemap(subcommand) => subcommand.run(),
             Subcommand::FmtProject(subcommand) => subcommand.run(),
             Subcommand::Doc(subcommand) => subcommand.run(),
             Subcommand::Plugin(subcommand) => subcommand.run(),
@@ -47,14 +50,14 @@ impl Options {
     }
 }
 
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Parser)]
 pub struct GlobalOptions {
     /// Sets verbosity level. Can be specified multiple times.
-    #[structopt(long("verbose"), short, global(true), parse(from_occurrences))]
+    #[clap(long("verbose"), short, global(true), parse(from_occurrences))]
     pub verbosity: u8,
 
     /// Set color behavior. Valid values are auto, always, and never.
-    #[structopt(long("color"), global(true), default_value("auto"))]
+    #[clap(long("color"), global(true), default_value("auto"))]
     pub color: ColorChoice,
 }
 
@@ -106,12 +109,13 @@ pub struct ColorChoiceParseError {
     attempted: String,
 }
 
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Parser)]
 pub enum Subcommand {
     Init(InitCommand),
     Serve(ServeCommand),
     Build(BuildCommand),
     Upload(UploadCommand),
+    Sourcemap(SourcemapCommand),
     FmtProject(FmtProjectCommand),
     Doc(DocCommand),
     Plugin(PluginCommand),

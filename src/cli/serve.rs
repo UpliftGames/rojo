@@ -5,8 +5,8 @@ use std::{
     sync::Arc,
 };
 
+use clap::Parser;
 use memofs::Vfs;
-use structopt::StructOpt;
 use termcolor::{BufferWriter, Color, ColorChoice, ColorSpec, WriteColor};
 
 use crate::{serve_session::ServeSession, web::LiveServer};
@@ -17,19 +17,19 @@ const DEFAULT_BIND_ADDRESS: Ipv4Addr = Ipv4Addr::new(127, 0, 0, 1);
 const DEFAULT_PORT: u16 = 34872;
 
 /// Expose a Rojo project to the Rojo Studio plugin.
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Parser)]
 pub struct ServeCommand {
     /// Path to the project to serve. Defaults to the current directory.
-    #[structopt(default_value = "")]
+    #[clap(default_value = "")]
     pub project: PathBuf,
 
     /// The IP address to listen on. Defaults to `127.0.0.1`.
-    #[structopt(long)]
+    #[clap(long)]
     pub address: Option<IpAddr>,
 
     /// The port to listen on. Defaults to the project's preference, or `34872` if
     /// it has none.
-    #[structopt(long)]
+    #[clap(long)]
     pub port: Option<u16>,
 }
 
@@ -41,7 +41,10 @@ impl ServeCommand {
 
         let session = Arc::new(ServeSession::new(vfs, &project_path)?);
 
-        let ip = self.address.unwrap_or(DEFAULT_BIND_ADDRESS.into());
+        let ip = self
+            .address
+            .or_else(|| session.serve_address())
+            .unwrap_or(DEFAULT_BIND_ADDRESS.into());
 
         let port = self
             .port
