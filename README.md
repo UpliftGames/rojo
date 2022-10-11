@@ -7,9 +7,18 @@ New Uplift Games-specific releases should:
   ...where `v1.2.3` is the semver and `uplift.release.1` increments with each
   release under that semver.\
   **This tag should be created locally and pushed to kick off automated builds (see *Notes on version tags*)**
-* Include additions to `CHANGELOG.md` listing the additions. If we rebase on a
+* The chosen semver should be *relative to upstream according to the difference
+  at that release.*\
+  For example, if upstream is on `v1.0.0` and we make a minor
+  change, we'll be on `v1.0.1-uplift.release.1`. If we make another minor
+  change, we'll be on `v1.0.1-uplift.release.2` *because we are still only minor
+  changes away from upstream*. This way, if our changes get upstreamed, we won't
+  be going backwards in semver.
+* Add our changes to `CHANGELOG.md`. If we rebase on a
   new version of Rojo that includes some of our additions, we should list only
   what has changed between upstream Rojo and our fork.
+* Where possible, our changes should become PRs to the upstream Rojo repo. When
+  we do this, we should include a link to the PR in the changelog entry.
 * Where possible, our changes should become PRs to the upstream Rojo repo. When
   we do this, we should include a link to the PR in the changelog entry.
 
