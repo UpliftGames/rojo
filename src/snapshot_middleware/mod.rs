@@ -14,6 +14,7 @@ mod meta_file;
 mod project;
 mod rbxm;
 mod rbxmx;
+mod toml;
 mod txt;
 mod util;
 
@@ -33,6 +34,7 @@ use self::{
     project::snapshot_project,
     rbxm::snapshot_rbxm,
     rbxmx::snapshot_rbxmx,
+    toml::snapshot_toml,
     txt::snapshot_txt,
     util::PathExt,
 };
@@ -173,6 +175,7 @@ pub fn snapshot_from_vfs(
             Some(Transformer::Project) => snapshot_project(context, vfs, path),
             Some(Transformer::JsonModel) => snapshot_json_model(context, vfs, path),
             Some(Transformer::Json) => snapshot_json(context, vfs, path),
+            Some(Transformer::Toml) => snapshot_toml(context, vfs, path),
             Some(Transformer::Csv) => snapshot_csv(context, vfs, path),
             Some(Transformer::Plain) => snapshot_txt(context, vfs, path),
             Some(Transformer::LuauModule) => {

@@ -195,6 +195,7 @@ pub enum Transformer {
     LuauServer,
     LuauClient,
     Json,
+    Toml,
     Csv,
 
     Project,
@@ -214,6 +215,7 @@ impl Transformer {
             "rojo/luauserver" => Self::LuauServer,
             "rojo/luauclient" => Self::LuauClient,
             "rojo/json" => Self::Json,
+            "rojo/toml" => Self::Toml,
             "rojo/csv" => Self::Csv,
 
             "rojo/project" => Self::Project,
