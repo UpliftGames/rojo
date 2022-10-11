@@ -4,12 +4,21 @@ New Uplift Games-specific releases should:
 * Be created on the `uplift-games-fork-releases` branch (this is like our `main`)
 * Be tagged with an appropriate semver **plus** a pre-release tag in the following format:\
   `v1.2.3-uplift.release.1`\
-  ...where `v1.2.3` is the semver and `uplift.release.1` increments with each release under that semver.
+  ...where `v1.2.3` is the semver and `uplift.release.1` increments with each
+  release under that semver.\
+  **This tag should be created locally and pushed to kick off automated builds (see *Notes on version tags*)**
 * Include additions to `CHANGELOG.md` listing the additions. If we rebase on a
   new version of Rojo that includes some of our additions, we should list only
   what has changed between upstream Rojo and our fork.
 * Where possible, our changes should become PRs to the upstream Rojo repo. When
   we do this, we should include a link to the PR in the changelog entry.
+
+Notes on version tags:
+* Tags can be created locally with the command `git tag v1.2.3-uplift.release.1`
+* Tags can be pushed to the remote with the command `git push origin v1.2.3-uplift.release.1`
+* When a tag starting with `v` is pushed to this repo, an action is kicked off
+  which creates a release draft and attached build artifacts when they're
+  completed. Go to the releases page and edit the draft to publish it.
 
 ---
 
