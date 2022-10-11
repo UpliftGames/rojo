@@ -2,7 +2,7 @@
 
 ## Unreleased Changes
 
-## [7.2.2-fork.release.1] - 2021-10-11 (prerelease)
+## [7.2.2-uplift.release.1] - 2021-10-11 (prerelease)
 * Added `--watch` flag to `rojo sourcemap` ([#602])
 * Added `toml` support
 * Added `transformer_rules` to sync different files in as different types
