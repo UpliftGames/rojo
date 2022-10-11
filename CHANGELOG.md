@@ -1,9 +1,15 @@
 # Rojo Changelog
 
 ## Unreleased Changes
+
+## [7.2.2-fork.release.1] - 2021-10-11 (prerelease)
 * Added `--watch` flag to `rojo sourcemap` ([#602])
+* Added `toml` support
+* Added `transformer_rules` to sync different files in as different types
 
 [#602]: https://github.com/rojo-rbx/rojo/pull/602
+[#633]: https://github.com/rojo-rbx/rojo/pull/633
+[#635]: https://github.com/rojo-rbx/rojo/pull/635
 
 ## [7.2.1] - July 8, 2022
 * Fixed notification sound by changing it to a generic sound. ([#566])
