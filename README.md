@@ -1,3 +1,18 @@
+This is a fork of Rojo with changes specific to the workflow at Uplift Games.
+
+New Uplift Games-specific releases should:
+* Be created on the `uplift-games-fork-releases` branch (this is like our `main`)
+* Be tagged with an appropriate semver **plus** a pre-release tag in the following format:\
+  `v1.2.3-uplift.release.1`\
+  ...where `v1.2.3` is the semver and `uplift.release.1` increments with each release under that semver.
+* Include additions to `CHANGELOG.md` listing the additions. If we rebase on a
+  new version of Rojo that includes some of our additions, we should list only
+  what has changed between upstream Rojo and our fork.
+* Where possible, our changes should become PRs to the upstream Rojo repo. When
+  we do this, we should include a link to the PR in the changelog entry.
+
+---
+
 <div align="center">
     <a href="https://rojo.space"><img src="assets/logo-512.png" alt="Rojo" height="217" /></a>
 </div>
