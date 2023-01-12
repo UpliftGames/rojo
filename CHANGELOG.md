@@ -2,7 +2,7 @@
 
 ## Unreleased Changes
 
-## [7.2.2-uplift.release.3] - 2023-01-12
+## [7.2.2-uplift.release.4] - 2023-01-12
 * Add support for the `Font` type
 
 ## [7.2.2-uplift.release.2] - 2021-10-11 (prerelease)
