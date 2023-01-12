@@ -1643,9 +1643,8 @@ dependencies = [
 
 [[package]]
 name = "rbx_binary"
-version = "0.6.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "842a9253d37ca9df932108806a0f6c97195f2411bf05671e88744be622548807"
+version = "0.6.7"
+source = "git+https://github.com/UpliftGames/rbx-dom?branch=master#5a1c3b95df22540d6c304dd437d85a5b15c7925b"
 dependencies = [
  "log",
  "lz4",
@@ -1659,8 +1658,7 @@ dependencies = [
 [[package]]
 name = "rbx_dom_weak"
 version = "2.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b7cc2238fd858d706f4f5c6a0f9af3cd4a10f3f8dc8b6534e683f8543af26f33"
+source = "git+https://github.com/UpliftGames/rbx-dom?branch=master#5a1c3b95df22540d6c304dd437d85a5b15c7925b"
 dependencies = [
  "rbx_types",
  "serde",
@@ -1669,8 +1667,7 @@ dependencies = [
 [[package]]
 name = "rbx_reflection"
 version = "4.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a8915748c8a3b2a92540e4e35e99ebd548df2d62b0a6cf38ae5d0081f0e611d5"
+source = "git+https://github.com/UpliftGames/rbx-dom?branch=master#5a1c3b95df22540d6c304dd437d85a5b15c7925b"
 dependencies = [
  "rbx_types",
  "serde",
@@ -1678,9 +1675,8 @@ dependencies = [
 
 [[package]]
 name = "rbx_reflection_database"
-version = "0.2.5+roblox-530"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3e790ac1c92dee33669e7e12414caf75eb5cfce6fb5c54998eb9001d204fbab1"
+version = "0.2.5+roblox-558"
+source = "git+https://github.com/UpliftGames/rbx-dom?branch=master#5a1c3b95df22540d6c304dd437d85a5b15c7925b"
 dependencies = [
  "lazy_static",
  "rbx_reflection",
@@ -1690,9 +1686,8 @@ dependencies = [
 
 [[package]]
 name = "rbx_types"
-version = "1.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a773e53402f2ae7537bbec77badb7e3ff3e6ddac5ee9c2df7edf0a60edf5c9d8"
+version = "1.4.3"
+source = "git+https://github.com/UpliftGames/rbx-dom?branch=master#5a1c3b95df22540d6c304dd437d85a5b15c7925b"
 dependencies = [
  "base64",
  "bitflags",
@@ -1705,9 +1700,8 @@ dependencies = [
 
 [[package]]
 name = "rbx_xml"
-version = "0.12.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2559683f2f9205d442bd9083d7557be58b6cdcd0e5cc22600a6546a08e6d54f0"
+version = "0.12.5"
+source = "git+https://github.com/UpliftGames/rbx-dom?branch=master#5a1c3b95df22540d6c304dd437d85a5b15c7925b"
 dependencies = [
  "base64",
  "log",
@@ -1868,7 +1862,7 @@ dependencies = [
 
 [[package]]
 name = "rojo"
-version = "7.2.2-uplift.release.2"
+version = "7.2.2-uplift.release.3"
 dependencies = [
  "anyhow",
  "backtrace",
