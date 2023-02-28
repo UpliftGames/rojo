@@ -1643,8 +1643,8 @@ dependencies = [
 
 [[package]]
 name = "rbx_binary"
-version = "0.6.7"
-source = "git+https://github.com/UpliftGames/rbx-dom?branch=master#5a1c3b95df22540d6c304dd437d85a5b15c7925b"
+version = "0.6.6"
+source = "git+https://github.com/UpliftGames/rbx-dom?branch=implement-font-type#b25efb0799429995b4b5ca8771ae86fac968222d"
 dependencies = [
  "log",
  "lz4",
@@ -1658,7 +1658,7 @@ dependencies = [
 [[package]]
 name = "rbx_dom_weak"
 version = "2.4.0"
-source = "git+https://github.com/UpliftGames/rbx-dom?branch=master#5a1c3b95df22540d6c304dd437d85a5b15c7925b"
+source = "git+https://github.com/UpliftGames/rbx-dom?branch=implement-font-type#b25efb0799429995b4b5ca8771ae86fac968222d"
 dependencies = [
  "rbx_types",
  "serde",
@@ -1667,7 +1667,7 @@ dependencies = [
 [[package]]
 name = "rbx_reflection"
 version = "4.2.0"
-source = "git+https://github.com/UpliftGames/rbx-dom?branch=master#5a1c3b95df22540d6c304dd437d85a5b15c7925b"
+source = "git+https://github.com/UpliftGames/rbx-dom?branch=implement-font-type#b25efb0799429995b4b5ca8771ae86fac968222d"
 dependencies = [
  "rbx_types",
  "serde",
@@ -1675,8 +1675,8 @@ dependencies = [
 
 [[package]]
 name = "rbx_reflection_database"
-version = "0.2.5+roblox-558"
-source = "git+https://github.com/UpliftGames/rbx-dom?branch=master#5a1c3b95df22540d6c304dd437d85a5b15c7925b"
+version = "0.2.5+roblox-530"
+source = "git+https://github.com/UpliftGames/rbx-dom?branch=implement-font-type#b25efb0799429995b4b5ca8771ae86fac968222d"
 dependencies = [
  "lazy_static",
  "rbx_reflection",
@@ -1686,8 +1686,8 @@ dependencies = [
 
 [[package]]
 name = "rbx_types"
-version = "1.4.3"
-source = "git+https://github.com/UpliftGames/rbx-dom?branch=master#5a1c3b95df22540d6c304dd437d85a5b15c7925b"
+version = "1.4.2"
+source = "git+https://github.com/UpliftGames/rbx-dom?branch=implement-font-type#b25efb0799429995b4b5ca8771ae86fac968222d"
 dependencies = [
  "base64",
  "bitflags",
@@ -1700,8 +1700,8 @@ dependencies = [
 
 [[package]]
 name = "rbx_xml"
-version = "0.12.5"
-source = "git+https://github.com/UpliftGames/rbx-dom?branch=master#5a1c3b95df22540d6c304dd437d85a5b15c7925b"
+version = "0.12.4"
+source = "git+https://github.com/UpliftGames/rbx-dom?branch=implement-font-type#b25efb0799429995b4b5ca8771ae86fac968222d"
 dependencies = [
  "base64",
  "log",
@@ -1862,7 +1862,7 @@ dependencies = [
 
 [[package]]
 name = "rojo"
-version = "7.2.2-uplift.release.3"
+version = "7.2.2-uplift.release.4"
 dependencies = [
  "anyhow",
  "backtrace",
