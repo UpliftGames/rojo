@@ -1,5 +1,14 @@
 This is a fork of Rojo with changes specific to the workflow at Uplift Games.
 
+Changes from upstream Rojo:
+* TOML support
+* Ability to define the type of a file using glob patterns
+* Font property support
+* Model Scale property support
+
+
+<details><summary>Release Instructions</summary>
+
 New Uplift Games-specific releases should:
 * Be created on the `uplift-games-fork-releases` branch (this is like our `main`)
 * Be tagged with an appropriate semver **plus** a pre-release tag in the following format:\
@@ -28,6 +37,8 @@ Notes on version tags:
 * When a tag starting with `v` is pushed to this repo, an action is kicked off
   which creates a release draft and attached build artifacts when they're
   completed. Go to the releases page and edit the draft to publish it.
+
+</details>
 
 ---
 

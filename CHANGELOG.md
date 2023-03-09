@@ -2,6 +2,10 @@
 
 ## Unreleased Changes
 
+## [7.2.2-uplift.release.6] - 2023-03-03
+* Now using rbx-dom branch made for combined uplift releases
+* Merged in Dekkonot's Model Scale support branch to the rbx-dom fork
+
 ## [7.2.2-uplift.release.4] - 2023-01-12
 * Add support for the `Font` type
 
