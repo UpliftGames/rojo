@@ -48,13 +48,6 @@ Notes on version tags:
 
 <div>&nbsp;</div>
 
-<div align="center">
-    <a href="https://github.com/rojo-rbx/rojo/actions"><img src="https://github.com/rojo-rbx/rojo/workflows/CI/badge.svg" alt="Actions status" /></a>
-    <a href="https://crates.io/crates/rojo"><img src="https://img.shields.io/crates/v/rojo.svg?label=latest%20release" alt="Latest server version" /></a>
-    <a href="https://rojo.space/docs"><img src="https://img.shields.io/badge/docs-website-brightgreen.svg" alt="Rojo Documentation" /></a>
-    <a href="https://www.patreon.com/lpghatguy"><img src="https://img.shields.io/badge/sponsor-patreon-red" alt="Patreon" /></a>
-</div>
-
 <hr />
 
 **Rojo** is a tool designed to enable Roblox developers to use professional-grade software engineering tools.
@@ -62,6 +55,24 @@ Notes on version tags:
 With Rojo, it's possible to use industry-leading tools like **Visual Studio Code** and **Git**.
 
 Rojo is designed for power users who want to use the best tools available for building games, libraries, and plugins.
+
+
+## Installation
+
+The following instructions are for installing the Uplift fork of rojo. If
+you're looking to install standard Rojo, see [Rojo's Installation
+section](https://rojo.space/docs/v7/getting-started/installation/).
+
+### With [Aftman](https://github.com/LPGhatguy/aftman)
+Rojo can be installed with Aftman, a toolchain manager for Roblox projects:
+
+```toml
+[tools]
+rojo = "UpliftGames/rojo@7.2.2-uplift.release.6"
+```
+
+### From GitHub Releases
+You can download pre-built binaries from [the GitHub Releases page](https://github.com/UpliftGames/rojo/releases).
 
 ## Features
 Rojo enables:
