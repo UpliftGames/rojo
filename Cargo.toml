@@ -51,11 +51,11 @@ memofs = { version = "0.2.0", path = "crates/memofs" }
 # rbx_reflection_database = { path = "../rbx-dom/rbx_reflection_database" }
 # rbx_xml = { path = "../rbx-dom/rbx_xml" }
 
-rbx_binary = { git = "https://github.com/UpliftGames/rbx-dom", branch = "implement-font-type" }
-rbx_dom_weak = { git = "https://github.com/UpliftGames/rbx-dom", branch = "implement-font-type" }
-rbx_reflection = { git = "https://github.com/UpliftGames/rbx-dom", branch = "implement-font-type" }
-rbx_reflection_database = { git = "https://github.com/UpliftGames/rbx-dom", branch = "implement-font-type" }
-rbx_xml = { git = "https://github.com/UpliftGames/rbx-dom", branch = "implement-font-type" }
+rbx_binary = { git = "https://github.com/UpliftGames/rbx-dom", branch = "uplift-games-fork-releases" }
+rbx_dom_weak = { git = "https://github.com/UpliftGames/rbx-dom", branch = "uplift-games-fork-releases" }
+rbx_reflection = { git = "https://github.com/UpliftGames/rbx-dom", branch = "uplift-games-fork-releases" }
+rbx_reflection_database = { git = "https://github.com/UpliftGames/rbx-dom", branch = "uplift-games-fork-releases" }
+rbx_xml = { git = "https://github.com/UpliftGames/rbx-dom", branch = "uplift-games-fork-releases" }
 
 anyhow = "1.0.44"
 backtrace = "0.3.61"
