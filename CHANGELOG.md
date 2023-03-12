@@ -2,6 +2,9 @@
 
 ## Unreleased Changes
 
+## [7.2.2-uplift.release.8] - 2023-03-12
+* Update reflection database to enable migrations
+
 ## [7.2.2-uplift.release.7] - 2023-03-12
 * Adds migrations for Font and Gui Inset via rbx_dom update
 

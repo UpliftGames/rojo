@@ -69,7 +69,7 @@ Rojo can be installed with Aftman, a toolchain manager for Roblox projects:
 
 ```toml
 [tools]
-rojo = "UpliftGames/rojo@7.2.2-uplift.release.7"
+rojo = "UpliftGames/rojo@7.2.2-uplift.release.8"
 ```
 
 ### From GitHub Releases
