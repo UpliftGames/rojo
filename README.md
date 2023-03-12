@@ -5,6 +5,7 @@ Changes from upstream Rojo:
 * Ability to define the type of a file using glob patterns
 * Font property support
 * Model Scale property support
+* Adds Font and Gui Inset migrations
 
 
 <details><summary>Release Instructions</summary>
@@ -68,7 +69,7 @@ Rojo can be installed with Aftman, a toolchain manager for Roblox projects:
 
 ```toml
 [tools]
-rojo = "UpliftGames/rojo@7.2.2-uplift.release.6"
+rojo = "UpliftGames/rojo@7.2.2-uplift.release.7"
 ```
 
 ### From GitHub Releases
