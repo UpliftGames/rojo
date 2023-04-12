@@ -2,8 +2,6 @@ if not plugin then
 	return
 end
 
-print("STARTING PLUGIN")
-
 local Rojo = script:FindFirstAncestor("Rojo")
 local Packages = Rojo.Packages
 
