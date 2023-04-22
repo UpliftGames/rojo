@@ -108,6 +108,8 @@ fn get_transformer(context: &InstanceContext, path: &Path) -> Option<Transformer
         None
     } else if path.file_name_ends_with(".json") {
         Some(Transformer::Json)
+    } else if path.file_name_ends_with(".toml") {
+        Some(Transformer::Toml)
     } else if path.file_name_ends_with(".csv") {
         Some(Transformer::Csv)
     } else if path.file_name_ends_with(".txt") {
