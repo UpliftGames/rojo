@@ -1,6 +1,8 @@
 return function()
 	local applyPatch = require(script.Parent.applyPatch)
 
+	local InsertService = game:GetService("InsertService")
+
 	local InstanceMap = require(script.Parent.Parent.InstanceMap)
 	local PatchSet = require(script.Parent.Parent.PatchSet)
 
@@ -156,7 +158,33 @@ return function()
 		expect(value.Value).to.equal("WORLD")
 	end)
 
-	it("should recreate instances when changedClassName is set, preserving children", function()
+	it("should recreate instances for MeshId updates", function()
+		local mesh = InsertService:CreateMeshPartAsync("rbxassetid://3229650568", Enum.CollisionFidelity.Default, Enum.RenderFidelity.Automatic)
+
+		local instanceMap = InstanceMap.new()
+		instanceMap:insert("VALUE", mesh)
+
+		local patch = PatchSet.newEmpty()
+		table.insert(patch.updated, {
+			id = "VALUE",
+			changedProperties = {
+				MeshId = {
+					Content = "rbxassetid://4868357305",
+				},
+			},
+			requiresRecreate = true
+		})
+
+		local unapplied = applyPatch(instanceMap, patch)
+		local newInstance = instanceMap.fromIds["VALUE"]
+
+		expect(mesh.Parent).never.to.be.ok()
+		expect(mesh).never.to.equal(newInstance)
+		expect(newInstance).to.be.ok()
+		expect(newInstance.MeshId).to.equal("rbxassetid://4868357305")
+	end)
+
+	it("should recreate instances when requiresRecreate is set, preserving children", function()
 		local root = Instance.new("Folder")
 		root.Name = "Initial Root Name"
 
@@ -173,6 +201,7 @@ return function()
 			id = "ROOT",
 			changedName = "Updated Root Name",
 			changedClassName = "StringValue",
+			requiresRecreate = true,
 			changedProperties = {
 				Value = {
 					String = "I am Root",

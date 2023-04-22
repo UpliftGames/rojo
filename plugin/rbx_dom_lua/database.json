@@ -6431,7 +6431,9 @@
     },
     "CanvasGroup": {
       "Name": "CanvasGroup",
-      "Tags": [],
+      "Tags": [
+        "NotBrowsable"
+      ],
       "Superclass": "GuiObject",
       "Properties": {
         "GroupColor3": {
@@ -20421,6 +20423,23 @@
             }
           }
         },
+        "PropertyStatusStudio": {
+          "Name": "PropertyStatusStudio",
+          "Scriptability": "None",
+          "DataType": {
+            "Enum": "PropertyStatus"
+          },
+          "Tags": [
+            "NotReplicated",
+            "NotScriptable",
+            "ReadOnly"
+          ],
+          "Kind": {
+            "Canonical": {
+              "Serialization": "DoesNotSerialize"
+            }
+          }
+        },
         "RobloxLocked": {
           "Name": "RobloxLocked",
           "Scriptability": "ReadWrite",
@@ -23161,6 +23180,38 @@
               "Serialization": "Serializes"
             }
           }
+        },
+        "WoodPlanksName": {
+          "Name": "WoodPlanksName",
+          "Scriptability": "None",
+          "DataType": {
+            "Value": "String"
+          },
+          "Tags": [
+            "NotScriptable"
+          ],
+          "Kind": {
+            "Canonical": {
+              "Serialization": "Serializes"
+            }
+          }
+        },
+        "hasPropertyWarningInStudio": {
+          "Name": "hasPropertyWarningInStudio",
+          "Scriptability": "None",
+          "DataType": {
+            "Value": "Bool"
+          },
+          "Tags": [
+            "Hidden",
+            "NotReplicated",
+            "ReadOnly"
+          ],
+          "Kind": {
+            "Canonical": {
+              "Serialization": "DoesNotSerialize"
+            }
+          }
         }
       },
       "DefaultProperties": {
@@ -24043,7 +24094,7 @@
           ],
           "Kind": {
             "Canonical": {
-              "Serialization": "DoesNotSerialize"
+              "Serialization": "Serializes"
             }
           }
         }
@@ -27204,7 +27255,9 @@
     },
     "PathfindingLink": {
       "Name": "PathfindingLink",
-      "Tags": [],
+      "Tags": [
+        "NotBrowsable"
+      ],
       "Superclass": "Instance",
       "Properties": {
         "Attachment0": {
@@ -40390,6 +40443,28 @@
       "Properties": {},
       "DefaultProperties": {}
     },
+    "StudioHighDpiService": {
+      "Name": "StudioHighDpiService",
+      "Tags": [
+        "NotCreatable",
+        "NotReplicated",
+        "Service"
+      ],
+      "Superclass": "Instance",
+      "Properties": {},
+      "DefaultProperties": {}
+    },
+    "StudioPublishService": {
+      "Name": "StudioPublishService",
+      "Tags": [
+        "NotCreatable",
+        "NotReplicated",
+        "Service"
+      ],
+      "Superclass": "Instance",
+      "Properties": {},
+      "DefaultProperties": {}
+    },
     "StudioScriptDebugEventListener": {
       "Name": "StudioScriptDebugEventListener",
       "Tags": [
@@ -43792,7 +43867,9 @@
     },
     "TextChannel": {
       "Name": "TextChannel",
-      "Tags": [],
+      "Tags": [
+        "NotBrowsable"
+      ],
       "Superclass": "Instance",
       "Properties": {},
       "DefaultProperties": {
@@ -44028,9 +44105,233 @@
         }
       }
     },
+    "TextChatCommand": {
+      "Name": "TextChatCommand",
+      "Tags": [
+        "NotBrowsable"
+      ],
+      "Superclass": "Instance",
+      "Properties": {
+        "Enabled": {
+          "Name": "Enabled",
+          "Scriptability": "ReadWrite",
+          "DataType": {
+            "Value": "Bool"
+          },
+          "Tags": [],
+          "Kind": {
+            "Canonical": {
+              "Serialization": "Serializes"
+            }
+          }
+        },
+        "PrimaryAlias": {
+          "Name": "PrimaryAlias",
+          "Scriptability": "ReadWrite",
+          "DataType": {
+            "Value": "String"
+          },
+          "Tags": [],
+          "Kind": {
+            "Canonical": {
+              "Serialization": "Serializes"
+            }
+          }
+        },
+        "SecondaryAlias": {
+          "Name": "SecondaryAlias",
+          "Scriptability": "ReadWrite",
+          "DataType": {
+            "Value": "String"
+          },
+          "Tags": [],
+          "Kind": {
+            "Canonical": {
+              "Serialization": "Serializes"
+            }
+          }
+        }
+      },
+      "DefaultProperties": {
+        "AttributesSerialize": {
+          "BinaryString": ""
+        },
+        "Enabled": {
+          "Bool": true
+        },
+        "PrimaryAlias": {
+          "String": ""
+        },
+        "SecondaryAlias": {
+          "String": ""
+        },
+        "SourceAssetId": {
+          "Int64": -1
+        },
+        "Tags": {
+          "BinaryString": ""
+        }
+      }
+    },
+    "TextChatConfigurations": {
+      "Name": "TextChatConfigurations",
+      "Tags": [
+        "NotCreatable",
+        "NotReplicated"
+      ],
+      "Superclass": "Instance",
+      "Properties": {},
+      "DefaultProperties": {}
+    },
+    "TextChatMessage": {
+      "Name": "TextChatMessage",
+      "Tags": [
+        "NotCreatable"
+      ],
+      "Superclass": "Instance",
+      "Properties": {
+        "MessageId": {
+          "Name": "MessageId",
+          "Scriptability": "ReadWrite",
+          "DataType": {
+            "Value": "String"
+          },
+          "Tags": [],
+          "Kind": {
+            "Canonical": {
+              "Serialization": "DoesNotSerialize"
+            }
+          }
+        },
+        "Metadata": {
+          "Name": "Metadata",
+          "Scriptability": "ReadWrite",
+          "DataType": {
+            "Value": "String"
+          },
+          "Tags": [],
+          "Kind": {
+            "Canonical": {
+              "Serialization": "DoesNotSerialize"
+            }
+          }
+        },
+        "PrefixText": {
+          "Name": "PrefixText",
+          "Scriptability": "ReadWrite",
+          "DataType": {
+            "Value": "String"
+          },
+          "Tags": [],
+          "Kind": {
+            "Canonical": {
+              "Serialization": "DoesNotSerialize"
+            }
+          }
+        },
+        "Status": {
+          "Name": "Status",
+          "Scriptability": "ReadWrite",
+          "DataType": {
+            "Enum": "TextChatMessageStatus"
+          },
+          "Tags": [],
+          "Kind": {
+            "Canonical": {
+              "Serialization": "DoesNotSerialize"
+            }
+          }
+        },
+        "Text": {
+          "Name": "Text",
+          "Scriptability": "ReadWrite",
+          "DataType": {
+            "Value": "String"
+          },
+          "Tags": [],
+          "Kind": {
+            "Canonical": {
+              "Serialization": "DoesNotSerialize"
+            }
+          }
+        },
+        "TextChannel": {
+          "Name": "TextChannel",
+          "Scriptability": "ReadWrite",
+          "DataType": {
+            "Value": "Ref"
+          },
+          "Tags": [],
+          "Kind": {
+            "Canonical": {
+              "Serialization": "Serializes"
+            }
+          }
+        },
+        "TextSource": {
+          "Name": "TextSource",
+          "Scriptability": "ReadWrite",
+          "DataType": {
+            "Value": "Ref"
+          },
+          "Tags": [],
+          "Kind": {
+            "Canonical": {
+              "Serialization": "Serializes"
+            }
+          }
+        }
+      },
+      "DefaultProperties": {}
+    },
+    "TextChatMessageProperties": {
+      "Name": "TextChatMessageProperties",
+      "Tags": [],
+      "Superclass": "Instance",
+      "Properties": {
+        "PrefixText": {
+          "Name": "PrefixText",
+          "Scriptability": "ReadWrite",
+          "DataType": {
+            "Value": "String"
+          },
+          "Tags": [],
+          "Kind": {
+            "Canonical": {
+              "Serialization": "DoesNotSerialize"
+            }
+          }
+        },
+        "Text": {
+          "Name": "Text",
+          "Scriptability": "ReadWrite",
+          "DataType": {
+            "Value": "String"
+          },
+          "Tags": [],
+          "Kind": {
+            "Canonical": {
+              "Serialization": "DoesNotSerialize"
+            }
+          }
+        }
+      },
+      "DefaultProperties": {
+        "AttributesSerialize": {
+          "BinaryString": ""
+        },
+        "SourceAssetId": {
+          "Int64": -1
+        },
+        "Tags": {
+          "BinaryString": ""
+        }
+      }
+    },
     "TextChatService": {
       "Name": "TextChatService",
       "Tags": [
+        "NotBrowsable",
         "NotCreatable",
         "Service"
       ],
@@ -44626,6 +44927,7 @@
     "TextSource": {
       "Name": "TextSource",
       "Tags": [
+        "NotBrowsable",
         "NotCreatable"
       ],
       "Superclass": "Instance",
@@ -53730,6 +54032,37 @@
       "items": {
         "Exclude": 1,
         "Include": 0
+      }
+    },
+    "LSPMethodType": {
+      "name": "LSPMethodType",
+      "items": {
+        "CancelRequest": 3,
+        "Completion": 15,
+        "Declaration": 16,
+        "DocumentSymbols": 17,
+        "Initialize": 1,
+        "Initialized": 2,
+        "Roblox_findColor3": 26,
+        "Roblox_findExecutablePosition": 25,
+        "Roblox_registerSyntaxCategories": 21,
+        "Roblox_signalQuiescence": 22,
+        "Roblox_suggestExtraSelections": 24,
+        "Roblox_syntaxHighlight": 23,
+        "ShutdownRequest": 14,
+        "TextDocument_didChange": 5,
+        "TextDocument_didClose": 6,
+        "TextDocument_didOpen": 4,
+        "TextDocument_foldingRange": 7,
+        "TextDocument_formatting": 9,
+        "TextDocument_hover": 11,
+        "TextDocument_onTypeFormatting": 8,
+        "TextDocument_publishDiagnostics": 18,
+        "TextDocument_rangeFormatting": 10,
+        "TextDocument_signatureHelp": 12,
+        "Window_showMessage": 19,
+        "Window_showMessageRequest": 20,
+        "Workspace_DidChangeConfiguration": 13
       }
     },
     "Language": {
