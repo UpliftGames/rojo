@@ -2,6 +2,11 @@
 
 ## Unreleased Changes
 
+## [7.3.0-uplift.release.10] - 2023-05-11
+
+* Adds MeshPart support
+* Pulls upstream changes, which includes unreleased UI improvements
+
 ## [7.2.2-uplift.release.8] - 2023-03-12
 * Update reflection database to enable migrations
 

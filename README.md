@@ -6,38 +6,26 @@ Changes from upstream Rojo:
 * Font property support
 * Model Scale property support
 * Adds Font and Gui Inset migrations
-
+* MeshPart support
+* UniqueId support
 
 <details><summary>Release Instructions</summary>
 
 New Uplift Games-specific releases should:
-* Be created on the `uplift-games-fork-releases` branch (this is like our `main`)
-* Be tagged with an appropriate semver **plus** a pre-release tag in the following format:\
-  `v1.2.3-uplift.1`\
-  ...where `v1.2.3` is the semver and `uplift.1` increments with each
-  release under that semver.\
-  **This tag should be created locally and pushed to kick off automated builds (see *Notes on version tags*)**
-* The chosen semver should be *relative to upstream according to the difference
-  at that release.*\
-  For example, if upstream is on `v1.0.0` and we make a minor
-  change, we'll be on `v1.0.1-uplift.1`. If we make another minor
-  change, we'll be on `v1.0.1-uplift.2` *because we are still only minor
-  changes away from upstream*. This way, if our changes get upstreamed, we won't
-  be going backwards in semver.
+* Be created via [workflow dispatch on the Release action](https://github.com/UpliftGames/rojo/actions/workflows/release.yml)
+  ![image](https://user-images.githubusercontent.com/1669436/233771073-ccbd1834-3341-4aeb-91cd-be7b02878b39.png)
+  * Be created on the `uplift` branch _(this is our `main`)_
+  * Be tagged with an appropriate semver **plus** a pre-release tag in the following format:\
+    `v1.2.3-uplift.1`\
+    ...where `v1.2.3` is the semver and `uplift.1` increments for each release we make.
+    It is acceptable to maintain the release count across semver changes.
+  * Once the release action finishes there will be a release draft. Add a changelog and publish it.
+    If any release job fails due to aftman github limits, re-run failed jobs.
 * Add our changes to `CHANGELOG.md`. If we rebase on a
   new version of Rojo that includes some of our additions, we should list only
   what has changed between upstream Rojo and our fork.
 * Where possible, our changes should become PRs to the upstream Rojo repo. When
   we do this, we should include a link to the PR in the changelog entry.
-* Where possible, our changes should become PRs to the upstream Rojo repo. When
-  we do this, we should include a link to the PR in the changelog entry.
-
-Notes on version tags:
-* Tags can be created locally with the command `git tag v1.2.3-uplift.1`
-* Tags can be pushed to the remote with the command `git push origin v1.2.3-uplift.1`
-* When a tag starting with `v` is pushed to this repo, an action is kicked off
-  which creates a release draft and attached build artifacts when they're
-  completed. Go to the releases page and edit the draft to publish it.
 
 </details>
 
