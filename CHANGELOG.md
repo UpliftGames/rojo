@@ -2,10 +2,16 @@
 
 ## Unreleased Changes
 
-## [7.3.0-uplift.release.10] - 2023-05-11
+## [7.3.0-uplift.10] - 2023-04-22
 
 * Adds MeshPart support
+* Adds UniqueId support
 * Pulls upstream changes, which includes unreleased UI improvements
+* Switched to shortened names for prerelease tag and main branch
+* Release workflow improvements
+
+## [7.2.2-uplift.release.9] - 2023-04-13
+* Remove a debug print
 
 ## [7.2.2-uplift.release.8] - 2023-03-12
 * Update reflection database to enable migrations
