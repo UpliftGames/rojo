@@ -13,15 +13,15 @@ Changes from upstream Rojo:
 New Uplift Games-specific releases should:
 * Be created on the `uplift-games-fork-releases` branch (this is like our `main`)
 * Be tagged with an appropriate semver **plus** a pre-release tag in the following format:\
-  `v1.2.3-uplift.release.1`\
-  ...where `v1.2.3` is the semver and `uplift.release.1` increments with each
+  `v1.2.3-uplift.1`\
+  ...where `v1.2.3` is the semver and `uplift.1` increments with each
   release under that semver.\
   **This tag should be created locally and pushed to kick off automated builds (see *Notes on version tags*)**
 * The chosen semver should be *relative to upstream according to the difference
   at that release.*\
   For example, if upstream is on `v1.0.0` and we make a minor
-  change, we'll be on `v1.0.1-uplift.release.1`. If we make another minor
-  change, we'll be on `v1.0.1-uplift.release.2` *because we are still only minor
+  change, we'll be on `v1.0.1-uplift.1`. If we make another minor
+  change, we'll be on `v1.0.1-uplift.2` *because we are still only minor
   changes away from upstream*. This way, if our changes get upstreamed, we won't
   be going backwards in semver.
 * Add our changes to `CHANGELOG.md`. If we rebase on a
@@ -33,8 +33,8 @@ New Uplift Games-specific releases should:
   we do this, we should include a link to the PR in the changelog entry.
 
 Notes on version tags:
-* Tags can be created locally with the command `git tag v1.2.3-uplift.release.1`
-* Tags can be pushed to the remote with the command `git push origin v1.2.3-uplift.release.1`
+* Tags can be created locally with the command `git tag v1.2.3-uplift.1`
+* Tags can be pushed to the remote with the command `git push origin v1.2.3-uplift.1`
 * When a tag starting with `v` is pushed to this repo, an action is kicked off
   which creates a release draft and attached build artifacts when they're
   completed. Go to the releases page and edit the draft to publish it.
@@ -69,7 +69,7 @@ Rojo can be installed with Aftman, a toolchain manager for Roblox projects:
 
 ```toml
 [tools]
-rojo = "UpliftGames/rojo@7.2.2-uplift.release.8"
+rojo = "UpliftGames/rojo@7.3.0-uplift.10"
 ```
 
 ### From GitHub Releases
