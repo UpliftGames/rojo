@@ -17,6 +17,11 @@ on:
         description: 'Should we create a new tag?'
         required: true
         type: boolean
+        default: true
+      force_push_tag:
+        description: 'Should we force push the new tag?'
+        required: true
+        type: boolean
         default: false
 
 
@@ -43,7 +48,7 @@ jobs:
         uses: rickstaa/action-create-tag@v1
         with:
           tag: ${{ inputs.version }}
-          tag_exists_error: false
+          force_push_tag: ${{ inputs.force_push_tag }}
           message: "Release ${{ inputs.version }}"
 
       - name: Create Release gh
