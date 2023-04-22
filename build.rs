@@ -37,11 +37,38 @@ fn snapshot_from_fs_path(path: &Path) -> io::Result<VfsSnapshot> {
     }
 }
 
+fn update_plugin_version(plugin_root: &Path) -> Result<(), anyhow::Error> {
+    let plugin_wally = fs::read_to_string(&plugin_root.join("wally.toml"))?;
+    let mut plugin_wally: toml_edit::Document = plugin_wally.parse()?;
+
+    plugin_wally["package"]["version"] = toml_edit::value(env!("CARGO_PKG_VERSION"));
+
+    fs::write(&plugin_root.join("wally.toml"), plugin_wally.to_string())?;
+
+    Ok(())
+}
+
+fn update_readme_version() -> Result<(), anyhow::Error> {
+    let readme = fs::read_to_string("README.md")?;
+
+    let regex = regex::Regex::new(r#"rojo = "[^/]+/rojo@[^"]+""#)?;
+    let updated_readme = regex.replace_all(&readme, |_captures: &regex::Captures| {
+        format!(r#"rojo = "UpliftGames/rojo@{}""#, env!("CARGO_PKG_VERSION"))
+    });
+
+    fs::write("README.md", updated_readme.as_bytes())?;
+
+    Ok(())
+}
+
 fn main() -> Result<(), anyhow::Error> {
     let out_dir = env::var_os("OUT_DIR").unwrap();
 
     let root_dir = env::var_os("CARGO_MANIFEST_DIR").unwrap();
     let plugin_root = PathBuf::from(root_dir).join("plugin");
+
+    update_plugin_version(&plugin_root)?;
+    update_readme_version()?;
 
     let snapshot = VfsSnapshot::dir(hashmap! {
         "default.project.json" => snapshot_from_fs_path(&plugin_root.join("default.project.json"))?,
@@ -51,6 +78,7 @@ fn main() -> Result<(), anyhow::Error> {
         "rbx_dom_lua" => snapshot_from_fs_path(&plugin_root.join("rbx_dom_lua"))?,
         "src" => snapshot_from_fs_path(&plugin_root.join("src"))?,
         "Packages" => snapshot_from_fs_path(&plugin_root.join("Packages"))?,
+        "wally.toml" => snapshot_from_fs_path(&plugin_root.join("wally.toml"))?,
     });
 
     let out_path = Path::new(&out_dir).join("plugin.bincode");

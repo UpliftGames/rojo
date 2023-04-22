@@ -98,6 +98,8 @@ anyhow = "1.0.44"
 bincode = "1.3.3"
 fs-err = "2.6.0"
 maplit = "1.0.2"
+toml_edit = "0.19.8"
+regex = "1.8.1"
 
 [dev-dependencies]
 rojo-insta-ext = { path = "crates/rojo-insta-ext" }

@@ -3,7 +3,11 @@
 	"tree": {
 		"$className": "Folder",
 		"Plugin": {
-			"$path": "src"
+			"$path": "src",
+
+      "wally.toml": {
+        "$path": "wally.toml"
+      }
 		},
 		"Packages": {
 			"$path": "Packages",
