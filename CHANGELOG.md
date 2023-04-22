@@ -10,21 +10,33 @@
 * Switched to shortened names for prerelease tag and main branch
 * Release workflow improvements
 
+[7.3.0-uplift.10]: https://github.com/rojo-rbx/rojo/releases/tag/v7.3.0-uplift.10
+
 ## [7.2.2-uplift.release.9] - 2023-04-13
 * Remove a debug print
+
+[7.2.2-uplift.release.9]: https://github.com/rojo-rbx/rojo/releases/tag/v7.2.2-uplift.release.9
 
 ## [7.2.2-uplift.release.8] - 2023-03-12
 * Update reflection database to enable migrations
 
+[7.2.2-uplift.release.8]: https://github.com/rojo-rbx/rojo/releases/tag/v7.2.2-uplift.release.8
+
 ## [7.2.2-uplift.release.7] - 2023-03-12
 * Adds migrations for Font and Gui Inset via rbx_dom update
+
+[7.2.2-uplift.release.7]: https://github.com/rojo-rbx/rojo/releases/tag/v7.2.2-uplift.release.7
 
 ## [7.2.2-uplift.release.6] - 2023-03-03
 * Now using rbx-dom branch made for combined uplift releases
 * Merged in Dekkonot's Model Scale support branch to the rbx-dom fork
 
+[7.2.2-uplift.release.6]: https://github.com/rojo-rbx/rojo/releases/tag/v7.2.2-uplift.release.6
+
 ## [7.2.2-uplift.release.4] - 2023-01-12
 * Add support for the `Font` type
+
+[7.2.2-uplift.release.4]: https://github.com/rojo-rbx/rojo/releases/tag/v7.2.2-uplift.release.4
 
 ## [7.2.2-uplift.release.2] - 2021-10-11 (prerelease)
 * Added `--watch` flag to `rojo sourcemap` ([#602])
@@ -34,6 +46,7 @@
 [#602]: https://github.com/rojo-rbx/rojo/pull/602
 [#633]: https://github.com/rojo-rbx/rojo/pull/633
 [#635]: https://github.com/rojo-rbx/rojo/pull/635
+[7.2.2-uplift.release.2]: https://github.com/rojo-rbx/rojo/releases/tag/v7.2.2-uplift.release.2
 
 ## [7.2.1] - July 8, 2022
 * Fixed notification sound by changing it to a generic sound. ([#566])
