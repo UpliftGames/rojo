@@ -1653,7 +1653,7 @@ dependencies = [
 [[package]]
 name = "rbx_binary"
 version = "0.6.6"
-source = "git+https://github.com/UpliftGames/rbx-dom?rev=af4ba36e50c27b420216c7e473e0abcc8a93f604#af4ba36e50c27b420216c7e473e0abcc8a93f604"
+source = "git+https://github.com/UpliftGames/rbx-dom?rev=9b0615dbc6352d9526fc2ee7924365be7031c13e#9b0615dbc6352d9526fc2ee7924365be7031c13e"
 dependencies = [
  "log",
  "lz4",
@@ -1667,7 +1667,7 @@ dependencies = [
 [[package]]
 name = "rbx_dom_weak"
 version = "2.4.0"
-source = "git+https://github.com/UpliftGames/rbx-dom?rev=af4ba36e50c27b420216c7e473e0abcc8a93f604#af4ba36e50c27b420216c7e473e0abcc8a93f604"
+source = "git+https://github.com/UpliftGames/rbx-dom?rev=9b0615dbc6352d9526fc2ee7924365be7031c13e#9b0615dbc6352d9526fc2ee7924365be7031c13e"
 dependencies = [
  "rbx_types",
  "serde",
@@ -1676,7 +1676,7 @@ dependencies = [
 [[package]]
 name = "rbx_reflection"
 version = "4.2.0"
-source = "git+https://github.com/UpliftGames/rbx-dom?rev=af4ba36e50c27b420216c7e473e0abcc8a93f604#af4ba36e50c27b420216c7e473e0abcc8a93f604"
+source = "git+https://github.com/UpliftGames/rbx-dom?rev=9b0615dbc6352d9526fc2ee7924365be7031c13e#9b0615dbc6352d9526fc2ee7924365be7031c13e"
 dependencies = [
  "rbx_types",
  "serde",
@@ -1686,7 +1686,7 @@ dependencies = [
 [[package]]
 name = "rbx_reflection_database"
 version = "0.2.5+roblox-530"
-source = "git+https://github.com/UpliftGames/rbx-dom?rev=af4ba36e50c27b420216c7e473e0abcc8a93f604#af4ba36e50c27b420216c7e473e0abcc8a93f604"
+source = "git+https://github.com/UpliftGames/rbx-dom?rev=9b0615dbc6352d9526fc2ee7924365be7031c13e#9b0615dbc6352d9526fc2ee7924365be7031c13e"
 dependencies = [
  "lazy_static",
  "rbx_reflection",
@@ -1697,7 +1697,7 @@ dependencies = [
 [[package]]
 name = "rbx_types"
 version = "1.4.2"
-source = "git+https://github.com/UpliftGames/rbx-dom?rev=af4ba36e50c27b420216c7e473e0abcc8a93f604#af4ba36e50c27b420216c7e473e0abcc8a93f604"
+source = "git+https://github.com/UpliftGames/rbx-dom?rev=9b0615dbc6352d9526fc2ee7924365be7031c13e#9b0615dbc6352d9526fc2ee7924365be7031c13e"
 dependencies = [
  "base64",
  "bitflags",
@@ -1711,7 +1711,7 @@ dependencies = [
 [[package]]
 name = "rbx_xml"
 version = "0.12.4"
-source = "git+https://github.com/UpliftGames/rbx-dom?rev=af4ba36e50c27b420216c7e473e0abcc8a93f604#af4ba36e50c27b420216c7e473e0abcc8a93f604"
+source = "git+https://github.com/UpliftGames/rbx-dom?rev=9b0615dbc6352d9526fc2ee7924365be7031c13e#9b0615dbc6352d9526fc2ee7924365be7031c13e"
 dependencies = [
  "base64",
  "log",
