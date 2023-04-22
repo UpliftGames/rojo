@@ -107,7 +107,6 @@ local function diff(instanceMap, virtualInstances, rootId)
 			table.insert(patch.updated, {
 				id = id,
 				changedName = changedName,
-				requiresRecreate = requiresRecreate,
 				changedClassName = changedClassName,
 				changedProperties = changedProperties,
 				changedMetadata = nil,

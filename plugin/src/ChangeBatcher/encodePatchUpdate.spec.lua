@@ -40,13 +40,12 @@ return function()
 	it("should recreate instance in the update when the instance's ClassName changes", function()
 		local part = Instance.new("Part")
 		local properties = {
-			ClassName = true
+			ClassName = "WedgePart",
 		}
 
 		local update = encodePatchUpdate(part, "PART", properties)
 
 		expect(update.changedProperties.ClassName).to.be.ok()
-		expect(update.requiresRecreate).to.equal(true)
 	end)
 
 	it("should correctly encode property values", function()

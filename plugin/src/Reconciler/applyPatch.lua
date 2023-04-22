@@ -90,9 +90,9 @@ local function applyPatch(instanceMap, patch)
 		local partiallyApplied = false
 
 		-- If the instance's className changed, or there is custom recreate logic,
-		-- we have a bumpy ride ahead while we recreate this instance and move all 
+		-- we have a bumpy ride ahead while we recreate this instance and move all
 		-- of its children into the new version atomically...ish.
-		if update.requiresRecreate then
+		if update.changedClassName ~= nil or update.changedProperties["MeshId"] ~= nil then
 			-- If the instance's name also changed, we'll do it here, since this
 			-- branch will skip the rest of the loop iteration.
 			local newName = update.changedName or instance.Name
@@ -106,12 +106,13 @@ local function applyPatch(instanceMap, patch)
 			-- For now, we'll only apply properties that are mentioned in this
 			-- update. Patches with changedClassName set only occur in specific
 			-- circumstances, usually between Folder and ModuleScript instances.
-			-- While this may result in some issues, like not preserving the
-			-- "Archived" property, a robust solution is sufficiently
-			-- complicated that we're pushing it off for now.
+			-- This may cause problems for MeshParts, which activate this code
+			-- path too.. While this may result in some issues, like not
+			-- preserving the "Archived" property, a robust solution is
+			-- sufficiently complicated that we're pushing it off for now.
 			local newProperties = update.changedProperties
 
-			-- If the instance's ClassName changed, we'll kick into reify to
+			-- If the instance must be recreated, we'll kick into reify to
 			-- create this instance. We'll handle moving all of children between
 			-- the instances after the new one is created.
 			local mockVirtualInstance = {

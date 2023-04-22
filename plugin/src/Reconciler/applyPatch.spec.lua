@@ -172,7 +172,6 @@ return function()
 					Content = "rbxassetid://4868357305",
 				},
 			},
-			requiresRecreate = true
 		})
 
 		local unapplied = applyPatch(instanceMap, patch)
@@ -184,7 +183,7 @@ return function()
 		expect(newInstance.MeshId).to.equal("rbxassetid://4868357305")
 	end)
 
-	it("should recreate instances when requiresRecreate is set, preserving children", function()
+	it("should recreate instances when changedClassName is set, preserving children", function()
 		local root = Instance.new("Folder")
 		root.Name = "Initial Root Name"
 
@@ -201,7 +200,6 @@ return function()
 			id = "ROOT",
 			changedName = "Updated Root Name",
 			changedClassName = "StringValue",
-			requiresRecreate = true,
 			changedProperties = {
 				Value = {
 					String = "I am Root",

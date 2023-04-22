@@ -48,8 +48,16 @@ local function createInstance(instanceMap, className, properties)
 	if className == "MeshPart" then
 		local okMeshId, meshId = decodeValue(properties.MeshId, instanceMap)
 
-		-- It is okay to provide default properties here, because 
-		-- they will be overriden on the update cycle
+		if not okMeshId then
+			error(`Cannot create MeshPart, MeshId decode failed:  {properties.meshId}`)
+		end
+
+		-- It is okay to provide default properties here, because
+		-- they will be set when properties are applied in reify.
+
+		-- NOTE: Watch out! This is the only async call in the reconciler! If
+		-- you see weird race conditions or other concerning behavior, check
+		-- here!
 		return InsertService:CreateMeshPartAsync(meshId, Enum.CollisionFidelity.Default, Enum.RenderFidelity.Automatic)
 	else
 		return Instance.new(className)

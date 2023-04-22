@@ -8,18 +8,15 @@ return function(instance, instanceId, properties)
 	local update = {
 		id = instanceId,
 		changedProperties = {},
-		requiresRecreate = false
 	}
 
 	for propertyName in pairs(properties) do
 		if propertyName == "Name" then
 			update.changedName = instance.Name
-		elseif propertyName == "MeshId" then
-			update.requiresRecreate = true
 		elseif propertyName == "ClassName" then
-			update.requiresRecreate, update.changedClassName = true, instance.ClassName
+			update.changedClassName = instance.ClassName
 		end
-		
+
 		local descriptor = RbxDom.findCanonicalPropertyDescriptor(instance.ClassName, propertyName)
 
 		if not descriptor then
