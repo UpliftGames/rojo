@@ -2,6 +2,10 @@
 
 ## Unreleased Changes
 
+## [7.3.0-uplift.11] - 2023-05-25
+
+* Updates rbx-dom to fix issues with UniqueId
+
 ## [7.3.0-uplift.10] - 2023-04-22
 
 * Adds MeshPart support
