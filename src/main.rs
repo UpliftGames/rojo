@@ -72,7 +72,10 @@ fn main() {
         .init();
 
     if let Err(err) = options.run() {
-        log::error!("{:?}", err);
+        log::trace!("failed");
+        log::trace!("{:#?}", err);
+        log::error!("{:#?}", err);
         process::exit(1);
     }
+    log::trace!("done");
 }

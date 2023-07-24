@@ -1,6 +1,111 @@
-use std::path::Path;
+use std::{
+    collections::{HashMap, HashSet},
+    path::Path,
+};
 
 use anyhow::Context;
+use memofs::Vfs;
+use rbx_dom_weak::Instance;
+
+use super::MetadataFile;
+
+pub fn try_remove_file(vfs: &Vfs, path: &Path) -> anyhow::Result<()> {
+    vfs.remove_file(path).or_else(|e| match e.kind() {
+        std::io::ErrorKind::NotFound => Ok(()),
+        _ => Err(e),
+    })?;
+    Ok(())
+}
+
+pub fn reconcile_meta_file_empty(vfs: &Vfs, path: &Path) -> anyhow::Result<()> {
+    let existing = {
+        let contents = vfs.read(path).map(Some).or_else(|e| match e.kind() {
+            std::io::ErrorKind::NotFound => Ok(None),
+            _ => Err(e),
+        })?;
+        if let Some(contents) = contents {
+            Some(MetadataFile::from_slice(&contents, path.to_path_buf())?)
+        } else {
+            None
+        }
+    };
+
+    let mut new_file = if let Some(existing) = existing {
+        existing.clone()
+    } else {
+        MetadataFile {
+            ignore_unknown_instances: None,
+            properties: HashMap::new(),
+            attributes: HashMap::new(),
+            class_name: None,
+            path: path.to_path_buf(),
+        }
+    };
+
+    new_file.properties.clear();
+    new_file.attributes.clear();
+    new_file.class_name = None;
+
+    if new_file.is_empty() {
+        try_remove_file(vfs, path)?;
+    } else {
+        vfs.write(path, serde_json::to_string_pretty(&new_file)?)?;
+    }
+
+    Ok(())
+}
+
+pub fn reconcile_meta_file(
+    vfs: &Vfs,
+    path: &Path,
+    instance: &Instance,
+    skip_props: HashSet<&str>,
+    base_class: Option<&str>,
+) -> anyhow::Result<()> {
+    let existing = {
+        let contents = vfs.read(path).map(Some).or_else(|e| match e.kind() {
+            std::io::ErrorKind::NotFound => Ok(None),
+            _ => Err(e),
+        })?;
+        if let Some(contents) = contents {
+            Some(MetadataFile::from_slice(&contents, path.to_path_buf())?)
+        } else {
+            None
+        }
+    };
+
+    let mut new_file = if let Some(existing) = &existing {
+        existing.clone()
+    } else {
+        MetadataFile {
+            ignore_unknown_instances: None,
+            properties: HashMap::new(),
+            attributes: HashMap::new(),
+            class_name: None,
+            path: path.to_path_buf(),
+        }
+    };
+
+    new_file = new_file.with_instance_props(instance, skip_props);
+
+    if Some(instance.class.as_str()) == base_class {
+        new_file.class_name = None;
+    } else {
+        new_file.class_name = Some(instance.class.clone());
+    }
+
+    if let Some(existing) = &existing {
+        new_file.minimize_diff(existing, base_class);
+    }
+
+    if new_file.is_empty() {
+        try_remove_file(vfs, path)?;
+    } else {
+        vfs.write(path, serde_json::to_string_pretty(&new_file)?)?;
+    }
+
+    Ok(())
+}
 
 /// If the given string ends up with the given suffix, returns the portion of
 /// the string before the suffix.

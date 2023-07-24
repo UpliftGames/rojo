@@ -35,6 +35,45 @@ impl UnresolvedValue {
             UnresolvedValue::Ambiguous(partial) => partial.resolve_unambiguous(),
         }
     }
+
+    pub fn from_variant_property(class_name: &str, prop_name: &str, variant: Variant) -> Self {
+        match find_descriptor(class_name, prop_name) {
+            Some(descriptor) => Self::from_variant(variant),
+            None => UnresolvedValue::FullyQualified(variant),
+        }
+    }
+
+    pub fn from_variant(variant: Variant) -> Self {
+        match variant {
+            Variant::Bool(v) => UnresolvedValue::Ambiguous(AmbiguousValue::Bool(v)),
+            Variant::Float32(v) => UnresolvedValue::Ambiguous(AmbiguousValue::Number(v as f64)),
+            Variant::Float64(v) => UnresolvedValue::Ambiguous(AmbiguousValue::Number(v as f64)),
+            Variant::Int32(v) => UnresolvedValue::Ambiguous(AmbiguousValue::Number(v as f64)),
+            Variant::Int64(v) => UnresolvedValue::Ambiguous(AmbiguousValue::Number(v as f64)),
+            Variant::String(v) => UnresolvedValue::Ambiguous(AmbiguousValue::String(v)),
+            Variant::BinaryString(v) => {
+                if let Ok(v) = core::str::from_utf8(v.as_ref()) {
+                    UnresolvedValue::Ambiguous(AmbiguousValue::String(v.to_string()))
+                } else {
+                    UnresolvedValue::FullyQualified(Variant::BinaryString(v))
+                }
+            }
+            Variant::SharedString(v) => {
+                if let Ok(v) = core::str::from_utf8(v.data()) {
+                    UnresolvedValue::Ambiguous(AmbiguousValue::String(v.to_string()))
+                } else {
+                    UnresolvedValue::FullyQualified(Variant::SharedString(v))
+                }
+            }
+            Variant::Content(v) => {
+                UnresolvedValue::Ambiguous(AmbiguousValue::String(v.into_string()))
+            }
+            Variant::Tags(v) => UnresolvedValue::Ambiguous(AmbiguousValue::StringArray(
+                v.iter().map(|v| v.to_string()).collect::<Vec<String>>(),
+            )),
+            _ => UnresolvedValue::FullyQualified(variant),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -53,8 +92,14 @@ pub enum AmbiguousValue {
 
 impl AmbiguousValue {
     pub fn resolve(self, class_name: &str, prop_name: &str) -> anyhow::Result<Variant> {
-        let property = find_descriptor(class_name, prop_name)
-            .ok_or_else(|| format_err!("Unknown property {}.{}", class_name, prop_name))?;
+        let property = find_descriptor(class_name, prop_name).ok_or_else(|| {
+            format_err!(
+                "Unknown property {}.{}\n{:?}",
+                class_name,
+                prop_name,
+                backtrace::Backtrace::new()
+            )
+        })?;
 
         match &property.data_type {
             DataType::Enum(enum_name) => {

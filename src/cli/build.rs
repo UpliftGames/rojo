@@ -110,8 +110,11 @@ fn write_model(
 ) -> anyhow::Result<()> {
     println!("Building project '{}'", session.project_name());
 
-    let tree = session.tree();
+    let mut tree = session.tree();
     let root_id = tree.get_root_id();
+
+    log::trace!("Fixing duplicate unique ids");
+    tree.fix_unique_id_collisions();
 
     log::trace!("Opening output file for write");
     let mut file = BufWriter::new(File::create(output)?);

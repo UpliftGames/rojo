@@ -1,0 +1,30 @@
+rojo:
+- json model properties prevent re-ordering
+- project nodes should store sub syncback context
+- sync back properties to project nodes
+- convert concerning traces to info/warn/error
+- convert "can't sync, skipping" traces to info/warn/error
+- delete extra traces
+- prevent overwriting toml/json with lua
+- ignore globs to prevent syncback under
+- ensure default properties are filtered out of meta files
+- explore storing refs so ref properties work between files
+- explore round-trip diff minim
+- explore ref-matching to minimize ref property-caused diffs
+- disallow bad filenames
+- workaround bad filenames with init.meta
+- better syncback inference
+  - configuration as folder w/ init meta
+  - *value as model json (or folder w/ init meta)
+  - configuration as model json
+  - attribute-informed middleware choice
+  - sounds as model json
+- standardize around "middleware" name
+- add "transformer" support (rename to middleware)
+  - req. pulling globs from state instead of static
+- ensure instancecontext is chosen and passed around correctly
+- convert project special-casing to new children mode enum
+
+adopt me:
+- figure out which folders should be synced in as models and which should be synced in as directories
+- explore git performance with 6k+ files

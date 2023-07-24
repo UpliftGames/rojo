@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{glob::Glob, path_serializer, project::ProjectNode};
 
+use super::MiddlewareContextAny;
+
 /// Rojo-specific metadata that can be associated with an instance or a snapshot
 /// of an instance.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -52,6 +54,16 @@ pub struct InstanceMetadata {
     /// that instance's instigating source is snapshotted directly, the same
     /// context will be passed into it.
     pub context: InstanceContext,
+
+    /// The middleware that created this snapshot.
+    ///
+    /// We can use this to update, destroy, or replace the snapshot.
+    #[serde(skip)]
+    pub snapshot_middleware: Option<&'static str>,
+
+    /// The snapshot custom context we will need if a syncback is triggered.
+    #[serde(skip)]
+    pub syncback_context: Option<Arc<dyn MiddlewareContextAny>>,
 }
 
 impl InstanceMetadata {
@@ -61,6 +73,8 @@ impl InstanceMetadata {
             instigating_source: None,
             relevant_paths: Vec::new(),
             context: InstanceContext::default(),
+            snapshot_middleware: None,
+            syncback_context: None,
         }
     }
 
@@ -89,6 +103,27 @@ impl InstanceMetadata {
         Self {
             context: context.clone(),
             ..self
+        }
+    }
+
+    pub fn snapshot_middleware(self, snapshot_middleware: &'static str) -> Self {
+        Self {
+            snapshot_middleware: Some(snapshot_middleware),
+            ..self
+        }
+    }
+
+    pub fn syncback_context(self, context: Option<Arc<dyn MiddlewareContextAny>>) -> Self {
+        Self {
+            syncback_context: context,
+            ..self
+        }
+    }
+
+    pub fn snapshot_source_path(&self) -> Option<&Path> {
+        match &self.instigating_source {
+            Some(InstigatingSource::Path(path)) => Some(path.as_path()),
+            _ => None,
         }
     }
 }

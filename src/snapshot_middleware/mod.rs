@@ -18,109 +18,96 @@ mod toml;
 mod txt;
 mod util;
 
-use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::{collections::HashMap, path::Path, sync::OnceLock};
 
-use anyhow::Context;
+use globset::{Glob, GlobSet, GlobSetBuilder};
+use log::trace;
 use memofs::{IoResultExt, Vfs};
 
-use crate::snapshot::{InstanceContext, InstanceSnapshot, Transformer};
+use crate::snapshot::{InstanceContext, InstanceSnapshot, SnapshotMiddleware};
 
 use self::{
-    csv::{snapshot_csv, snapshot_csv_init},
-    dir::snapshot_dir,
-    json::snapshot_json,
-    json_model::snapshot_json_model,
-    lua::{snapshot_lua, snapshot_lua_init, ScriptType},
-    project::snapshot_project,
-    rbxm::snapshot_rbxm,
-    rbxmx::snapshot_rbxmx,
-    toml::snapshot_toml,
-    txt::snapshot_txt,
-    util::PathExt,
+    csv::CsvMiddleware, dir::DirectoryMiddleware, json::JsonMiddleware,
+    json_model::JsonModelMiddleware, lua::LuaMiddleware, project::ProjectMiddleware,
+    rbxm::RbxmMiddleware, rbxmx::RbxmxMiddleware, toml::TomlMiddleware, txt::TxtMiddleware,
 };
 
+pub use self::meta_file::MetadataFile;
 pub use self::project::snapshot_project_node;
 
-/// Returns the path of the first relevant `init` file in the given directory.
-fn get_init_path(vfs: &Vfs, path: &Path) -> anyhow::Result<Option<PathBuf>> {
-    let project_path = path.join("default.project.json");
-    if vfs.metadata(&project_path).with_not_found()?.is_some() {
-        return Ok(Some(project_path));
-    }
+pub fn get_middlewares_ordered() -> &'static Vec<Arc<dyn SnapshotMiddleware>> {
+    static MIDDLEWARES: OnceLock<Vec<Arc<dyn SnapshotMiddleware>>> = OnceLock::new();
 
-    let init_path = path.join("init.luau");
-    if vfs.metadata(&init_path).with_not_found()?.is_some() {
-        return Ok(Some(init_path));
-    }
-
-    let init_path = path.join("init.lua");
-    if vfs.metadata(&init_path).with_not_found()?.is_some() {
-        return Ok(Some(init_path));
-    }
-
-    let init_path = path.join("init.server.luau");
-    if vfs.metadata(&init_path).with_not_found()?.is_some() {
-        return Ok(Some(init_path));
-    }
-
-    let init_path = path.join("init.server.lua");
-    if vfs.metadata(&init_path).with_not_found()?.is_some() {
-        return Ok(Some(init_path));
-    }
-
-    let init_path = path.join("init.client.luau");
-    if vfs.metadata(&init_path).with_not_found()?.is_some() {
-        return Ok(Some(init_path));
-    }
-
-    let init_path = path.join("init.client.lua");
-    if vfs.metadata(&init_path).with_not_found()?.is_some() {
-        return Ok(Some(init_path));
-    }
-
-    let init_path = path.join("init.csv");
-    if vfs.metadata(&init_path).with_not_found()?.is_some() {
-        return Ok(Some(init_path));
-    }
-
-    Ok(None)
+    MIDDLEWARES.get_or_init(|| {
+        vec![
+            Arc::new(CsvMiddleware),
+            Arc::new(TxtMiddleware),
+            Arc::new(TomlMiddleware),
+            Arc::new(LuaMiddleware),
+            Arc::new(RbxmMiddleware),
+            Arc::new(RbxmxMiddleware),
+            Arc::new(DirectoryMiddleware),
+            Arc::new(ProjectMiddleware),
+            Arc::new(JsonModelMiddleware),
+            Arc::new(JsonMiddleware),
+        ]
+    })
 }
 
-/// Returns the transformer for the object. Any override rules in the `context`
-/// take precedence.
-fn get_transformer(context: &InstanceContext, path: &Path) -> Option<Transformer> {
-    if let Some(rojo_type) = context.get_transformer_override(path) {
-        return Some(rojo_type);
-    }
+pub fn get_middlewares() -> &'static HashMap<&'static str, Arc<dyn SnapshotMiddleware>> {
+    static MIDDLEWARES: OnceLock<HashMap<&'static str, Arc<dyn SnapshotMiddleware>>> =
+        OnceLock::new();
 
-    if path.file_name_ends_with(".server.lua") || path.file_name_ends_with(".server.luau") {
-        Some(Transformer::LuauServer)
-    } else if path.file_name_ends_with(".client.lua") || path.file_name_ends_with(".client.luau") {
-        Some(Transformer::LuauClient)
-    } else if path.file_name_ends_with(".lua") || path.file_name_ends_with(".luau") {
-        Some(Transformer::LuauModule)
-    } else if path.file_name_ends_with(".project.json") {
-        Some(Transformer::Project)
-    } else if path.file_name_ends_with(".model.json") {
-        Some(Transformer::JsonModel)
-    } else if path.file_name_ends_with(".meta.json") {
-        // .meta.json files do not turn into their own instances.
-        None
-    } else if path.file_name_ends_with(".json") {
-        Some(Transformer::Json)
-    } else if path.file_name_ends_with(".toml") {
-        Some(Transformer::Toml)
-    } else if path.file_name_ends_with(".csv") {
-        Some(Transformer::Csv)
-    } else if path.file_name_ends_with(".txt") {
-        Some(Transformer::Plain)
-    } else if path.file_name_ends_with(".rbxmx") {
-        Some(Transformer::Rbxmx)
-    } else if path.file_name_ends_with(".rbxm") {
-        Some(Transformer::Rbxm)
-    } else {
-        None
-    }
+    MIDDLEWARES.get_or_init(|| {
+        get_middlewares_ordered()
+            .iter()
+            .map(|m| (m.middleware_id(), m.clone()))
+            .collect()
+    })
+}
+
+pub fn get_middleware_inits() -> &'static HashMap<&'static str, &'static str> {
+    static MIDDLEWARES_INIT: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
+
+    MIDDLEWARES_INIT.get_or_init(|| {
+        get_middlewares()
+            .iter()
+            .flat_map(|(&provider_id, middleware)| {
+                middleware
+                    .init_names()
+                    .iter()
+                    .map(move |&init_name| (init_name, provider_id))
+            })
+            .collect()
+    })
+}
+
+pub fn get_middleware_globs() -> &'static Vec<(&'static str, GlobSet, GlobSet)> {
+    static MIDDLEWARES_GLOBS: OnceLock<Vec<(&'static str, GlobSet, GlobSet)>> = OnceLock::new();
+
+    MIDDLEWARES_GLOBS.get_or_init(|| {
+        get_middlewares_ordered()
+            .iter()
+            .map(|middleware| {
+                let mut include_builder = GlobSetBuilder::new();
+                middleware.default_globs().iter().for_each(|&glob| {
+                    include_builder.add(Glob::new(glob).unwrap());
+                });
+
+                let mut exclude_builder = GlobSetBuilder::new();
+                middleware.exclude_globs().iter().for_each(|&glob| {
+                    exclude_builder.add(Glob::new(glob).unwrap());
+                });
+
+                (
+                    middleware.middleware_id(),
+                    include_builder.build().unwrap(),
+                    exclude_builder.build().unwrap(),
+                )
+            })
+            .collect()
+    })
 }
 
 /// The main entrypoint to the snapshot function. This function can be pointed
@@ -131,70 +118,36 @@ pub fn snapshot_from_vfs(
     vfs: &Vfs,
     path: &Path,
 ) -> anyhow::Result<Option<InstanceSnapshot>> {
-    let meta = match vfs.metadata(path).with_not_found()? {
+    let _meta = match vfs.metadata(path).with_not_found()? {
         Some(meta) => meta,
         None => return Ok(None),
     };
 
-    if meta.is_dir() {
-        if let Some(init_path) = get_init_path(vfs, path)? {
-            match get_transformer(context, &init_path) {
-                Some(Transformer::Project) => return snapshot_project(context, vfs, &init_path),
-                Some(Transformer::LuauModule) => {
-                    return snapshot_lua_init(context, vfs, &init_path, Some(ScriptType::Module))
+    for (provider_id, include_glob, exclude_glob) in get_middleware_globs() {
+        // trace!(
+        //     "Checking if {:?} matches {:?}: {} {}",
+        //     get_middlewares()[provider_id].default_globs(),
+        //     path,
+        //     include_glob.is_match(path),
+        //     if exclude_glob.is_match(path) {
+        //         "(exclude)"
+        //     } else {
+        //         "(included)"
+        //     }
+        // );
+        if include_glob.is_match(path) && !exclude_glob.is_match(path) {
+            if get_middlewares()[provider_id].match_only_directories() {
+                if vfs.metadata(path)?.is_file() {
+                    continue;
                 }
-                Some(Transformer::LuauServer) => {
-                    return snapshot_lua_init(context, vfs, &init_path, Some(ScriptType::Server))
-                }
-                Some(Transformer::LuauClient) => {
-                    return snapshot_lua_init(context, vfs, &init_path, Some(ScriptType::Client))
-                }
-                Some(Transformer::Csv) => return snapshot_csv_init(context, vfs, &init_path),
-
-                Some(Transformer::Other(rojo_type_string)) => {
-                    anyhow::bail!("Unknown rojo type: {}", rojo_type_string)
-                }
-
-                Some(_) | None => (),
             }
-        }
 
-        snapshot_dir(context, vfs, path)
-    } else {
-        let file_name = path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .with_context(|| format!("Path had an invalid file name: {}", path.display()))?;
-
-        // Ignore files processed by the is_dir check above
-        match file_name {
-            "init.lua" | "init.luau" | "init.client.lua" | "init.client.luau"
-            | "init.server.lua" | "init.server.luau" | "init.csv" => return Ok(None),
-            _ => (),
-        }
-
-        match get_transformer(context, path) {
-            Some(Transformer::Project) => snapshot_project(context, vfs, path),
-            Some(Transformer::JsonModel) => snapshot_json_model(context, vfs, path),
-            Some(Transformer::Json) => snapshot_json(context, vfs, path),
-            Some(Transformer::Toml) => snapshot_toml(context, vfs, path),
-            Some(Transformer::Csv) => snapshot_csv(context, vfs, path),
-            Some(Transformer::Plain) => snapshot_txt(context, vfs, path),
-            Some(Transformer::LuauModule) => {
-                snapshot_lua(context, vfs, path, Some(ScriptType::Module))
-            }
-            Some(Transformer::LuauServer) => {
-                snapshot_lua(context, vfs, path, Some(ScriptType::Server))
-            }
-            Some(Transformer::LuauClient) => {
-                snapshot_lua(context, vfs, path, Some(ScriptType::Client))
-            }
-            Some(Transformer::Rbxmx) => snapshot_rbxmx(context, vfs, path),
-            Some(Transformer::Rbxm) => snapshot_rbxm(context, vfs, path),
-            Some(Transformer::Other(rojo_type_string)) => {
-                anyhow::bail!("Unknown rojo type: {}", rojo_type_string)
-            }
-            None | Some(Transformer::Ignore) => Ok(None),
+            return get_middlewares()[provider_id].snapshot(context, vfs, path);
         }
     }
+
+    Ok(None)
+
+    // TODO: handle transformer settings
+    // TODO: make sure globs handle directories properly
 }

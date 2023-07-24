@@ -70,6 +70,7 @@ impl<T> IoResultExt<T> for io::Result<T> {
 pub trait VfsBackend: sealed::Sealed + Send + 'static {
     fn read(&mut self, path: &Path) -> io::Result<Vec<u8>>;
     fn write(&mut self, path: &Path, data: &[u8]) -> io::Result<()>;
+    fn write_dir(&mut self, path: &Path) -> io::Result<()>;
     fn read_dir(&mut self, path: &Path) -> io::Result<ReadDir>;
     fn metadata(&mut self, path: &Path) -> io::Result<Metadata>;
     fn remove_file(&mut self, path: &Path) -> io::Result<()>;
@@ -159,6 +160,11 @@ impl VfsInner {
         let path = path.as_ref();
         let contents = contents.as_ref();
         self.backend.write(path, contents)
+    }
+
+    fn write_dir<P: AsRef<Path>>(&mut self, path: P) -> io::Result<()> {
+        let path = path.as_ref();
+        self.backend.write_dir(path)
     }
 
     fn read_dir<P: AsRef<Path>>(&mut self, path: P) -> io::Result<ReadDir> {
@@ -271,6 +277,17 @@ impl Vfs {
         let path = path.as_ref();
         let contents = contents.as_ref();
         self.inner.lock().unwrap().write(path, contents)
+    }
+
+    /// Write a file to the VFS and the underlying backend.
+    ///
+    /// Roughly equivalent to [`std::fs::create_dir`][std::fs::create_dir].
+    ///
+    /// [std::fs::create_dir]: https://doc.rust-lang.org/stable/std/fs/fn.create_dir.html
+    #[inline]
+    pub fn write_dir<P: AsRef<Path>>(&self, path: P) -> io::Result<()> {
+        let path = path.as_ref();
+        self.inner.lock().unwrap().write_dir(path)
     }
 
     /// Read all of the children of a directory.

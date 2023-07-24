@@ -151,6 +151,12 @@ impl VfsBackend for InMemoryFs {
         )
     }
 
+    fn write_dir(&mut self, path: &Path) -> io::Result<()> {
+        let mut inner = self.inner.lock().unwrap();
+
+        inner.load_snapshot(path.to_path_buf(), VfsSnapshot::empty_dir())
+    }
+
     fn read_dir(&mut self, path: &Path) -> io::Result<ReadDir> {
         let inner = self.inner.lock().unwrap();
 

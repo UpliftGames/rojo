@@ -1,0 +1,10 @@
+{
+  "properties": {
+    "Tags": [
+      "Test"
+    ]
+  },
+  "attributes": {
+    "sample": "hello world!"
+  }
+}

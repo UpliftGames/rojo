@@ -1,97 +1,186 @@
-use std::{collections::BTreeMap, path::Path};
-
-use anyhow::Context;
-use maplit::hashmap;
-use memofs::{IoResultExt, Vfs};
-use serde::Serialize;
-
-use crate::snapshot::{InstanceContext, InstanceMetadata, InstanceSnapshot};
-
-use super::{
-    dir::{dir_meta, snapshot_dir_no_meta},
-    meta_file::AdjacentMetadata,
-    util::PathExt,
+use std::{
+    collections::{BTreeMap, HashMap, HashSet},
+    path::Path,
 };
 
-pub fn snapshot_csv(
-    _context: &InstanceContext,
-    vfs: &Vfs,
-    path: &Path,
-) -> anyhow::Result<Option<InstanceSnapshot>> {
-    let name = path.file_name_trim_extension()?;
+use anyhow::{bail, Context};
+use maplit::hashmap;
+use memofs::{IoResultExt, Vfs};
+use rbx_dom_weak::{
+    types::{Ref, Variant},
+    Instance, WeakDom,
+};
+use serde::{Deserialize, Serialize};
 
-    let meta_path = path.with_file_name(format!("{}.meta.json", name));
-    let contents = vfs.read(path)?;
+use crate::snapshot::{
+    DeepDiff, InstanceContext, InstanceMetadata, InstanceSnapshot, RojoTree, SnapshotMiddleware,
+    PRIORITY_SINGLE_READABLE,
+};
 
-    let table_contents = convert_localization_csv(&contents).with_context(|| {
-        format!(
-            "File was not a valid LocalizationTable CSV file: {}",
-            path.display()
+use super::{
+    meta_file::MetadataFile,
+    util::{reconcile_meta_file, try_remove_file, PathExt},
+};
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct CsvMiddleware;
+
+impl SnapshotMiddleware for CsvMiddleware {
+    fn middleware_id(&self) -> &'static str {
+        "csv"
+    }
+
+    fn default_globs(&self) -> &[&'static str] {
+        &["**/*.csv"]
+    }
+
+    fn init_names(&self) -> &[&'static str] {
+        &["init.csv"]
+    }
+
+    fn snapshot(
+        &self,
+        _context: &InstanceContext,
+        vfs: &Vfs,
+        path: &Path,
+    ) -> anyhow::Result<Option<InstanceSnapshot>> {
+        let name = path.file_name_trim_extension()?;
+
+        let meta_path = path.with_file_name(format!("{}.meta.json", name));
+        let contents = vfs.read(path)?;
+
+        let table_contents = convert_localization_csv(&contents).with_context(|| {
+            format!(
+                "File was not a valid LocalizationTable CSV file: {}",
+                path.display()
+            )
+        })?;
+
+        let mut snapshot = InstanceSnapshot::new()
+            .name(name)
+            .class_name("LocalizationTable")
+            .properties(hashmap! {
+                "Contents".to_owned() => table_contents.into(),
+            })
+            .metadata(
+                InstanceMetadata::new()
+                    .instigating_source(path)
+                    .relevant_paths(vec![path.to_path_buf(), meta_path.clone()])
+                    .snapshot_middleware(self.middleware_id()),
+            );
+
+        if let Some(meta_contents) = vfs.read(&meta_path).with_not_found()? {
+            let mut metadata = MetadataFile::from_slice(&meta_contents, meta_path)?;
+            metadata.apply_all(&mut snapshot)?;
+        }
+
+        Ok(Some(snapshot))
+    }
+
+    fn syncback_priority(
+        &self,
+        _dom: &WeakDom,
+        instance: &rbx_dom_weak::Instance,
+        consider_descendants: bool,
+    ) -> Option<i32> {
+        if consider_descendants && !instance.children().is_empty() {
+            return None;
+        }
+
+        if instance.class == "LocalizationTable" {
+            Some(PRIORITY_SINGLE_READABLE)
+        } else {
+            None
+        }
+    }
+
+    fn syncback_update(
+        &self,
+        vfs: &Vfs,
+        path: &Path,
+        diff: &DeepDiff,
+        tree: &mut RojoTree,
+        old_ref: Ref,
+        new_dom: &WeakDom,
+        context: &InstanceContext,
+    ) -> anyhow::Result<InstanceMetadata> {
+        let old_inst = tree.get_instance(old_ref).unwrap();
+
+        let new_ref = diff
+            .get_matching_new_ref(old_ref)
+            .with_context(|| "no matching new ref")?;
+        let new_inst = new_dom.get_by_ref(new_ref).with_context(|| "missing ref")?;
+
+        let my_metadata = old_inst.metadata().clone();
+
+        vfs.write(path, get_instance_contents(new_inst)?)?;
+
+        reconcile_meta_file(
+            vfs,
+            &path.with_extension("meta.json"),
+            new_inst,
+            HashSet::from(["Contents", "ClassName"]),
+            Some("LocalizationTable"),
+        )?;
+
+        Ok(my_metadata
+            .instigating_source(path)
+            .context(context)
+            .relevant_paths(vec![path.to_path_buf(), path.with_extension("meta.json")])
+            .snapshot_middleware(self.middleware_id()))
+    }
+
+    fn syncback_new(
+        &self,
+        vfs: &Vfs,
+        parent_path: &Path,
+        name: &str,
+        new_dom: &WeakDom,
+        new_ref: Ref,
+        context: &InstanceContext,
+    ) -> anyhow::Result<InstanceSnapshot> {
+        let instance = new_dom.get_by_ref(new_ref).unwrap();
+        let path = parent_path.join(format!("{}.csv", name));
+
+        vfs.write(&path, get_instance_contents(instance)?)?;
+
+        reconcile_meta_file(
+            vfs,
+            &path.with_extension("meta.json"),
+            instance,
+            HashSet::from(["Contents", "ClassName"]),
+            Some("LocalizationTable"),
+        )?;
+
+        Ok(
+            InstanceSnapshot::from_tree_copy(new_dom, new_ref, false).metadata(
+                InstanceMetadata::new()
+                    .context(context)
+                    .instigating_source(path.clone())
+                    .relevant_paths(vec![path.clone(), path.with_extension("meta.json")])
+                    .snapshot_middleware(self.middleware_id()),
+            ),
         )
-    })?;
-
-    let mut snapshot = InstanceSnapshot::new()
-        .name(name)
-        .class_name("LocalizationTable")
-        .properties(hashmap! {
-            "Contents".to_owned() => table_contents.into(),
-        })
-        .metadata(
-            InstanceMetadata::new()
-                .instigating_source(path)
-                .relevant_paths(vec![path.to_path_buf(), meta_path.clone()]),
-        );
-
-    if let Some(meta_contents) = vfs.read(&meta_path).with_not_found()? {
-        let mut metadata = AdjacentMetadata::from_slice(&meta_contents, meta_path)?;
-        metadata.apply_all(&mut snapshot)?;
     }
 
-    Ok(Some(snapshot))
-}
-
-/// Attempts to snapshot an 'init' csv contained inside of a folder with
-/// the given name.
-///
-/// csv named `init.csv`
-/// their parents, which acts similarly to `__init__.py` from the Python world.
-pub fn snapshot_csv_init(
-    context: &InstanceContext,
-    vfs: &Vfs,
-    init_path: &Path,
-) -> anyhow::Result<Option<InstanceSnapshot>> {
-    let folder_path = init_path.parent().unwrap();
-    let dir_snapshot = snapshot_dir_no_meta(context, vfs, folder_path)?.unwrap();
-
-    if dir_snapshot.class_name != "Folder" {
-        anyhow::bail!(
-            "init.csv can only be used if the instance produced by \
-             the containing directory would be a Folder.\n\
-             \n\
-             The directory {} turned into an instance of class {}.",
-            folder_path.display(),
-            dir_snapshot.class_name
-        );
+    fn syncback_destroy(
+        &self,
+        vfs: &Vfs,
+        path: &Path,
+        _tree: &mut RojoTree,
+        _old_ref: Ref,
+    ) -> anyhow::Result<()> {
+        vfs.remove_file(path)?;
+        try_remove_file(vfs, &path.with_extension("meta.json"))?;
+        Ok(())
     }
-
-    let mut init_snapshot = snapshot_csv(context, vfs, init_path)?.unwrap();
-
-    init_snapshot.name = dir_snapshot.name;
-    init_snapshot.children = dir_snapshot.children;
-    init_snapshot.metadata = dir_snapshot.metadata;
-
-    if let Some(mut meta) = dir_meta(vfs, folder_path)? {
-        meta.apply_all(&mut init_snapshot)?;
-    }
-
-    Ok(Some(init_snapshot))
 }
 
 /// Struct that holds any valid row from a Roblox CSV translation table.
 ///
 /// We manually deserialize into this table from CSV, but let serde_json handle
 /// serialization.
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct LocalizationEntry<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -164,6 +253,80 @@ fn convert_localization_csv(contents: &[u8]) -> Result<String, csv::Error> {
     Ok(encoded)
 }
 
+#[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LocalizationEntryOwned {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    key: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    context: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    example: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source: Option<String>,
+
+    // We use a BTreeMap here to get deterministic output order.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    values: BTreeMap<String, String>,
+}
+
+fn get_instance_contents(instance: &Instance) -> anyhow::Result<Vec<u8>> {
+    let json_contents = get_raw_contents(instance)?;
+    read_table_to_csv(json_contents)
+}
+
+fn get_raw_contents(instance: &Instance) -> anyhow::Result<&str> {
+    Ok(match instance.properties.get("Contents") {
+        Some(Variant::String(contents)) => contents.as_str(),
+        Some(Variant::BinaryString(contents)) => core::str::from_utf8(&contents.as_ref())?,
+        Some(Variant::SharedString(contents)) => core::str::from_utf8(&contents.data())?,
+        _ => bail!("LocalizationTable.Contents was not a string or was missing"),
+    })
+}
+
+fn read_table_to_csv(contents: &str) -> anyhow::Result<Vec<u8>> {
+    let mut result: Vec<u8> = Vec::new();
+    let mut writer = csv::Writer::from_writer(&mut result);
+
+    let contents: Vec<LocalizationEntryOwned> = serde_json::from_str(contents)?;
+
+    let mut headers = vec!["Key", "Source", "Context", "Example"];
+
+    let mut extra_headers = HashMap::new();
+    for entry in &contents {
+        for (key, _) in &entry.values {
+            if !extra_headers.contains_key(key.as_str()) {
+                extra_headers.insert(key.as_str(), headers.len());
+                headers.push(key);
+            }
+        }
+    }
+
+    let extra_headers_iter = headers.iter().skip(4).map(|v| *v);
+
+    writer.write_record(&headers)?;
+    for entry in &contents {
+        let values = [&entry.key, &entry.source, &entry.context, &entry.example]
+            .into_iter()
+            .map(|v| v.as_ref().map(|v| v.as_str()))
+            .chain(
+                extra_headers_iter
+                    .clone()
+                    .map(|key| entry.values.get(key).map(|v| v.as_str())),
+            )
+            .map(|v| v.unwrap_or(""));
+        writer.write_record(values)?;
+    }
+    writer.flush()?;
+
+    drop(writer); // release borrow so we can return result
+
+    Ok(result)
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -185,10 +348,10 @@ Ack,Ack!,,An exclamation of despair,¡Ay!"#,
 
         let mut vfs = Vfs::new(imfs);
 
-        let instance_snapshot =
-            snapshot_csv(&InstanceContext::default(), &mut vfs, Path::new("/foo.csv"))
-                .unwrap()
-                .unwrap();
+        let instance_snapshot = CsvMiddleware
+            .snapshot(&InstanceContext::default(), &mut vfs, Path::new("/foo.csv"))
+            .unwrap()
+            .unwrap();
 
         insta::assert_yaml_snapshot!(instance_snapshot);
     }
@@ -213,10 +376,10 @@ Ack,Ack!,,An exclamation of despair,¡Ay!"#,
 
         let mut vfs = Vfs::new(imfs);
 
-        let instance_snapshot =
-            snapshot_csv(&InstanceContext::default(), &mut vfs, Path::new("/foo.csv"))
-                .unwrap()
-                .unwrap();
+        let instance_snapshot = CsvMiddleware
+            .snapshot(&InstanceContext::default(), &mut vfs, Path::new("/foo.csv"))
+            .unwrap()
+            .unwrap();
 
         insta::assert_yaml_snapshot!(instance_snapshot);
     }

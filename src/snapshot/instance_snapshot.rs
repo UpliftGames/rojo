@@ -128,6 +128,30 @@ impl InstanceSnapshot {
             children,
         }
     }
+
+    #[profiling::function]
+    pub fn from_tree_copy(tree: &WeakDom, id: Ref, include_children: bool) -> Self {
+        let instance = tree.get_by_ref(id).expect("instance did not exist in tree");
+
+        let children = if include_children {
+            instance
+                .children()
+                .iter()
+                .map(|&id| Self::from_tree_copy(tree, id, true))
+                .collect()
+        } else {
+            Vec::new()
+        };
+
+        Self {
+            snapshot_id: Some(id),
+            metadata: InstanceMetadata::default(),
+            name: Cow::Owned(instance.name.clone()),
+            class_name: Cow::Owned(instance.class.clone()),
+            properties: instance.properties.clone(),
+            children,
+        }
+    }
 }
 
 impl Default for InstanceSnapshot {

@@ -61,6 +61,10 @@ impl VfsBackend for StdBackend {
         fs_err::write(path, data)
     }
 
+    fn write_dir(&mut self, path: &Path) -> io::Result<()> {
+        fs_err::create_dir(path)
+    }
+
     fn read_dir(&mut self, path: &Path) -> io::Result<ReadDir> {
         let entries: Result<Vec<_>, _> = fs_err::read_dir(path)?.collect();
         let mut entries = entries?;

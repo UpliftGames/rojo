@@ -9,64 +9,184 @@ use crate::{
     project::{PathNode, Project, ProjectNode},
     snapshot::{
         InstanceContext, InstanceMetadata, InstanceSnapshot, InstigatingSource, PathIgnoreRule,
-        TransformerRule,
+        SnapshotMiddleware, TransformerRule,
     },
 };
 
 use super::snapshot_from_vfs;
 
-pub fn snapshot_project(
-    context: &InstanceContext,
-    vfs: &Vfs,
-    path: &Path,
-) -> anyhow::Result<Option<InstanceSnapshot>> {
-    let project = Project::load_from_slice(&vfs.read(path)?, path)
-        .with_context(|| format!("File was not a valid Rojo project: {}", path.display()))?;
+#[derive(Debug, PartialEq, Eq)]
+pub struct ProjectMiddleware;
 
-    let mut context = context.clone();
+impl SnapshotMiddleware for ProjectMiddleware {
+    fn middleware_id(&self) -> &'static str {
+        "project"
+    }
 
-    let path_ignore_rules = project.glob_ignore_paths.iter().map(|glob| PathIgnoreRule {
-        glob: glob.clone(),
-        base_path: project.folder_location().to_path_buf(),
-    });
+    fn default_globs(&self) -> &[&'static str] {
+        &["**/*.project.json"]
+    }
 
-    context.add_path_ignore_rules(path_ignore_rules);
+    fn init_names(&self) -> &[&'static str] {
+        &["default.project.json"]
+    }
 
-    let transformer_rules = project
-        .transformer_rules
-        .iter()
-        .map(|rule| TransformerRule {
-            pattern: rule.pattern.clone(),
-            transformer_name: rule.transformer_name.clone(),
+    fn snapshot(
+        &self,
+        context: &InstanceContext,
+        vfs: &Vfs,
+        path: &Path,
+    ) -> anyhow::Result<Option<InstanceSnapshot>> {
+        let project = Project::load_from_slice(&vfs.read(path)?, path)
+            .with_context(|| format!("File was not a valid Rojo project: {}", path.display()))?;
+
+        let mut context = context.clone();
+
+        let path_ignore_rules = project.glob_ignore_paths.iter().map(|glob| PathIgnoreRule {
+            glob: glob.clone(),
             base_path: project.folder_location().to_path_buf(),
         });
 
-    context.add_transformer_rules(transformer_rules);
+        context.add_path_ignore_rules(path_ignore_rules);
 
-    match snapshot_project_node(&context, path, &project.name, &project.tree, vfs, None)? {
-        Some(found_snapshot) => {
-            let mut snapshot = found_snapshot;
-            // Setting the instigating source to the project file path is a little
-            // coarse.
-            //
-            // Ideally, we'd only snapshot the project file if the project file
-            // actually changed. Because Rojo only has the concept of one
-            // relevant path -> snapshot path mapping per instance, we pick the more
-            // conservative approach of snapshotting the project file if any
-            // relevant paths changed.
-            snapshot.metadata.instigating_source = Some(path.to_path_buf().into());
+        let transformer_rules = project
+            .transformer_rules
+            .iter()
+            .map(|rule| TransformerRule {
+                pattern: rule.pattern.clone(),
+                transformer_name: rule.transformer_name.clone(),
+                base_path: project.folder_location().to_path_buf(),
+            });
 
-            // Mark this snapshot (the root node of the project file) as being
-            // related to the project file.
-            //
-            // We SHOULD NOT mark the project file as a relevant path for any
-            // nodes that aren't roots. They'll be updated as part of the project
-            // file being updated.
-            snapshot.metadata.relevant_paths.push(path.to_path_buf());
+        context.add_transformer_rules(transformer_rules);
 
-            Ok(Some(snapshot))
+        match snapshot_project_node(&context, path, &project.name, &project.tree, vfs, None)? {
+            Some(found_snapshot) => {
+                let mut snapshot = found_snapshot;
+                // Setting the instigating source to the project file path is a little
+                // coarse.
+                //
+                // Ideally, we'd only snapshot the project file if the project file
+                // actually changed. Because Rojo only has the concept of one
+                // relevant path -> snapshot path mapping per instance, we pick the more
+                // conservative approach of snapshotting the project file if any
+                // relevant paths changed.
+                snapshot.metadata.instigating_source = Some(path.to_path_buf().into());
+
+                // Mark this snapshot (the root node of the project file) as being
+                // related to the project file.
+                //
+                // We SHOULD NOT mark the project file as a relevant path for any
+                // nodes that aren't roots. They'll be updated as part of the project
+                // file being updated.
+                snapshot.metadata.relevant_paths.push(path.to_path_buf());
+
+                snapshot.metadata.snapshot_middleware = Some(self.middleware_id());
+
+                Ok(Some(snapshot))
+            }
+            None => Ok(None),
         }
-        None => Ok(None),
+    }
+
+    fn syncback_priority(
+        &self,
+        _dom: &rbx_dom_weak::WeakDom,
+        _instance: &rbx_dom_weak::Instance,
+        _consider_descendants: bool,
+    ) -> Option<i32> {
+        None
+    }
+
+    fn syncback_update(
+        &self,
+        vfs: &Vfs,
+        path: &Path,
+        diff: &crate::snapshot::DeepDiff,
+        tree: &mut crate::snapshot::RojoTree,
+        old_ref: rbx_dom_weak::types::Ref,
+        new_dom: &rbx_dom_weak::WeakDom,
+        context: &InstanceContext,
+    ) -> anyhow::Result<InstanceMetadata> {
+        let my_metadata = tree.get_metadata(old_ref).unwrap().clone();
+        let project = Project::load_from_slice(&vfs.read(path)?, path)
+            .with_context(|| format!("File was not a valid Rojo project: {}", path.display()))?;
+
+        let mut processing = vec![(&project.tree, old_ref)];
+        while !processing.is_empty() {
+            let (node, node_ref) = processing.pop().unwrap();
+            if diff.has_changed_properties(node_ref) {
+                // bail!("Cannot update project files from syncback")
+                log::trace!("Cannot update project files from syncback")
+            }
+            if !diff.has_changed_descendants(node_ref) {
+                continue;
+            }
+
+            let node_inst = tree.get_instance(node_ref);
+            let node_inst = match node_inst {
+                Some(inst) => inst,
+                None => {
+                    log::trace!("Missing ref for node {:?}", node.path);
+                    continue;
+                }
+            };
+
+            log::trace!("checking {}", node_inst.name());
+
+            for child_ref in node_inst.children() {
+                let child_inst = tree.get_instance(*child_ref).unwrap();
+                if let Some(InstigatingSource::ProjectNode(_, _, _, _)) =
+                    child_inst.metadata().instigating_source
+                {
+                    let matching_node = node.children.get(child_inst.name());
+                    if let Some(matching_node) = matching_node {
+                        if diff.has_changed_properties(*child_ref) {
+                            log::trace!("Cannot update project files from syncback");
+                            // bail!("Cannot update project files from syncback")
+                        }
+                        processing.push((matching_node, *child_ref));
+                    }
+                }
+            }
+
+            log::trace!("final check {:?}", &node.path);
+
+            if let Some(path_node) = &node.path {
+                let node_path = path_node.path();
+                let path = if node_path.is_relative() {
+                    path.parent().unwrap().join(node_path)
+                } else {
+                    node_path.to_path_buf()
+                };
+                log::trace!("syncing children of {}", node_inst.name());
+                tree.syncback_children(vfs, diff, node_ref, &path, new_dom, context)?;
+            }
+        }
+
+        Ok(my_metadata)
+    }
+
+    fn syncback_new(
+        &self,
+        _vfs: &Vfs,
+        _parent_path: &Path,
+        _name: &str,
+        _new_dom: &rbx_dom_weak::WeakDom,
+        _new_ref: rbx_dom_weak::types::Ref,
+        _context: &InstanceContext,
+    ) -> anyhow::Result<InstanceSnapshot> {
+        bail!("Cannot create new project files from syncback")
+    }
+
+    fn syncback_destroy(
+        &self,
+        _vfs: &Vfs,
+        _path: &Path,
+        _tree: &mut crate::snapshot::RojoTree,
+        _old_ref: rbx_dom_weak::types::Ref,
+    ) -> anyhow::Result<()> {
+        bail!("Cannot destroy project files from syncback")
     }
 }
 
@@ -103,6 +223,9 @@ pub fn snapshot_project_node(
         };
 
         if let Some(snapshot) = snapshot_from_vfs(context, vfs, &full_path)? {
+            log::trace!("project snapshot from vfs for {}", full_path.display());
+            // log::trace!("{:?}", snapshot);
+
             class_name_from_path = Some(snapshot.class_name);
 
             // Properties from the snapshot are pulled in unchanged, and
@@ -122,6 +245,8 @@ pub fn snapshot_project_node(
             // Take the snapshot's metadata as-is, which will be mutated later
             // on.
             metadata = snapshot.metadata;
+        } else {
+            log::trace!("no snapshot from vfs for {}", full_path.display());
         }
     }
 
@@ -349,10 +474,10 @@ mod test {
 
         let mut vfs = Vfs::new(imfs);
 
-        let instance_snapshot =
-            snapshot_project(&InstanceContext::default(), &mut vfs, Path::new("/foo"))
-                .expect("snapshot error")
-                .expect("snapshot returned no instances");
+        let instance_snapshot = ProjectMiddleware
+            .snapshot(&InstanceContext::default(), &mut vfs, Path::new("/foo"))
+            .expect("snapshot error")
+            .expect("snapshot returned no instances");
 
         insta::assert_yaml_snapshot!(instance_snapshot);
     }
@@ -379,13 +504,14 @@ mod test {
 
         let mut vfs = Vfs::new(imfs);
 
-        let instance_snapshot = snapshot_project(
-            &InstanceContext::default(),
-            &mut vfs,
-            Path::new("/foo/hello.project.json"),
-        )
-        .expect("snapshot error")
-        .expect("snapshot returned no instances");
+        let instance_snapshot = ProjectMiddleware
+            .snapshot(
+                &InstanceContext::default(),
+                &mut vfs,
+                Path::new("/foo/hello.project.json"),
+            )
+            .expect("snapshot error")
+            .expect("snapshot returned no instances");
 
         insta::assert_yaml_snapshot!(instance_snapshot);
     }
@@ -417,13 +543,14 @@ mod test {
 
         let mut vfs = Vfs::new(imfs);
 
-        let instance_snapshot = snapshot_project(
-            &InstanceContext::default(),
-            &mut vfs,
-            Path::new("/foo.project.json"),
-        )
-        .expect("snapshot error")
-        .expect("snapshot returned no instances");
+        let instance_snapshot = ProjectMiddleware
+            .snapshot(
+                &InstanceContext::default(),
+                &mut vfs,
+                Path::new("/foo.project.json"),
+            )
+            .expect("snapshot error")
+            .expect("snapshot returned no instances");
 
         insta::assert_yaml_snapshot!(instance_snapshot);
     }
@@ -453,13 +580,14 @@ mod test {
 
         let mut vfs = Vfs::new(imfs);
 
-        let instance_snapshot = snapshot_project(
-            &InstanceContext::default(),
-            &mut vfs,
-            Path::new("/foo.project.json"),
-        )
-        .expect("snapshot error")
-        .expect("snapshot returned no instances");
+        let instance_snapshot = ProjectMiddleware
+            .snapshot(
+                &InstanceContext::default(),
+                &mut vfs,
+                Path::new("/foo.project.json"),
+            )
+            .expect("snapshot error")
+            .expect("snapshot returned no instances");
 
         insta::assert_yaml_snapshot!(instance_snapshot);
     }
@@ -490,13 +618,14 @@ mod test {
 
         let mut vfs = Vfs::new(imfs);
 
-        let instance_snapshot = snapshot_project(
-            &InstanceContext::default(),
-            &mut vfs,
-            Path::new("/foo.project.json"),
-        )
-        .expect("snapshot error")
-        .expect("snapshot returned no instances");
+        let instance_snapshot = ProjectMiddleware
+            .snapshot(
+                &InstanceContext::default(),
+                &mut vfs,
+                Path::new("/foo.project.json"),
+            )
+            .expect("snapshot error")
+            .expect("snapshot returned no instances");
 
         insta::assert_yaml_snapshot!(instance_snapshot);
     }
@@ -524,13 +653,14 @@ mod test {
 
         let mut vfs = Vfs::new(imfs);
 
-        let instance_snapshot = snapshot_project(
-            &InstanceContext::default(),
-            &mut vfs,
-            Path::new("/foo/default.project.json"),
-        )
-        .expect("snapshot error")
-        .expect("snapshot returned no instances");
+        let instance_snapshot = ProjectMiddleware
+            .snapshot(
+                &InstanceContext::default(),
+                &mut vfs,
+                Path::new("/foo/default.project.json"),
+            )
+            .expect("snapshot error")
+            .expect("snapshot returned no instances");
 
         insta::assert_yaml_snapshot!(instance_snapshot);
     }
@@ -565,13 +695,14 @@ mod test {
 
         let mut vfs = Vfs::new(imfs);
 
-        let instance_snapshot = snapshot_project(
-            &InstanceContext::default(),
-            &mut vfs,
-            Path::new("/foo/default.project.json"),
-        )
-        .expect("snapshot error")
-        .expect("snapshot returned no instances");
+        let instance_snapshot = ProjectMiddleware
+            .snapshot(
+                &InstanceContext::default(),
+                &mut vfs,
+                Path::new("/foo/default.project.json"),
+            )
+            .expect("snapshot error")
+            .expect("snapshot returned no instances");
 
         insta::assert_yaml_snapshot!(instance_snapshot);
     }
@@ -610,13 +741,14 @@ mod test {
 
         let mut vfs = Vfs::new(imfs);
 
-        let instance_snapshot = snapshot_project(
-            &InstanceContext::default(),
-            &mut vfs,
-            Path::new("/foo/default.project.json"),
-        )
-        .expect("snapshot error")
-        .expect("snapshot returned no instances");
+        let instance_snapshot = ProjectMiddleware
+            .snapshot(
+                &InstanceContext::default(),
+                &mut vfs,
+                Path::new("/foo/default.project.json"),
+            )
+            .expect("snapshot error")
+            .expect("snapshot returned no instances");
 
         insta::assert_yaml_snapshot!(instance_snapshot);
     }
@@ -660,13 +792,14 @@ mod test {
 
         let mut vfs = Vfs::new(imfs);
 
-        let instance_snapshot = snapshot_project(
-            &InstanceContext::default(),
-            &mut vfs,
-            Path::new("/foo/default.project.json"),
-        )
-        .expect("snapshot error")
-        .expect("snapshot returned no instances");
+        let instance_snapshot = ProjectMiddleware
+            .snapshot(
+                &InstanceContext::default(),
+                &mut vfs,
+                Path::new("/foo/default.project.json"),
+            )
+            .expect("snapshot error")
+            .expect("snapshot returned no instances");
 
         insta::assert_yaml_snapshot!(instance_snapshot);
     }

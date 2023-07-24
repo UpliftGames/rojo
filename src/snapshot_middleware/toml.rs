@@ -6,47 +6,116 @@ use memofs::{IoResultExt, Vfs};
 
 use crate::{
     lua_ast::{Expression, Statement},
-    snapshot::{InstanceContext, InstanceMetadata, InstanceSnapshot},
+    snapshot::{InstanceContext, InstanceMetadata, InstanceSnapshot, SnapshotMiddleware},
 };
 
-use super::{meta_file::AdjacentMetadata, util::PathExt};
+use super::{
+    meta_file::MetadataFile,
+    util::{try_remove_file, PathExt},
+};
 
-pub fn snapshot_toml(
-    context: &InstanceContext,
-    vfs: &Vfs,
-    path: &Path,
-) -> anyhow::Result<Option<InstanceSnapshot>> {
-    let name = path.file_name_trim_extension()?;
-    let contents = vfs.read(path)?;
+#[derive(Debug, PartialEq, Eq)]
+pub struct TomlMiddleware;
 
-    let value: toml::Value = toml::from_slice(&contents)
-        .with_context(|| format!("File contains malformed TOML: {}", path.display()))?;
-
-    let as_lua = toml_to_lua(value).to_string();
-
-    let properties = hashmap! {
-        "Source".to_owned() => as_lua.into(),
-    };
-
-    let meta_path = path.with_file_name(format!("{}.meta.json", name));
-
-    let mut snapshot = InstanceSnapshot::new()
-        .name(name)
-        .class_name("ModuleScript")
-        .properties(properties)
-        .metadata(
-            InstanceMetadata::new()
-                .instigating_source(path)
-                .relevant_paths(vec![path.to_path_buf(), meta_path.clone()])
-                .context(context),
-        );
-
-    if let Some(meta_contents) = vfs.read(&meta_path).with_not_found()? {
-        let mut metadata = AdjacentMetadata::from_slice(&meta_contents, meta_path)?;
-        metadata.apply_all(&mut snapshot)?;
+impl SnapshotMiddleware for TomlMiddleware {
+    fn middleware_id(&self) -> &'static str {
+        "toml"
     }
 
-    Ok(Some(snapshot))
+    fn default_globs(&self) -> &[&'static str] {
+        &["**/*.toml"]
+    }
+
+    fn init_names(&self) -> &[&'static str] {
+        &["init.toml"]
+    }
+
+    fn snapshot(
+        &self,
+        context: &InstanceContext,
+        vfs: &Vfs,
+        path: &Path,
+    ) -> anyhow::Result<Option<InstanceSnapshot>> {
+        let name = path.file_name_trim_extension()?;
+        let contents = vfs.read(path)?;
+
+        let value: toml::Value = toml::from_slice(&contents)
+            .with_context(|| format!("File contains malformed TOML: {}", path.display()))?;
+
+        let as_lua = toml_to_lua(value).to_string();
+
+        let properties = hashmap! {
+            "Source".to_owned() => as_lua.into(),
+        };
+
+        let meta_path = path.with_file_name(format!("{}.meta.json", name));
+
+        let mut snapshot = InstanceSnapshot::new()
+            .name(name)
+            .class_name("ModuleScript")
+            .properties(properties)
+            .metadata(
+                InstanceMetadata::new()
+                    .instigating_source(path)
+                    .relevant_paths(vec![path.to_path_buf(), meta_path.clone()])
+                    .context(context)
+                    .snapshot_middleware(self.middleware_id()),
+            );
+
+        if let Some(meta_contents) = vfs.read(&meta_path).with_not_found()? {
+            let mut metadata = MetadataFile::from_slice(&meta_contents, meta_path)?;
+            metadata.apply_all(&mut snapshot)?;
+        }
+
+        Ok(Some(snapshot))
+    }
+
+    fn syncback_priority(
+        &self,
+        _dom: &rbx_dom_weak::WeakDom,
+        _instance: &rbx_dom_weak::Instance,
+        _consider_descendants: bool,
+    ) -> Option<i32> {
+        None
+        // TODO: implement lua ast _reading_ so we can convert lua to toml
+    }
+
+    fn syncback_update(
+        &self,
+        _vfs: &Vfs,
+        _path: &Path,
+        _diff: &crate::snapshot::DeepDiff,
+        _tree: &mut crate::snapshot::RojoTree,
+        _old_ref: rbx_dom_weak::types::Ref,
+        _new_dom: &rbx_dom_weak::WeakDom,
+        _context: &InstanceContext,
+    ) -> anyhow::Result<InstanceMetadata> {
+        todo!()
+    }
+
+    fn syncback_new(
+        &self,
+        _vfs: &Vfs,
+        _parent_path: &Path,
+        _name: &str,
+        _new_dom: &rbx_dom_weak::WeakDom,
+        _new_ref: rbx_dom_weak::types::Ref,
+        _context: &InstanceContext,
+    ) -> anyhow::Result<InstanceSnapshot> {
+        todo!()
+    }
+
+    fn syncback_destroy(
+        &self,
+        vfs: &Vfs,
+        path: &Path,
+        _tree: &mut crate::snapshot::RojoTree,
+        _old_ref: rbx_dom_weak::types::Ref,
+    ) -> anyhow::Result<()> {
+        vfs.remove_file(path)?;
+        try_remove_file(vfs, &path.with_extension("meta.json"))?;
+        Ok(())
+    }
 }
 
 fn toml_to_lua(value: toml::Value) -> Statement {
@@ -110,13 +179,14 @@ mod test {
 
         let mut vfs = Vfs::new(imfs.clone());
 
-        let instance_snapshot = snapshot_toml(
-            &InstanceContext::default(),
-            &mut vfs,
-            Path::new("/foo.toml"),
-        )
-        .unwrap()
-        .unwrap();
+        let instance_snapshot = TomlMiddleware
+            .snapshot(
+                &InstanceContext::default(),
+                &mut vfs,
+                Path::new("/foo.toml"),
+            )
+            .unwrap()
+            .unwrap();
 
         insta::assert_yaml_snapshot!(instance_snapshot);
     }
