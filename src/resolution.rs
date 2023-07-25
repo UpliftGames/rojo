@@ -38,7 +38,7 @@ impl UnresolvedValue {
 
     pub fn from_variant_property(class_name: &str, prop_name: &str, variant: Variant) -> Self {
         match find_descriptor(class_name, prop_name) {
-            Some(descriptor) => Self::from_variant(variant),
+            Some(_descriptor) => Self::from_variant(variant),
             None => UnresolvedValue::FullyQualified(variant),
         }
     }

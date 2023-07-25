@@ -410,7 +410,7 @@ pub fn snapshot_dir_no_meta(
 
             let init_middleware_id =
                 init_names.get(entry.path().file_name().unwrap().to_string_lossy().as_ref());
-            if let Some(&init_middleware_id) = init_middleware_id {
+            if let Some(&_init_middleware_id) = init_middleware_id {
                 continue;
             }
 
@@ -474,7 +474,6 @@ pub fn snapshot_dir_no_meta(
                         .context(&context),
                 )
         }
-        _ => bail!("Directory {} has more than one init file", path.display()),
     };
 
     Ok(Some(snapshot))

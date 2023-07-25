@@ -6,7 +6,7 @@ use std::{
 use anyhow::{bail, Context};
 use memofs::Vfs;
 use rbx_dom_weak::{
-    types::{Ref, UniqueId, Variant},
+    types::{Ref, Variant},
     Instance, InstanceBuilder, WeakDom,
 };
 

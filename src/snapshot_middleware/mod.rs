@@ -22,7 +22,7 @@ use std::sync::Arc;
 use std::{collections::HashMap, path::Path, sync::OnceLock};
 
 use globset::{Glob, GlobSet, GlobSetBuilder};
-use log::trace;
+
 use memofs::{IoResultExt, Vfs};
 
 use crate::snapshot::{InstanceContext, InstanceSnapshot, SnapshotMiddleware};

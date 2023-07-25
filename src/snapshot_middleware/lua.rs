@@ -1,10 +1,10 @@
-use std::{collections::HashSet, hash::Hash, path::Path, str};
+use std::{collections::HashSet, path::Path, str};
 
 use anyhow::{bail, Context};
 use maplit::hashmap;
 use memofs::{IoResultExt, Vfs};
 use rbx_dom_weak::{
-    types::{Ref, Tags, Variant},
+    types::{Ref, Variant},
     Instance, WeakDom,
 };
 
