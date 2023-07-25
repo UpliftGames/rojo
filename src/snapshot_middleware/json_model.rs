@@ -80,7 +80,7 @@ impl SnapshotMiddleware for JsonModelMiddleware {
             .instigating_source(path)
             .relevant_paths(vec![path.to_path_buf()])
             .context(context)
-            .snapshot_middleware(self.middleware_id());
+            .middleware_id(self.middleware_id());
 
         Ok(Some(snapshot))
     }
@@ -132,7 +132,7 @@ impl SnapshotMiddleware for JsonModelMiddleware {
             .instigating_source(path)
             .context(context)
             .relevant_paths(vec![path.to_path_buf(), path.with_extension("meta.json")])
-            .snapshot_middleware(self.middleware_id()))
+            .middleware_id(self.middleware_id()))
     }
 
     fn syncback_new(
@@ -163,7 +163,7 @@ impl SnapshotMiddleware for JsonModelMiddleware {
                     .context(context)
                     .instigating_source(path.clone())
                     .relevant_paths(vec![path.clone(), path.with_extension("meta.json")])
-                    .snapshot_middleware(self.middleware_id()),
+                    .middleware_id(self.middleware_id()),
             ),
         )
     }

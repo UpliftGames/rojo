@@ -256,7 +256,7 @@ impl RojoTree {
                 let new_child_inst = new_dom.get_by_ref(new_child_ref).unwrap();
 
                 let old_child_inst = tree.get_instance(old_child_ref).unwrap();
-                let existing_middleware = old_child_inst.metadata().snapshot_middleware;
+                let existing_middleware = old_child_inst.metadata().middleware_id;
 
                 let best_middleware = get_best_syncback_middleware(
                     tree.inner(),
@@ -288,7 +288,7 @@ impl RojoTree {
                     None
                 };
 
-                let existing_middleware_context = old_child_inst.metadata().syncback_context;
+                let existing_middleware_context = old_child_inst.metadata().middleware_context;
 
                 if Some(best_middleware) == existing_middleware {
                     let existing_path = existing_path.unwrap();
@@ -334,7 +334,7 @@ impl RojoTree {
 
             for old_child_ref in removed {
                 let old_child_inst = tree.get_instance(old_child_ref).unwrap();
-                let old_child_middleware = old_child_inst.metadata().snapshot_middleware;
+                let old_child_middleware = old_child_inst.metadata().middleware_id;
                 if let Some(old_child_middleware) = old_child_middleware {
                     let old_child_path = old_child_inst
                         .metadata()
@@ -404,7 +404,7 @@ impl RojoTree {
                 .get_instance(base_target)
                 .with_context(|| "Missing ref")?;
             loop {
-                if syncable.metadata.snapshot_middleware.is_some()
+                if syncable.metadata.middleware_id.is_some()
                     && diff.get_matching_new_ref(syncable.id()).is_some()
                 {
                     if let Some(InstigatingSource::Path(path)) =
@@ -435,8 +435,8 @@ impl RojoTree {
 
         let context = old_inst.metadata.context.clone();
 
-        let old_middleware_id = old_inst.metadata.snapshot_middleware.unwrap();
-        let old_middleware_context = old_inst.metadata.syncback_context;
+        let old_middleware_id = old_inst.metadata.middleware_id.unwrap();
+        let old_middleware_context = old_inst.metadata.middleware_context;
 
         let new_middleware_id =
             get_best_syncback_middleware(new_dom, new_inst, true, Some(old_middleware_id));

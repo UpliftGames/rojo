@@ -114,7 +114,7 @@ impl SnapshotMiddleware for RbxmxMiddleware {
             .instigating_source(path.clone())
             .context(context)
             .relevant_paths(vec![path.to_path_buf(), path.with_extension("meta.json")])
-            .snapshot_middleware(self.middleware_id()))
+            .middleware_id(self.middleware_id()))
     }
 
     fn syncback_new(
@@ -146,7 +146,7 @@ impl SnapshotMiddleware for RbxmxMiddleware {
                     .context(context)
                     .instigating_source(path.clone())
                     .relevant_paths(vec![path.clone(), path.with_extension("meta.json")])
-                    .snapshot_middleware(self.middleware_id()),
+                    .middleware_id(self.middleware_id()),
             ),
         )
     }

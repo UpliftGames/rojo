@@ -59,11 +59,11 @@ pub struct InstanceMetadata {
     ///
     /// We can use this to update, destroy, or replace the snapshot.
     #[serde(skip)]
-    pub snapshot_middleware: Option<&'static str>,
+    pub middleware_id: Option<&'static str>,
 
     /// The snapshot custom context we will need if a syncback is triggered.
     #[serde(skip)]
-    pub syncback_context: Option<Arc<dyn MiddlewareContextAny>>,
+    pub middleware_context: Option<Arc<dyn MiddlewareContextAny>>,
 }
 
 impl InstanceMetadata {
@@ -73,8 +73,8 @@ impl InstanceMetadata {
             instigating_source: None,
             relevant_paths: Vec::new(),
             context: InstanceContext::default(),
-            snapshot_middleware: None,
-            syncback_context: None,
+            middleware_id: None,
+            middleware_context: None,
         }
     }
 
@@ -106,16 +106,16 @@ impl InstanceMetadata {
         }
     }
 
-    pub fn snapshot_middleware(self, snapshot_middleware: &'static str) -> Self {
+    pub fn middleware_id(self, snapshot_middleware: &'static str) -> Self {
         Self {
-            snapshot_middleware: Some(snapshot_middleware),
+            middleware_id: Some(snapshot_middleware),
             ..self
         }
     }
 
-    pub fn syncback_context(self, context: Option<Arc<dyn MiddlewareContextAny>>) -> Self {
+    pub fn middleware_context(self, context: Option<Arc<dyn MiddlewareContextAny>>) -> Self {
         Self {
-            syncback_context: context,
+            middleware_context: context,
             ..self
         }
     }

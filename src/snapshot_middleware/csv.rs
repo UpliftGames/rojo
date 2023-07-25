@@ -67,7 +67,7 @@ impl SnapshotMiddleware for CsvMiddleware {
                 InstanceMetadata::new()
                     .instigating_source(path)
                     .relevant_paths(vec![path.to_path_buf(), meta_path.clone()])
-                    .snapshot_middleware(self.middleware_id()),
+                    .middleware_id(self.middleware_id()),
             );
 
         if let Some(meta_contents) = vfs.read(&meta_path).with_not_found()? {
@@ -129,7 +129,7 @@ impl SnapshotMiddleware for CsvMiddleware {
             .instigating_source(path)
             .context(context)
             .relevant_paths(vec![path.to_path_buf(), path.with_extension("meta.json")])
-            .snapshot_middleware(self.middleware_id()))
+            .middleware_id(self.middleware_id()))
     }
 
     fn syncback_new(
@@ -160,7 +160,7 @@ impl SnapshotMiddleware for CsvMiddleware {
                     .context(context)
                     .instigating_source(path.clone())
                     .relevant_paths(vec![path.clone(), path.with_extension("meta.json")])
-                    .snapshot_middleware(self.middleware_id()),
+                    .middleware_id(self.middleware_id()),
             ),
         )
     }

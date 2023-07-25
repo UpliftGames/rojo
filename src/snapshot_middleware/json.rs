@@ -63,7 +63,7 @@ impl SnapshotMiddleware for JsonMiddleware {
                     .instigating_source(path)
                     .relevant_paths(vec![path.to_path_buf(), meta_path.clone()])
                     .context(context)
-                    .snapshot_middleware(self.middleware_id()),
+                    .middleware_id(self.middleware_id()),
             );
 
         if let Some(meta_contents) = vfs.read(&meta_path).with_not_found()? {

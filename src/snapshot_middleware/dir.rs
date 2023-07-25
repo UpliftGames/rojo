@@ -66,7 +66,7 @@ impl SnapshotMiddleware for DirectoryMiddleware {
             meta.apply_all(&mut snapshot)?;
         }
 
-        snapshot.metadata.snapshot_middleware = Some(self.middleware_id());
+        snapshot.metadata.middleware_id = Some(self.middleware_id());
 
         Ok(Some(snapshot))
     }
@@ -156,9 +156,9 @@ impl SnapshotMiddleware for DirectoryMiddleware {
 
                 tree.update_props(old_ref, new_inst);
 
-                my_metadata.syncback_context = Some(Arc::new(DirectoryMiddlewareContext {
-                    init_middleware: new_init_metadata.snapshot_middleware.clone(),
-                    init_context: new_init_metadata.syncback_context.clone(),
+                my_metadata.middleware_context = Some(Arc::new(DirectoryMiddlewareContext {
+                    init_middleware: new_init_metadata.middleware_id.clone(),
+                    init_context: new_init_metadata.middleware_context.clone(),
                     init_path: new_init_metadata
                         .snapshot_source_path()
                         .map(|v| v.to_path_buf()),
@@ -192,15 +192,15 @@ impl SnapshotMiddleware for DirectoryMiddleware {
 
                     tree.update_props(old_ref, new_inst);
 
-                    my_metadata.syncback_context = Some(Arc::new(DirectoryMiddlewareContext {
-                        init_middleware: new_init_metadata.snapshot_middleware.clone(),
-                        init_context: new_init_metadata.syncback_context.clone(),
+                    my_metadata.middleware_context = Some(Arc::new(DirectoryMiddlewareContext {
+                        init_middleware: new_init_metadata.middleware_id.clone(),
+                        init_context: new_init_metadata.middleware_context.clone(),
                         init_path: new_init_metadata
                             .snapshot_source_path()
                             .map(|v| v.to_path_buf()),
                     }));
                 } else {
-                    my_metadata.syncback_context = None;
+                    my_metadata.middleware_context = None;
 
                     reconcile_meta_file(
                         vfs,
@@ -266,9 +266,9 @@ impl SnapshotMiddleware for DirectoryMiddleware {
                 .syncback_new(vfs, &new_path, "init", new_dom, new_ref, context)
                 .with_context(|| "failed to create instance on filesystem")?;
 
-            my_metadata.syncback_context = Some(Arc::new(DirectoryMiddlewareContext {
-                init_middleware: result.metadata.snapshot_middleware.clone(),
-                init_context: result.metadata.syncback_context.clone(),
+            my_metadata.middleware_context = Some(Arc::new(DirectoryMiddlewareContext {
+                init_middleware: result.metadata.middleware_id.clone(),
+                init_context: result.metadata.middleware_context.clone(),
                 init_path: result
                     .metadata
                     .snapshot_source_path()
@@ -451,7 +451,7 @@ pub fn snapshot_dir_no_meta(
             ),
         Some(init_snapshot) => {
             let mut syncback_context = None;
-            if let Some(init_middleware_id) = init_snapshot.metadata.snapshot_middleware {
+            if let Some(init_middleware_id) = init_snapshot.metadata.middleware_id {
                 let init_path = match &init_snapshot.metadata.instigating_source {
                     Some(InstigatingSource::Path(init_path)) => init_path.clone(),
                     _ => bail!("Invalid InstigatingSource from init snapshot"),
@@ -459,7 +459,7 @@ pub fn snapshot_dir_no_meta(
 
                 syncback_context = Some(Arc::new(DirectoryMiddlewareContext {
                     init_middleware: Some(init_middleware_id),
-                    init_context: init_snapshot.metadata.syncback_context.clone(),
+                    init_context: init_snapshot.metadata.middleware_context.clone(),
                     init_path: Some(init_path),
                 }) as Arc<dyn MiddlewareContextAny>);
             }
@@ -471,7 +471,7 @@ pub fn snapshot_dir_no_meta(
                     InstanceMetadata::new()
                         .instigating_source(path)
                         .relevant_paths(relevant_paths)
-                        .syncback_context(syncback_context)
+                        .middleware_context(syncback_context)
                         .context(&context),
                 )
         }

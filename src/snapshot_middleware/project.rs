@@ -171,7 +171,7 @@ impl SnapshotMiddleware for ProjectMiddleware {
                     .get_by_ref(new_ref)
                     .with_context(|| "missing ref (tree)")?;
 
-                let project_context = node_inst.metadata().syncback_context.clone().unwrap();
+                let project_context = node_inst.metadata().middleware_context.clone().unwrap();
                 let project_context: ProjectMiddlewareContext = project_context
                     .context_as_any()
                     .downcast_ref()
@@ -198,11 +198,12 @@ impl SnapshotMiddleware for ProjectMiddleware {
                             existing_middleware_context,
                         )?;
 
-                        new_metadata.syncback_context = Some(Arc::new(ProjectMiddlewareContext {
-                            node_middleware: new_metadata.snapshot_middleware,
-                            node_context: new_metadata.syncback_context,
-                        }));
-                        new_metadata.snapshot_middleware = Some(self.middleware_id());
+                        new_metadata.middleware_context =
+                            Some(Arc::new(ProjectMiddlewareContext {
+                                node_middleware: new_metadata.middleware_id,
+                                node_context: new_metadata.middleware_context,
+                            }));
+                        new_metadata.middleware_id = Some(self.middleware_id());
 
                         tree.update_metadata(node_ref, new_metadata)
                     } else {
@@ -228,12 +229,12 @@ impl SnapshotMiddleware for ProjectMiddleware {
                             context,
                         )?;
 
-                        new_snapshot.metadata.syncback_context =
+                        new_snapshot.metadata.middleware_context =
                             Some(Arc::new(ProjectMiddlewareContext {
-                                node_middleware: new_snapshot.metadata.snapshot_middleware,
-                                node_context: new_snapshot.metadata.syncback_context,
+                                node_middleware: new_snapshot.metadata.middleware_id,
+                                node_context: new_snapshot.metadata.middleware_context,
                             }));
-                        new_snapshot.metadata.snapshot_middleware = Some(self.middleware_id());
+                        new_snapshot.metadata.middleware_id = Some(self.middleware_id());
 
                         tree.insert_instance(parent_ref, new_snapshot);
                     }
@@ -330,11 +331,11 @@ pub fn snapshot_project_node(
             metadata = snapshot.metadata;
 
             // Move sub-snapshot middleware context into our own middleware context.
-            metadata.syncback_context = Some(Arc::new(ProjectMiddlewareContext {
-                node_middleware: metadata.snapshot_middleware,
-                node_context: metadata.syncback_context,
+            metadata.middleware_context = Some(Arc::new(ProjectMiddlewareContext {
+                node_middleware: metadata.middleware_id,
+                node_context: metadata.middleware_context,
             }));
-            metadata.snapshot_middleware = Some("project");
+            metadata.middleware_id = Some("project");
         } else {
             log::trace!("no snapshot from vfs for {}", full_path.display());
         }
