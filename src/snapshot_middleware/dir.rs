@@ -101,9 +101,11 @@ impl SnapshotMiddleware for DirectoryMiddleware {
         old_ref: Ref,
         new_dom: &WeakDom,
         context: &InstanceContext,
+        middleware_context: Option<Arc<dyn MiddlewareContextAny>>,
     ) -> anyhow::Result<InstanceMetadata> {
         log::trace!("Updating dir {}", path.display());
         let mut my_metadata = tree.get_metadata(old_ref).unwrap().clone();
+        let mut sub_middleware_id = None;
         if diff.has_changed_properties(old_ref) {
             let _old_inst = tree.get_instance(old_ref).unwrap();
 
@@ -112,8 +114,7 @@ impl SnapshotMiddleware for DirectoryMiddleware {
                 .with_context(|| "no matching new ref")?;
             let new_inst = new_dom.get_by_ref(new_ref).with_context(|| "missing ref")?;
 
-            let syncback_context: Option<DirectoryMiddlewareContext> = my_metadata
-                .syncback_context
+            let syncback_context: Option<DirectoryMiddlewareContext> = middleware_context
                 .clone()
                 .map(|syncback_context| syncback_context.context_as_any().downcast_ref().cloned())
                 .flatten();
@@ -128,6 +129,8 @@ impl SnapshotMiddleware for DirectoryMiddleware {
                     })
                     .flatten();
 
+            sub_middleware_id = best_middleware;
+
             if best_middleware == init_middleware && best_middleware.is_some() {
                 let best_middleware = best_middleware.unwrap();
 
@@ -135,11 +138,20 @@ impl SnapshotMiddleware for DirectoryMiddleware {
                 let init_path = syncback_context
                     .init_path
                     .as_ref()
-                    .with_context(|| "missing exiting init path")?;
+                    .with_context(|| "missing existing init path")?;
 
                 // todo: pass in correct context. right now it will grab the wrong one (using code like above)!
                 let new_init_metadata = get_middlewares()[best_middleware]
-                    .syncback_update(vfs, &init_path, diff, tree, old_ref, new_dom, context)
+                    .syncback_update(
+                        vfs,
+                        &init_path,
+                        diff,
+                        tree,
+                        old_ref,
+                        new_dom,
+                        context,
+                        syncback_context.init_context,
+                    )
                     .with_context(|| "failed to create instance on filesystem")?;
 
                 tree.update_props(old_ref, new_inst);
@@ -200,17 +212,6 @@ impl SnapshotMiddleware for DirectoryMiddleware {
                 }
             }
         }
-
-        let sub_middleware_id = {
-            let syncback_context: Option<DirectoryMiddlewareContext> = my_metadata
-                .syncback_context
-                .clone()
-                .map(|syncback_context| syncback_context.context_as_any().downcast_ref().cloned())
-                .flatten();
-            let syncback_context = syncback_context.as_ref();
-
-            syncback_context.map(|v| v.init_middleware).flatten()
-        };
 
         if diff.has_changed_descendants(old_ref) && sub_middleware_id != Some("project") {
             tree.syncback_children(vfs, diff, old_ref, path, new_dom, context)?;

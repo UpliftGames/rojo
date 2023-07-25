@@ -1,4 +1,4 @@
-use std::{collections::HashSet, path::Path, str};
+use std::{collections::HashSet, path::Path, str, sync::Arc};
 
 use anyhow::{bail, Context};
 use maplit::hashmap;
@@ -9,8 +9,8 @@ use rbx_dom_weak::{
 };
 
 use crate::snapshot::{
-    DeepDiff, InstanceContext, InstanceMetadata, InstanceSnapshot, RojoTree, SnapshotMiddleware,
-    PRIORITY_SINGLE_READABLE,
+    DeepDiff, InstanceContext, InstanceMetadata, InstanceSnapshot, MiddlewareContextAny, RojoTree,
+    SnapshotMiddleware, PRIORITY_SINGLE_READABLE,
 };
 
 use super::{
@@ -114,6 +114,7 @@ impl SnapshotMiddleware for LuaMiddleware {
         old_ref: Ref,
         new_dom: &WeakDom,
         context: &InstanceContext,
+        middleware_context: Option<Arc<dyn MiddlewareContextAny>>,
     ) -> anyhow::Result<InstanceMetadata> {
         let old_inst = tree.get_instance(old_ref).unwrap();
 

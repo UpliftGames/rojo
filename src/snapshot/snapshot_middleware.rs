@@ -68,7 +68,8 @@ pub trait SnapshotMiddleware: Debug + DynEq + Sync + Send {
         tree: &mut RojoTree,
         old_ref: Ref,
         new_dom: &WeakDom,
-        context: &InstanceContext,
+        instance_context: &InstanceContext,
+        middleware_context: Option<Arc<dyn MiddlewareContextAny>>,
     ) -> anyhow::Result<InstanceMetadata>;
 
     /// Syncs an instance back into the filesystem, creating new files.

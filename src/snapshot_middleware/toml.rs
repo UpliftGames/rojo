@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{path::Path, sync::Arc};
 
 use anyhow::Context;
 use maplit::hashmap;
@@ -6,7 +6,10 @@ use memofs::{IoResultExt, Vfs};
 
 use crate::{
     lua_ast::{Expression, Statement},
-    snapshot::{InstanceContext, InstanceMetadata, InstanceSnapshot, SnapshotMiddleware},
+    snapshot::{
+        InstanceContext, InstanceMetadata, InstanceSnapshot, MiddlewareContextAny,
+        SnapshotMiddleware,
+    },
 };
 
 use super::{
@@ -89,6 +92,7 @@ impl SnapshotMiddleware for TomlMiddleware {
         _old_ref: rbx_dom_weak::types::Ref,
         _new_dom: &rbx_dom_weak::WeakDom,
         _context: &InstanceContext,
+        _middleware_context: Option<Arc<dyn MiddlewareContextAny>>,
     ) -> anyhow::Result<InstanceMetadata> {
         todo!()
     }

@@ -288,6 +288,8 @@ impl RojoTree {
                     None
                 };
 
+                let existing_middleware_context = old_child_inst.metadata().syncback_context;
+
                 if Some(best_middleware) == existing_middleware {
                     let existing_path = existing_path.unwrap();
 
@@ -299,6 +301,7 @@ impl RojoTree {
                         old_child_ref,
                         new_dom,
                         context,
+                        existing_middleware_context,
                     )?;
                     tree.update_metadata(old_child_ref, metadata);
                 } else {
@@ -433,6 +436,7 @@ impl RojoTree {
         let context = old_inst.metadata.context.clone();
 
         let old_middleware_id = old_inst.metadata.snapshot_middleware.unwrap();
+        let old_middleware_context = old_inst.metadata.syncback_context;
 
         let new_middleware_id =
             get_best_syncback_middleware(new_dom, new_inst, true, Some(old_middleware_id));
@@ -443,8 +447,16 @@ impl RojoTree {
         if new_middleware_id == Some(old_middleware_id) {
             log::trace!("updating");
             let new_middleware_id = new_middleware_id.unwrap();
-            let metadata = get_middlewares()[new_middleware_id]
-                .syncback_update(vfs, &old_path, diff, self, old_id, new_dom, &context)?;
+            let metadata = get_middlewares()[new_middleware_id].syncback_update(
+                vfs,
+                &old_path,
+                diff,
+                self,
+                old_id,
+                new_dom,
+                &context,
+                old_middleware_context,
+            )?;
             self.update_metadata(old_id, metadata);
             log::trace!("update complete");
         } else {

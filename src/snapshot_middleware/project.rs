@@ -115,6 +115,7 @@ impl SnapshotMiddleware for ProjectMiddleware {
         old_ref: rbx_dom_weak::types::Ref,
         new_dom: &rbx_dom_weak::WeakDom,
         context: &InstanceContext,
+        middleware_context: Option<Arc<dyn MiddlewareContextAny>>,
     ) -> anyhow::Result<InstanceMetadata> {
         let my_metadata = tree.get_metadata(old_ref).unwrap().clone();
         let project = Project::load_from_slice(&vfs.read(path)?, path)
@@ -125,7 +126,7 @@ impl SnapshotMiddleware for ProjectMiddleware {
             let (node, node_ref) = processing.pop().unwrap();
             if diff.has_changed_properties(node_ref) {
                 log::warn!(
-                    "Cannot update project files from syncback. Skipping. ({})",
+                    "Cannot update project files from syncback. Skipping property changes. ({})",
                     path.display()
                 )
             }
@@ -186,20 +187,39 @@ impl SnapshotMiddleware for ProjectMiddleware {
 
                 if let Some(new_middleware_id) = new_middleware_id {
                     if Some(new_middleware_id) == existing_middleware_id {
-                        get_middleware(new_middleware_id).syncback_update(
-                            vfs, node_path, diff, tree, node_ref, new_dom, context,
+                        let mut new_metadata = get_middleware(new_middleware_id).syncback_update(
+                            vfs,
+                            node_path,
+                            diff,
+                            tree,
+                            node_ref,
+                            new_dom,
+                            context,
+                            existing_middleware_context,
                         )?;
+
+                        new_metadata.syncback_context = Some(Arc::new(ProjectMiddlewareContext {
+                            node_middleware: new_metadata.snapshot_middleware,
+                            node_context: new_metadata.syncback_context,
+                        }));
+                        new_metadata.snapshot_middleware = Some(self.middleware_id());
+
+                        tree.update_metadata(node_ref, new_metadata)
                     } else {
+                        let parent_ref = node_inst.parent();
+
                         if let Some(existing_middleware_id) = existing_middleware_id {
                             get_middleware(existing_middleware_id)
                                 .syncback_destroy(vfs, node_path, tree, node_ref)?;
+
+                            tree.remove(node_ref);
                         }
 
                         // TODO: don't unwrap these, bubble up results
                         let parent_path = node_path.parent().unwrap_or_else(|| Path::new("."));
                         let name = node_path.file_name().unwrap().to_str().unwrap();
 
-                        get_middleware(new_middleware_id).syncback_new(
+                        let mut new_snapshot = get_middleware(new_middleware_id).syncback_new(
                             vfs,
                             parent_path,
                             name,
@@ -207,6 +227,15 @@ impl SnapshotMiddleware for ProjectMiddleware {
                             new_ref,
                             context,
                         )?;
+
+                        new_snapshot.metadata.syncback_context =
+                            Some(Arc::new(ProjectMiddlewareContext {
+                                node_middleware: new_snapshot.metadata.snapshot_middleware,
+                                node_context: new_snapshot.metadata.syncback_context,
+                            }));
+                        new_snapshot.metadata.snapshot_middleware = Some(self.middleware_id());
+
+                        tree.insert_instance(parent_ref, new_snapshot);
                     }
                 } else {
                     log::warn!(

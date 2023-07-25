@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     path::Path,
+    sync::Arc,
 };
 
 use anyhow::{bail, Context};
@@ -13,8 +14,8 @@ use rbx_dom_weak::{
 use serde::{Deserialize, Serialize};
 
 use crate::snapshot::{
-    DeepDiff, InstanceContext, InstanceMetadata, InstanceSnapshot, RojoTree, SnapshotMiddleware,
-    PRIORITY_SINGLE_READABLE,
+    DeepDiff, InstanceContext, InstanceMetadata, InstanceSnapshot, MiddlewareContextAny, RojoTree,
+    SnapshotMiddleware, PRIORITY_SINGLE_READABLE,
 };
 
 use super::{
@@ -103,6 +104,7 @@ impl SnapshotMiddleware for CsvMiddleware {
         old_ref: Ref,
         new_dom: &WeakDom,
         context: &InstanceContext,
+        middleware_context: Option<Arc<dyn MiddlewareContextAny>>,
     ) -> anyhow::Result<InstanceMetadata> {
         let old_inst = tree.get_instance(old_ref).unwrap();
 

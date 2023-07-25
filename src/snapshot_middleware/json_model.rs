@@ -1,4 +1,4 @@
-use std::{borrow::Cow, collections::HashMap, path::Path, str};
+use std::{borrow::Cow, collections::HashMap, path::Path, str, sync::Arc};
 
 use anyhow::Context;
 use memofs::Vfs;
@@ -11,8 +11,8 @@ use serde::{Deserialize, Serialize};
 use crate::{
     resolution::UnresolvedValue,
     snapshot::{
-        InstanceContext, InstanceMetadata, InstanceSnapshot, SnapshotMiddleware,
-        ToVariantBinaryString, PRIORITY_MODEL_JSON,
+        InstanceContext, InstanceMetadata, InstanceSnapshot, MiddlewareContextAny,
+        SnapshotMiddleware, ToVariantBinaryString, PRIORITY_MODEL_JSON,
     },
 };
 
@@ -107,6 +107,7 @@ impl SnapshotMiddleware for JsonModelMiddleware {
         old_ref: rbx_dom_weak::types::Ref,
         new_dom: &rbx_dom_weak::WeakDom,
         context: &InstanceContext,
+        middleware_context: Option<Arc<dyn MiddlewareContextAny>>,
     ) -> anyhow::Result<InstanceMetadata> {
         let old_inst = tree.get_instance(old_ref).unwrap();
 

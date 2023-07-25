@@ -1,11 +1,12 @@
-use std::path::Path;
+use std::{path::Path, sync::Arc};
 
 use anyhow::Context;
 use memofs::Vfs;
 use rbx_xml::EncodeOptions;
 
 use crate::snapshot::{
-    InstanceContext, InstanceMetadata, InstanceSnapshot, SnapshotMiddleware, PRIORITY_MODEL_XML,
+    InstanceContext, InstanceMetadata, InstanceSnapshot, MiddlewareContextAny, SnapshotMiddleware,
+    PRIORITY_MODEL_XML,
 };
 
 use super::util::{reconcile_meta_file_empty, try_remove_file, PathExt};
@@ -86,6 +87,7 @@ impl SnapshotMiddleware for RbxmxMiddleware {
         old_ref: rbx_dom_weak::types::Ref,
         new_dom: &rbx_dom_weak::WeakDom,
         context: &InstanceContext,
+        middleware_context: Option<Arc<dyn MiddlewareContextAny>>,
     ) -> anyhow::Result<InstanceMetadata> {
         let old_inst = tree.get_instance(old_ref).unwrap();
 
