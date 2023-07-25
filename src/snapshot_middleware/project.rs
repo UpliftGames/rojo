@@ -1,4 +1,4 @@
-use std::{borrow::Cow, collections::HashMap, path::Path};
+use std::{borrow::Cow, collections::HashMap, path::Path, sync::Arc};
 
 use anyhow::{bail, Context};
 use memofs::Vfs;
@@ -8,12 +8,22 @@ use rbx_reflection::ClassTag;
 use crate::{
     project::{PathNode, Project, ProjectNode},
     snapshot::{
-        InstanceContext, InstanceMetadata, InstanceSnapshot, InstigatingSource, PathIgnoreRule,
-        SnapshotMiddleware, TransformerRule,
+        get_best_syncback_middleware, InstanceContext, InstanceMetadata, InstanceSnapshot,
+        InstigatingSource, MiddlewareContextAny, PathIgnoreRule, SnapshotMiddleware,
+        TransformerRule,
     },
+    snapshot_middleware::get_middleware,
 };
 
 use super::snapshot_from_vfs;
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct ProjectMiddlewareContext {
+    node_middleware: Option<&'static str>,
+    node_context: Option<Arc<dyn MiddlewareContextAny>>,
+}
+
+impl MiddlewareContextAny for ProjectMiddlewareContext {}
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct ProjectMiddleware;
@@ -81,8 +91,6 @@ impl SnapshotMiddleware for ProjectMiddleware {
                 // file being updated.
                 snapshot.metadata.relevant_paths.push(path.to_path_buf());
 
-                snapshot.metadata.snapshot_middleware = Some(self.middleware_id());
-
                 Ok(Some(snapshot))
             }
             None => Ok(None),
@@ -116,8 +124,10 @@ impl SnapshotMiddleware for ProjectMiddleware {
         while !processing.is_empty() {
             let (node, node_ref) = processing.pop().unwrap();
             if diff.has_changed_properties(node_ref) {
-                // bail!("Cannot update project files from syncback")
-                log::trace!("Cannot update project files from syncback")
+                log::warn!(
+                    "Cannot update project files from syncback. Skipping. ({})",
+                    path.display()
+                )
             }
             if !diff.has_changed_descendants(node_ref) {
                 continue;
@@ -127,7 +137,11 @@ impl SnapshotMiddleware for ProjectMiddleware {
             let node_inst = match node_inst {
                 Some(inst) => inst,
                 None => {
-                    log::trace!("Missing ref for node {:?}", node.path);
+                    log::warn!(
+                        "Missing instance for node. Was it deleted in a previous syncback change? Skipping. ({:?} of {})",
+                        node.path,
+                        path.display()
+                    );
                     continue;
                 }
             };
@@ -141,26 +155,66 @@ impl SnapshotMiddleware for ProjectMiddleware {
                 {
                     let matching_node = node.children.get(child_inst.name());
                     if let Some(matching_node) = matching_node {
-                        if diff.has_changed_properties(*child_ref) {
-                            log::trace!("Cannot update project files from syncback");
-                            // bail!("Cannot update project files from syncback")
-                        }
                         processing.push((matching_node, *child_ref));
+                    } else {
+                        log::warn!("Could not find project node for instance even though it was created by a project. Skipping. ({:?} of {})", node.path, path.display());
                     }
                 }
             }
 
-            log::trace!("final check {:?}", &node.path);
-
             if let Some(path_node) = &node.path {
+                let new_ref = diff
+                    .get_matching_new_ref(node_ref)
+                    .with_context(|| "no matching new ref (diff)")?;
+                let new_inst = new_dom
+                    .get_by_ref(new_ref)
+                    .with_context(|| "missing ref (tree)")?;
+
+                let project_context = node_inst.metadata().syncback_context.clone().unwrap();
+                let project_context: ProjectMiddlewareContext = project_context
+                    .context_as_any()
+                    .downcast_ref()
+                    .cloned()
+                    .unwrap();
+
                 let node_path = path_node.path();
-                let path = if node_path.is_relative() {
-                    path.parent().unwrap().join(node_path)
+                let existing_middleware_id = project_context.node_middleware;
+                let existing_middleware_context = project_context.node_context;
+
+                let new_middleware_id =
+                    get_best_syncback_middleware(new_dom, new_inst, true, existing_middleware_id);
+
+                if let Some(new_middleware_id) = new_middleware_id {
+                    if Some(new_middleware_id) == existing_middleware_id {
+                        get_middleware(new_middleware_id).syncback_update(
+                            vfs, node_path, diff, tree, node_ref, new_dom, context,
+                        )?;
+                    } else {
+                        if let Some(existing_middleware_id) = existing_middleware_id {
+                            get_middleware(existing_middleware_id)
+                                .syncback_destroy(vfs, node_path, tree, node_ref)?;
+                        }
+
+                        // TODO: don't unwrap these, bubble up results
+                        let parent_path = node_path.parent().unwrap_or_else(|| Path::new("."));
+                        let name = node_path.file_name().unwrap().to_str().unwrap();
+
+                        get_middleware(new_middleware_id).syncback_new(
+                            vfs,
+                            parent_path,
+                            name,
+                            new_dom,
+                            new_ref,
+                            context,
+                        )?;
+                    }
                 } else {
-                    node_path.to_path_buf()
-                };
-                log::trace!("syncing children of {}", node_inst.name());
-                tree.syncback_children(vfs, diff, node_ref, &path, new_dom, context)?;
+                    log::warn!(
+                        "Project node cannot be updated from syncback. Skipping. ({:?} of {})",
+                        node.path,
+                        path.display()
+                    );
+                }
             }
         }
 
@@ -245,6 +299,13 @@ pub fn snapshot_project_node(
             // Take the snapshot's metadata as-is, which will be mutated later
             // on.
             metadata = snapshot.metadata;
+
+            // Move sub-snapshot middleware context into our own middleware context.
+            metadata.syncback_context = Some(Arc::new(ProjectMiddlewareContext {
+                node_middleware: metadata.snapshot_middleware,
+                node_context: metadata.syncback_context,
+            }));
+            metadata.snapshot_middleware = Some("project");
         } else {
             log::trace!("no snapshot from vfs for {}", full_path.display());
         }

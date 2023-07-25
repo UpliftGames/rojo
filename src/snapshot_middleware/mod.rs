@@ -67,6 +67,10 @@ pub fn get_middlewares() -> &'static HashMap<&'static str, Arc<dyn SnapshotMiddl
     })
 }
 
+pub fn get_middleware(middleware_id: &str) -> Arc<dyn SnapshotMiddleware> {
+    get_middlewares()[middleware_id].clone()
+}
+
 pub fn get_middleware_inits() -> &'static HashMap<&'static str, &'static str> {
     static MIDDLEWARES_INIT: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
 
