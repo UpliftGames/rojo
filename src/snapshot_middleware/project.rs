@@ -7,6 +7,7 @@ use rbx_reflection::ClassTag;
 
 use crate::{
     project::{PathNode, Project, ProjectNode},
+    resolution::UnresolvedValue,
     snapshot::{
         get_best_syncback_middleware, InstanceContext, InstanceMetadata, InstanceSnapshot,
         InstigatingSource, MiddlewareContextAny, PathIgnoreRule, SnapshotMiddleware,
@@ -118,21 +119,13 @@ impl SnapshotMiddleware for ProjectMiddleware {
         middleware_context: Option<Arc<dyn MiddlewareContextAny>>,
     ) -> anyhow::Result<InstanceMetadata> {
         let my_metadata = tree.get_metadata(old_ref).unwrap().clone();
-        let project = Project::load_from_slice(&vfs.read(path)?, path)
+        let mut project = Project::load_from_slice(&vfs.read(path)?, path)
             .with_context(|| format!("File was not a valid Rojo project: {}", path.display()))?;
+        let mut project_changed = false;
 
-        let mut processing = vec![(&project.tree, old_ref)];
+        let mut processing = vec![(&mut project.tree, old_ref)];
         while !processing.is_empty() {
             let (node, node_ref) = processing.pop().unwrap();
-            if diff.has_changed_properties(node_ref) {
-                log::warn!(
-                    "Cannot update project files from syncback. Skipping property changes. ({})",
-                    path.display()
-                )
-            }
-            if !diff.has_changed_descendants(node_ref) {
-                continue;
-            }
 
             let node_inst = tree.get_instance(node_ref);
             let node_inst = match node_inst {
@@ -149,18 +142,24 @@ impl SnapshotMiddleware for ProjectMiddleware {
 
             log::trace!("checking {}", node_inst.name());
 
-            for child_ref in node_inst.children() {
-                let child_inst = tree.get_instance(*child_ref).unwrap();
-                if let Some(InstigatingSource::ProjectNode(_, _, _, _)) =
-                    child_inst.metadata().instigating_source
-                {
-                    let matching_node = node.children.get(child_inst.name());
-                    if let Some(matching_node) = matching_node {
-                        processing.push((matching_node, *child_ref));
-                    } else {
-                        log::warn!("Could not find project node for instance even though it was created by a project. Skipping. ({:?} of {})", node.path, path.display());
+            if diff.has_changed_descendants(node_ref) {
+                for child_ref in node_inst.children() {
+                    let child_inst = tree.get_instance(*child_ref).unwrap();
+                    if let Some(InstigatingSource::ProjectNode(_, _, _, _)) =
+                        child_inst.metadata().instigating_source
+                    {
+                        let matching_node = node.children.get_mut(child_inst.name());
+                        if let Some(matching_node) = matching_node {
+                            processing.push((matching_node, *child_ref));
+                        } else {
+                            log::warn!("Could not find project node for instance even though it was created by a project. Skipping. ({:?} of {})", node.path, path.display());
+                        }
                     }
                 }
+            }
+
+            if !diff.has_changed_descendants(node_ref) && !diff.has_changed_properties(node_ref) {
+                continue;
             }
 
             if let Some(path_node) = &node.path {
@@ -238,14 +237,44 @@ impl SnapshotMiddleware for ProjectMiddleware {
 
                         tree.insert_instance(parent_ref, new_snapshot);
                     }
+
+                    if !node.properties.is_empty() {
+                        // Properties are moved to a .meta file now; delete from project file
+                        node.properties = HashMap::new();
+                        project_changed = true;
+                    }
                 } else {
                     log::warn!(
-                        "Project node cannot be updated from syncback. Skipping. ({:?} of {})",
+                        "Project node cannot be updated from syncback (no matching middleware). Skipping. ({:?} of {})",
                         node.path,
                         path.display()
                     );
                 }
+            } else {
+                if diff.has_changed_properties(node_ref) {
+                    // All properties should be put in the node since it has no other source
+
+                    node.properties = node_inst
+                        .properties()
+                        .iter()
+                        .map(|(key, value)| {
+                            (
+                                key.clone(),
+                                UnresolvedValue::from_variant_property(
+                                    node_inst.class_name(),
+                                    key,
+                                    value.clone(),
+                                ),
+                            )
+                        })
+                        .collect();
+                    project_changed = true;
+                }
             }
+        }
+
+        if project_changed {
+            vfs.write(path, serde_json::to_string_pretty(&project)?)?;
         }
 
         Ok(my_metadata)
