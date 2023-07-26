@@ -1,4 +1,10 @@
-use std::{borrow::Cow, collections::HashMap, path::Path, str, sync::Arc};
+use std::{
+    borrow::Cow,
+    collections::{BTreeMap, HashMap},
+    path::Path,
+    str,
+    sync::Arc,
+};
 
 use anyhow::Context;
 use memofs::Vfs;
@@ -12,7 +18,8 @@ use crate::{
     resolution::UnresolvedValue,
     snapshot::{
         InstanceContext, InstanceMetadata, InstanceSnapshot, MiddlewareContextAny,
-        SnapshotMiddleware, ToVariantBinaryString, PRIORITY_MODEL_JSON,
+        PropertiesFiltered, PropertyFilter, SnapshotMiddleware, SnapshotOverride,
+        ToVariantBinaryString, PRIORITY_MODEL_JSON,
     },
 };
 
@@ -107,7 +114,8 @@ impl SnapshotMiddleware for JsonModelMiddleware {
         old_ref: rbx_dom_weak::types::Ref,
         new_dom: &rbx_dom_weak::WeakDom,
         context: &InstanceContext,
-        middleware_context: Option<Arc<dyn MiddlewareContextAny>>,
+        _middleware_context: Option<Arc<dyn MiddlewareContextAny>>,
+        _overrides: Option<SnapshotOverride>,
     ) -> anyhow::Result<InstanceMetadata> {
         let old_inst = tree.get_instance(old_ref).unwrap();
 
@@ -118,7 +126,8 @@ impl SnapshotMiddleware for JsonModelMiddleware {
 
         let my_metadata = old_inst.metadata().clone();
 
-        let mut json_model = JsonModel::from_instance(new_dom, new_inst);
+        let mut json_model =
+            JsonModel::from_instance(new_dom, new_inst, &context.syncback.property_filters_save);
         json_model.name = None;
 
         let mut contents: Vec<u8> = Vec::new();
@@ -143,11 +152,17 @@ impl SnapshotMiddleware for JsonModelMiddleware {
         new_dom: &rbx_dom_weak::WeakDom,
         new_ref: rbx_dom_weak::types::Ref,
         context: &InstanceContext,
-    ) -> anyhow::Result<InstanceSnapshot> {
+        _overrides: Option<SnapshotOverride>,
+    ) -> anyhow::Result<Option<InstanceSnapshot>> {
         let instance = new_dom.get_by_ref(new_ref).unwrap();
         let path = parent_path.join(format!("{}.model.json", name));
 
-        let mut json_model = JsonModel::from_instance(new_dom, instance);
+        if !context.should_syncback_path(&path) {
+            return Ok(None);
+        }
+
+        let mut json_model =
+            JsonModel::from_instance(new_dom, instance, &context.syncback.property_filters_save);
         json_model.name = None;
 
         let mut contents: Vec<u8> = Vec::new();
@@ -157,7 +172,7 @@ impl SnapshotMiddleware for JsonModelMiddleware {
 
         reconcile_meta_file_empty(vfs, &path.with_extension("meta.json"))?;
 
-        Ok(
+        Ok(Some(
             InstanceSnapshot::from_tree_copy(new_dom, new_ref, false).metadata(
                 InstanceMetadata::new()
                     .context(context)
@@ -165,7 +180,7 @@ impl SnapshotMiddleware for JsonModelMiddleware {
                     .relevant_paths(vec![path.clone(), path.with_extension("meta.json")])
                     .middleware_id(self.middleware_id()),
             ),
-        )
+        ))
     }
 
     fn syncback_destroy(
@@ -245,46 +260,39 @@ impl JsonModel {
         })
     }
 
-    fn from_instance(dom: &WeakDom, instance: &Instance) -> Self {
+    fn from_instance(
+        dom: &WeakDom,
+        instance: &Instance,
+        filters: &BTreeMap<String, PropertyFilter>,
+    ) -> Self {
         Self {
             name: Some(instance.name.clone()),
             class_name: instance.class.clone(),
             children: instance
                 .children()
                 .iter()
-                .map(|c| JsonModel::from_instance(dom, dom.get_by_ref(*c).unwrap()))
+                .map(|c| JsonModel::from_instance(dom, dom.get_by_ref(*c).unwrap(), filters))
                 .collect(),
             properties: instance
-                .properties
-                .iter()
-                .filter_map(|(k, v)| match k.as_str() {
+                .properties_filtered(filters, true)
+                .filter_map(|(k, v)| match k {
                     "Attributes" => None,
                     _ => {
-                        if Some(v)
-                            != rbx_reflection_database::get()
-                                .classes
-                                .get(instance.class.as_str())
-                                .map(|c| c.default_properties.get(k.as_str()))
-                                .flatten()
-                        {
-                            let mut v = v.clone();
+                        let mut v = v.clone();
 
-                            if let Variant::SharedString(_) = v {
-                                log::trace!(
-                                    "Converting {}.{} from SharedString to BinaryString",
-                                    instance.class,
-                                    k
-                                );
-                                v = v.to_variant_binary_string().unwrap();
-                            }
-
-                            Some((
-                                k.clone(),
-                                UnresolvedValue::from_variant_property(&instance.class, k, v),
-                            ))
-                        } else {
-                            None
+                        if let Variant::SharedString(_) = v {
+                            log::trace!(
+                                "Converting {}.{} from SharedString to BinaryString",
+                                instance.class,
+                                k
+                            );
+                            v = v.to_variant_binary_string().unwrap();
                         }
+
+                        Some((
+                            k.to_string(),
+                            UnresolvedValue::from_variant_property(&instance.class, k, v),
+                        ))
                     }
                 })
                 .collect(),

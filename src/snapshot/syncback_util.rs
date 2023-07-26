@@ -1,62 +1,126 @@
-use std::{
-    collections::{HashMap, HashSet},
-    sync::OnceLock,
-};
+use std::{collections::BTreeMap, sync::OnceLock};
 
 use rbx_dom_weak::{
     types::{BinaryString, Tags, Variant},
     Instance,
 };
+use serde::{Deserialize, Serialize};
 
 use super::InstanceWithMeta;
 
-pub fn ignore_keys_cmp() -> &'static HashSet<&'static str> {
-    static VALUE: OnceLock<HashSet<&'static str>> = OnceLock::new();
+pub fn default_filters_diff() -> &'static BTreeMap<String, PropertyFilter> {
+    static VALUE: OnceLock<BTreeMap<String, PropertyFilter>> = OnceLock::new();
 
-    VALUE.get_or_init(|| HashSet::from(["SourceAssetId", "UniqueId", "ScriptGuid", "HistoryId"]))
+    VALUE.get_or_init(|| {
+        BTreeMap::from_iter(
+            [
+                ("SourceAssetId", PropertyFilter::Ignore),
+                ("UniqueId", PropertyFilter::Ignore),
+                ("ScriptGuid", PropertyFilter::Ignore),
+                ("HistoryId", PropertyFilter::Ignore),
+                (
+                    "Tags",
+                    PropertyFilter::IgnoreWhenEq(vec![Variant::Tags(Tags::default())]),
+                ),
+            ]
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v)),
+        )
+    })
 }
 
-pub fn ignore_pairs_cmp() -> &'static HashMap<&'static str, Variant> {
-    static VALUE: OnceLock<HashMap<&'static str, Variant>> = OnceLock::new();
+pub fn default_filters_save() -> &'static BTreeMap<String, PropertyFilter> {
+    static VALUE: OnceLock<BTreeMap<String, PropertyFilter>> = OnceLock::new();
 
-    VALUE.get_or_init(|| HashMap::from([("Tags", Variant::Tags(Tags::default()))]))
+    VALUE.get_or_init(|| {
+        BTreeMap::from_iter(
+            [
+                ("SourceAssetId", PropertyFilter::Ignore),
+                ("UniqueId", PropertyFilter::Ignore),
+                ("ScriptGuid", PropertyFilter::Ignore),
+                ("HistoryId", PropertyFilter::Ignore),
+                (
+                    "Tags",
+                    PropertyFilter::IgnoreWhenEq(vec![Variant::Tags(Tags::default())]),
+                ),
+            ]
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v)),
+        )
+    })
 }
-pub fn ignore_keys_save() -> &'static HashSet<&'static str> {
-    static VALUE: OnceLock<HashSet<&'static str>> = OnceLock::new();
 
-    VALUE.get_or_init(|| HashSet::from(["SourceAssetId", "ScriptGuid", "HistoryId"]))
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum PropertyFilter {
+    Ignore,
+    IgnoreWhenEq(Vec<Variant>),
 }
 
-pub fn ignore_pairs_save() -> &'static HashMap<&'static str, Variant> {
-    static VALUE: OnceLock<HashMap<&'static str, Variant>> = OnceLock::new();
+pub trait PropertyFilterTrait {
+    fn should_ignore(&self, value: &Variant) -> bool;
+}
 
-    VALUE.get_or_init(|| HashMap::from([("Tags", Variant::Tags(Tags::default()))]))
+impl PropertyFilterTrait for PropertyFilter {
+    fn should_ignore(&self, value: &Variant) -> bool {
+        match self {
+            PropertyFilter::Ignore => true,
+            PropertyFilter::IgnoreWhenEq(values) => values.iter().any(|v| v == value),
+        }
+    }
+}
+
+impl PropertyFilterTrait for Option<&PropertyFilter> {
+    fn should_ignore(&self, value: &Variant) -> bool {
+        match self {
+            Some(filter) => filter.should_ignore(value),
+            None => false,
+        }
+    }
 }
 
 pub trait PropertiesFiltered {
     fn properties_iter(&self) -> Box<dyn Iterator<Item = (&str, &Variant)> + '_>;
     fn class_inner(&self) -> &str;
 
-    fn properties_filtered_cmp(&self) -> Box<dyn Iterator<Item = (&str, &Variant)> + '_> {
-        Box::new(self.properties_iter().filter_map(|(k, v)| {
-            let default = rbx_reflection_database::get()
-                .classes
-                .get(self.class_inner())
-                .map(|class_def| class_def.default_properties.get(k))
-                .flatten();
-            if default == Some(v) {
-                None
-            } else if ignore_keys_cmp().contains(k) {
-                None
-            } else if ignore_pairs_cmp().get(k) == Some(v) {
-                None
-            } else {
-                Some((k, v))
+    fn properties_filtered<'a>(
+        &'a self,
+        filters: &'a BTreeMap<String, PropertyFilter>,
+        filter_defaults: bool,
+    ) -> Box<dyn Iterator<Item = (&str, &Variant)> + 'a> {
+        Box::new(self.properties_iter().filter_map(move |(k, v)| {
+            if filter_defaults {
+                let default = rbx_reflection_database::get()
+                    .classes
+                    .get(self.class_inner())
+                    .map(|class_def| class_def.default_properties.get(k))
+                    .flatten();
+                if default == Some(v) {
+                    return None;
+                }
             }
+            if let Some(filter) = filters.get(k) {
+                match filter {
+                    PropertyFilter::Ignore => return None,
+                    PropertyFilter::IgnoreWhenEq(values) => {
+                        for filter_value in values {
+                            if v == filter_value {
+                                return None;
+                            }
+                        }
+                    }
+                }
+            }
+
+            Some((k, v))
         }))
     }
-    fn properties_filtered_cmp_map(&self) -> HashMap<&str, &Variant> {
-        self.properties_filtered_cmp().collect()
+
+    fn properties_filtered_map<'a>(
+        &'a self,
+        filters: &'a BTreeMap<String, PropertyFilter>,
+        filter_defaults: bool,
+    ) -> BTreeMap<&str, &Variant> {
+        self.properties_filtered(filters, filter_defaults).collect()
     }
 }
 

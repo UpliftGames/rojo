@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{BTreeMap, HashMap, HashSet, VecDeque},
     path::{Path, PathBuf},
 };
 
@@ -258,6 +258,8 @@ impl RojoTree {
                 let old_child_inst = tree.get_instance(old_child_ref).unwrap();
                 let existing_middleware = old_child_inst.metadata().middleware_id;
 
+                let child_context = old_child_inst.metadata().context.clone();
+
                 let best_middleware = get_best_syncback_middleware(
                     tree.inner(),
                     new_child_inst,
@@ -265,12 +267,6 @@ impl RojoTree {
                     existing_middleware,
                 )
                 .with_context(|| "Cannot syncback instance")?;
-
-                if new_child_inst.name == "Models2" {
-                    log::trace!("Syncing Models2");
-                    log::trace!("  existing: {:?}", existing_middleware);
-                    log::trace!("  best:     {:?}", best_middleware);
-                }
 
                 let existing_path = if let Some(_existing_middleware) = existing_middleware {
                     let existing_path = old_child_inst.metadata().snapshot_source_path();
@@ -288,7 +284,14 @@ impl RojoTree {
                     None
                 };
 
-                let existing_middleware_context = old_child_inst.metadata().middleware_context;
+                if let Some(existing_path) = &existing_path {
+                    if !child_context.should_syncback_path(existing_path) {
+                        continue;
+                    }
+                }
+
+                let existing_middleware_context =
+                    old_child_inst.metadata().middleware_context.clone();
 
                 if Some(best_middleware) == existing_middleware {
                     let existing_path = existing_path.unwrap();
@@ -300,8 +303,9 @@ impl RojoTree {
                         tree,
                         old_child_ref,
                         new_dom,
-                        context,
+                        &child_context,
                         existing_middleware_context,
+                        None,
                     )?;
                     tree.update_metadata(old_child_ref, metadata);
                 } else {
@@ -323,9 +327,21 @@ impl RojoTree {
                             &new_child_inst.name,
                             new_dom,
                             new_child_ref,
-                            context,
+                            &child_context,
+                            None,
                         )
                         .with_context(|| "failed to create instance on filesystem")?;
+
+                    let child_snapshot = match child_snapshot {
+                        Some(child_snapshot) => child_snapshot,
+                        None => {
+                            log::info!(
+                                "Skipping {} because its path is excluded by ignore patterns",
+                                new_child_inst.name()
+                            );
+                            continue;
+                        }
+                    };
 
                     tree.remove(old_child_ref);
                     tree.insert_instance(parent_id, child_snapshot);
@@ -369,6 +385,7 @@ impl RojoTree {
                             new_dom,
                             new_child_ref,
                             context,
+                            None,
                         )
                         .with_context(|| "failed to create instance on filesystem")?;
 
@@ -387,8 +404,15 @@ impl RojoTree {
         new_dom: &WeakDom,
         new_id: Ref,
     ) -> anyhow::Result<()> {
-        let diff = DeepDiff::new(&self.inner, old_id, new_dom, new_id);
-        // log::trace!("diff: {}", diff.display(&self.inner, new_dom));
+        let empty_map = BTreeMap::new();
+
+        let diff = DeepDiff::new(&self.inner, old_id, new_dom, new_id, |old_ref| {
+            match self.get_metadata(old_ref) {
+                Some(metadata) => &metadata.context.syncback.property_filters_diff,
+                None => &empty_map,
+            }
+        });
+
         self.syncback_update(vfs, &diff, old_id, new_dom)
     }
 
@@ -404,9 +428,17 @@ impl RojoTree {
                 .get_instance(base_target)
                 .with_context(|| "Missing ref")?;
             loop {
+                log::trace!(
+                    "might compare {} {:?} {:?}",
+                    syncable.name(),
+                    &syncable.metadata.middleware_id,
+                    diff.get_matching_new_ref(syncable.id())
+                );
                 if syncable.metadata.middleware_id.is_some()
                     && diff.get_matching_new_ref(syncable.id()).is_some()
                 {
+                    log::trace!("checking {}", syncable.name());
+                    log::trace!("  source: {:?}", syncable.metadata.instigating_source);
                     if let Some(InstigatingSource::Path(path)) =
                         &syncable.metadata.instigating_source
                     {
@@ -436,7 +468,7 @@ impl RojoTree {
         let context = old_inst.metadata.context.clone();
 
         let old_middleware_id = old_inst.metadata.middleware_id.unwrap();
-        let old_middleware_context = old_inst.metadata.middleware_context;
+        let old_middleware_context = old_inst.metadata.middleware_context.clone();
 
         let new_middleware_id =
             get_best_syncback_middleware(new_dom, new_inst, true, Some(old_middleware_id));
@@ -456,6 +488,7 @@ impl RojoTree {
                 new_dom,
                 &context,
                 old_middleware_context,
+                None,
             )?;
             self.update_metadata(old_id, metadata);
             log::trace!("update complete");
@@ -465,7 +498,15 @@ impl RojoTree {
 
             if let Some(new_middleware_id) = new_middleware_id {
                 let snapshot = get_middlewares()[new_middleware_id]
-                    .syncback_new(vfs, &old_path, &new_inst.name, new_dom, new_id, &context)
+                    .syncback_new(
+                        vfs,
+                        &old_path,
+                        &new_inst.name,
+                        new_dom,
+                        new_id,
+                        &context,
+                        None,
+                    )
                     .with_context(|| "failed to create instance on filesystem")?;
 
                 self.insert_instance(old_id, snapshot);

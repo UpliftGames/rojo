@@ -82,6 +82,10 @@ pub struct Project {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub transformer_rules: Vec<ProjectTransformerRule>,
 
+    /// Syncback behavior settings.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub syncback: Option<ProjectSyncback>,
+
     /// The path to the file that this project came from. Relative paths in the
     /// project should be considered relative to the parent of this field, also
     /// given by `Project::folder_location`.
@@ -175,6 +179,50 @@ impl Project {
 
     pub fn folder_location(&self) -> &Path {
         self.file_location.parent().unwrap()
+    }
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct ProjectSyncback {
+    /// A list of globs, relative to the folder the project file is in, that
+    /// match files that should not be synced back. Rojo will always use the
+    /// filesystem representation for these files.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub exclude_globs: Vec<Glob>,
+
+    /// Property filtering
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub properties: BTreeMap<String, ProjectSyncbackProperty>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct ProjectSyncbackProperty {
+    /// How diffing this property should be handled (default: always diff)
+    #[serde(skip_serializing_if = "ProjectSyncbackPropertyMode::is_default")]
+    pub diff: ProjectSyncbackPropertyMode,
+
+    /// How saving this property should be handled (default: always save)
+    #[serde(skip_serializing_if = "ProjectSyncbackPropertyMode::is_default")]
+    pub save: ProjectSyncbackPropertyMode,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub enum ProjectSyncbackPropertyMode {
+    /// Always diff/save (default behavior for most properties)
+    #[default]
+    Always,
+    /// Never diff/save (skip this property)
+    Never,
+    /// Only diff/save when not equal to a specific value (usually a default value)
+    WhenNotEqual(Vec<UnresolvedValue>),
+}
+
+impl ProjectSyncbackPropertyMode {
+    pub fn is_default(&self) -> bool {
+        matches!(self, ProjectSyncbackPropertyMode::Always)
     }
 }
 

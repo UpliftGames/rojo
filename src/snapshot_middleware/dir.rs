@@ -12,8 +12,9 @@ use crate::{
     snapshot::{
         get_best_syncback_middleware, get_best_syncback_middleware_sorted, DeepDiff,
         InstanceContext, InstanceMetadata, InstanceSnapshot, InstigatingSource,
-        MiddlewareContextAny, RojoTree, SnapshotMiddleware, PRIORITY_DIRECTORY_CHECK_FALLBACK,
-        PRIORITY_MANY_READABLE, PRIORITY_MODEL_DIRECTORY,
+        MiddlewareContextAny, RojoTree, SnapshotMiddleware, SnapshotOverride,
+        SnapshotOverrideTrait, PRIORITY_DIRECTORY_CHECK_FALLBACK, PRIORITY_MANY_READABLE,
+        PRIORITY_MODEL_DIRECTORY,
     },
     snapshot_middleware::get_middleware_inits,
 };
@@ -28,8 +29,6 @@ pub struct DirectoryMiddlewareContext {
     init_context: Option<Arc<dyn MiddlewareContextAny>>,
     init_path: Option<PathBuf>,
 }
-
-impl MiddlewareContextAny for DirectoryMiddlewareContext {}
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct DirectoryMiddleware;
@@ -102,6 +101,7 @@ impl SnapshotMiddleware for DirectoryMiddleware {
         new_dom: &WeakDom,
         context: &InstanceContext,
         middleware_context: Option<Arc<dyn MiddlewareContextAny>>,
+        overrides: Option<SnapshotOverride>,
     ) -> anyhow::Result<InstanceMetadata> {
         log::trace!("Updating dir {}", path.display());
         let mut my_metadata = tree.get_metadata(old_ref).unwrap().clone();
@@ -114,10 +114,17 @@ impl SnapshotMiddleware for DirectoryMiddleware {
                 .with_context(|| "no matching new ref")?;
             let new_inst = new_dom.get_by_ref(new_ref).with_context(|| "missing ref")?;
 
-            let syncback_context: Option<DirectoryMiddlewareContext> = middleware_context
-                .clone()
-                .map(|syncback_context| syncback_context.context_as_any().downcast_ref().cloned())
-                .flatten();
+            let syncback_context = if let Some(middleware_context) = middleware_context {
+                let middleware_context = middleware_context.as_ref();
+
+                let middleware_context =
+                    middleware_context.downcast_ref::<DirectoryMiddlewareContext>();
+
+                middleware_context.cloned()
+            } else {
+                None
+            };
+
             let syncback_context = syncback_context.as_ref();
 
             let init_middleware = syncback_context.map(|v| v.init_middleware).flatten();
@@ -150,7 +157,8 @@ impl SnapshotMiddleware for DirectoryMiddleware {
                         old_ref,
                         new_dom,
                         context,
-                        syncback_context.init_context,
+                        syncback_context.init_context.clone(),
+                        None,
                     )
                     .with_context(|| "failed to create instance on filesystem")?;
 
@@ -179,15 +187,14 @@ impl SnapshotMiddleware for DirectoryMiddleware {
                 if let Some(best_middleware) = best_middleware {
                     // reconstruct fs via syncback
                     let new_init_snapshot = get_middlewares()[best_middleware]
-                        .syncback_new(
-                            vfs,
-                            path,
-                            "init",
-                            new_dom,
-                            new_ref,
-                            &InstanceContext::default(), // TODO
-                        )
+                        .syncback_new(vfs, path, "init", new_dom, new_ref, &context, None)
                         .with_context(|| "failed to create instance on filesystem")?;
+
+                    let new_init_snapshot = match new_init_snapshot {
+                        Some(v) => v,
+                        None => bail!("failed to create instance on filesystem: target is disallowed by ignore paths"),
+                    };
+
                     let new_init_metadata = new_init_snapshot.metadata;
 
                     tree.update_props(old_ref, new_inst);
@@ -207,7 +214,8 @@ impl SnapshotMiddleware for DirectoryMiddleware {
                         &path.join("init.meta.json"),
                         new_inst,
                         HashSet::new(),
-                        Some("Folder"),
+                        Some(overrides.known_class_or("Folder")),
+                        &context.syncback.property_filters_save,
                     )?;
                 }
             }
@@ -228,13 +236,18 @@ impl SnapshotMiddleware for DirectoryMiddleware {
         new_dom: &WeakDom,
         new_ref: Ref,
         context: &InstanceContext,
-    ) -> anyhow::Result<InstanceSnapshot> {
+        overrides: Option<SnapshotOverride>,
+    ) -> anyhow::Result<Option<InstanceSnapshot>> {
         let mut my_metadata = InstanceMetadata::new();
 
         let new_inst = new_dom.get_by_ref(new_ref).with_context(|| "missing ref")?;
 
         let new_path = parent_path.join(name);
         log::trace!("New dir {}", new_path.display());
+
+        if !context.should_syncback_path(&new_path) {
+            return Ok(None);
+        }
 
         let write_dir_result = vfs.write_dir(&new_path);
 
@@ -253,6 +266,8 @@ impl SnapshotMiddleware for DirectoryMiddleware {
             .map(|(&init_name, _)| new_path.join(init_name))
             .collect();
 
+        my_metadata.middleware_id = Some(self.middleware_id());
+
         let mut children = Vec::new();
 
         let best_sub_middleware =
@@ -263,8 +278,13 @@ impl SnapshotMiddleware for DirectoryMiddleware {
                 .flatten();
         if let Some(best_sub_middleware) = best_sub_middleware {
             let result = get_middlewares()[best_sub_middleware]
-                .syncback_new(vfs, &new_path, "init", new_dom, new_ref, context)
+                .syncback_new(vfs, &new_path, "init", new_dom, new_ref, context, None)
                 .with_context(|| "failed to create instance on filesystem")?;
+
+            let result = match result {
+                Some(result) => result,
+                None => return Ok(None),
+            };
 
             my_metadata.middleware_context = Some(Arc::new(DirectoryMiddlewareContext {
                 init_middleware: result.metadata.middleware_id.clone(),
@@ -285,7 +305,8 @@ impl SnapshotMiddleware for DirectoryMiddleware {
                 &new_path.join("init.meta.json"),
                 new_inst,
                 HashSet::new(),
-                Some("Folder"),
+                Some(overrides.known_class_or("Folder")),
+                &context.syncback.property_filters_save,
             )?;
         }
 
@@ -306,20 +327,25 @@ impl SnapshotMiddleware for DirectoryMiddleware {
                             new_dom,
                             *child_ref,
                             context,
+                            None,
                         )
                         .with_context(|| "failed to create instance on filesystem")?;
 
-                    children.push(result);
+                    if let Some(result) = result {
+                        children.push(result);
+                    }
                 } // TODO: warn on skipping (or fail early?)
             }
         }
 
-        Ok(InstanceSnapshot::new()
-            .children(children)
-            .class_name(&new_inst.class)
-            .metadata(my_metadata)
-            .name(&new_inst.name)
-            .properties(new_inst.properties.clone()))
+        Ok(Some(
+            InstanceSnapshot::new()
+                .children(children)
+                .class_name(&new_inst.class)
+                .metadata(my_metadata)
+                .name(&new_inst.name)
+                .properties(new_inst.properties.clone()),
+        ))
     }
 
     fn syncback_destroy(

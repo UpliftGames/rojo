@@ -19,6 +19,29 @@ pub const PRIORITY_MANY_READABLE: i32 = 200;
 
 pub const PRIORITY_ALWAYS: i32 = 1000;
 
+#[derive(Debug, PartialEq, Eq, Clone, Default)]
+pub struct SnapshotOverride {
+    pub known_class: Option<String>,
+}
+
+pub trait SnapshotOverrideTrait {
+    fn known_class_or(&self, def: &'static str) -> &str;
+}
+
+impl SnapshotOverrideTrait for SnapshotOverride {
+    fn known_class_or(&self, def: &'static str) -> &str {
+        self.known_class
+            .as_ref()
+            .map_or_else(|| def, |c| c.as_str())
+    }
+}
+
+impl SnapshotOverrideTrait for Option<SnapshotOverride> {
+    fn known_class_or(&self, def: &'static str) -> &str {
+        self.as_ref().map(|o| o.known_class_or(def)).unwrap_or(def)
+    }
+}
+
 pub trait SnapshotMiddleware: Debug + DynEq + Sync + Send {
     fn middleware_id(&self) -> &'static str;
 
@@ -70,6 +93,7 @@ pub trait SnapshotMiddleware: Debug + DynEq + Sync + Send {
         new_dom: &WeakDom,
         instance_context: &InstanceContext,
         middleware_context: Option<Arc<dyn MiddlewareContextAny>>,
+        overrides: Option<SnapshotOverride>,
     ) -> anyhow::Result<InstanceMetadata>;
 
     /// Syncs an instance back into the filesystem, creating new files.
@@ -81,7 +105,8 @@ pub trait SnapshotMiddleware: Debug + DynEq + Sync + Send {
         new_dom: &WeakDom,
         new_ref: Ref,
         context: &InstanceContext,
-    ) -> anyhow::Result<InstanceSnapshot>;
+        overrides: Option<SnapshotOverride>,
+    ) -> anyhow::Result<Option<InstanceSnapshot>>;
 
     /// Destroys the filesystem representation of an instance.
     fn syncback_destroy(
@@ -94,15 +119,41 @@ pub trait SnapshotMiddleware: Debug + DynEq + Sync + Send {
 }
 dyn_eq::eq_trait_object!(SnapshotMiddleware);
 
-pub trait MiddlewareContextAny: Any + Debug + DynEq + Sync + Send {
-    fn context_as_any(self: Arc<Self>) -> Box<dyn Any> {
-        Box::new(self)
-    }
-    fn context_as_any_arc(self: Arc<Self>) -> Arc<dyn Any> {
-        Arc::new(self)
-    }
+pub trait MiddlewareContextAny: Any + Debug + DynEq + Sync + Send + 'static {
+    fn as_any_ref(self: &'_ Self) -> &'_ dyn Any;
+    fn as_any_mut(self: &'_ mut Self) -> &'_ mut dyn Any;
+    fn as_any_box(self: Box<Self>) -> Box<dyn Any>;
 }
 dyn_eq::eq_trait_object!(MiddlewareContextAny);
+
+impl<T: Any + Debug + Eq + Send + Sync + 'static> MiddlewareContextAny for T {
+    #[inline]
+    fn as_any_ref(self: &'_ Self) -> &'_ dyn Any {
+        self
+    }
+
+    #[inline]
+    fn as_any_mut(self: &'_ mut Self) -> &'_ mut dyn Any {
+        self
+    }
+
+    #[inline]
+    fn as_any_box(self: Box<Self>) -> Box<dyn Any> {
+        self
+    }
+}
+
+impl dyn MiddlewareContextAny + 'static {
+    #[inline]
+    pub fn downcast_ref<T: 'static>(self: &'_ Self) -> Option<&'_ T> {
+        self.as_any_ref().downcast_ref::<T>()
+    }
+
+    #[inline]
+    pub fn downcast_mut<T: 'static>(self: &'_ mut Self) -> Option<&'_ mut T> {
+        self.as_any_mut().downcast_mut::<T>()
+    }
+}
 
 pub fn get_best_syncback_middleware_sorted(
     dom: &WeakDom,

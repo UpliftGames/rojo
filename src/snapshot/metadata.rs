@@ -1,14 +1,18 @@
 use std::{
+    collections::BTreeMap,
     fmt,
     path::{Path, PathBuf},
     sync::Arc,
 };
 
+use anyhow::Context;
 use serde::{Deserialize, Serialize};
 
-use crate::{glob::Glob, path_serializer, project::ProjectNode};
+use crate::{
+    glob::Glob, path_serializer, project::ProjectNode, ProjectSyncback, ProjectSyncbackPropertyMode,
+};
 
-use super::MiddlewareContextAny;
+use super::{default_filters_diff, default_filters_save, MiddlewareContextAny, PropertyFilter};
 
 /// Rojo-specific metadata that can be associated with an instance or a snapshot
 /// of an instance.
@@ -141,6 +145,8 @@ pub struct InstanceContext {
 
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub transformer_rules: Arc<Vec<TransformerRule>>,
+
+    pub syncback: Arc<SyncbackContext>,
 }
 
 impl InstanceContext {
@@ -162,6 +168,89 @@ impl InstanceContext {
         rules.extend(new_rules);
     }
 
+    /// Extend syncback options with new options
+    pub fn add_syncback_options(&mut self, new_options: &ProjectSyncback) -> anyhow::Result<()> {
+        let syncback = Arc::make_mut(&mut self.syncback);
+
+        syncback
+            .exclude_globs
+            .extend(new_options.exclude_globs.iter().cloned());
+
+        for (key, new_value) in &new_options.properties {
+            // TODO: deduplicate these
+            if syncback.property_filters_diff.contains_key(key) {
+                let old_value = syncback.property_filters_diff.get_mut(key).unwrap();
+                if let ProjectSyncbackPropertyMode::WhenNotEqual(new_eq_values) = &new_value.diff {
+                    if let PropertyFilter::IgnoreWhenEq(old_eq_values) = old_value {
+                        for eq_value in new_eq_values.iter().cloned() {
+                            let eq_value = eq_value.resolve_unambiguous().with_context(|| format!("Excluded syncback property {} could not be resolved to a proper value.", key))?;
+                            old_eq_values.push(eq_value);
+                        }
+                    }
+                }
+
+                match &new_value.diff {
+                    ProjectSyncbackPropertyMode::Always => {
+                        continue;
+                    }
+                    ProjectSyncbackPropertyMode::Never => {
+                        syncback
+                            .property_filters_diff
+                            .insert(key.clone(), PropertyFilter::Ignore);
+                    }
+                    ProjectSyncbackPropertyMode::WhenNotEqual(eq_values) => {
+                        let mut resolved_eq_values = Vec::new();
+                        for eq_value in eq_values.iter().cloned() {
+                            let eq_value = eq_value.resolve_unambiguous().with_context(|| format!("Excluded syncback property {} could not be resolved to a proper value.", key))?;
+                            resolved_eq_values.push(eq_value);
+                        }
+
+                        syncback.property_filters_diff.insert(
+                            key.clone(),
+                            PropertyFilter::IgnoreWhenEq(resolved_eq_values.clone()),
+                        );
+                    }
+                }
+            }
+            if syncback.property_filters_save.contains_key(key) {
+                let old_value = syncback.property_filters_save.get_mut(key).unwrap();
+                if let ProjectSyncbackPropertyMode::WhenNotEqual(new_eq_values) = &new_value.save {
+                    if let PropertyFilter::IgnoreWhenEq(old_eq_values) = old_value {
+                        for eq_value in new_eq_values.iter().cloned() {
+                            let eq_value = eq_value.resolve_unambiguous().with_context(|| format!("Excluded syncback property {} could not be resolved to a proper value.", key))?;
+                            old_eq_values.push(eq_value);
+                        }
+                    }
+                }
+
+                match &new_value.save {
+                    ProjectSyncbackPropertyMode::Always => {
+                        continue;
+                    }
+                    ProjectSyncbackPropertyMode::Never => {
+                        syncback
+                            .property_filters_save
+                            .insert(key.clone(), PropertyFilter::Ignore);
+                    }
+                    ProjectSyncbackPropertyMode::WhenNotEqual(eq_values) => {
+                        let mut resolved_eq_values = Vec::new();
+                        for eq_value in eq_values.iter().cloned() {
+                            let eq_value = eq_value.resolve_unambiguous().with_context(|| format!("Excluded syncback property {} could not be resolved to a proper value.", key))?;
+                            resolved_eq_values.push(eq_value);
+                        }
+
+                        syncback.property_filters_save.insert(
+                            key.clone(),
+                            PropertyFilter::IgnoreWhenEq(resolved_eq_values.clone()),
+                        );
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     /// Extend the list of type override rules in the context with the given new rules.
     pub fn add_transformer_rules<I>(&mut self, new_rules: I)
     where
@@ -180,6 +269,15 @@ impl InstanceContext {
         rules.extend(new_rules);
     }
 
+    pub fn should_syncback_path(&self, path: &Path) -> bool {
+        !self
+            .syncback
+            .exclude_globs
+            .iter()
+            .map(|glob| glob.is_match(path))
+            .any(|is_match| is_match)
+    }
+
     pub fn get_transformer_override(&self, path: &Path) -> Option<Transformer> {
         for rule in self.transformer_rules.iter() {
             if rule.applies_to(path) {
@@ -195,8 +293,33 @@ impl Default for InstanceContext {
     fn default() -> Self {
         InstanceContext {
             path_ignore_rules: Arc::new(Vec::new()),
+            syncback: Arc::new(SyncbackContext::default()),
             transformer_rules: Arc::new(Vec::new()),
         }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncbackContext {
+    pub exclude_globs: Vec<Glob>,
+    pub property_filters_diff: BTreeMap<String, PropertyFilter>,
+    pub property_filters_save: BTreeMap<String, PropertyFilter>,
+}
+
+impl Default for SyncbackContext {
+    fn default() -> Self {
+        Self {
+            exclude_globs: Vec::new(),
+            property_filters_diff: default_filters_diff().clone(),
+            property_filters_save: default_filters_save().clone(),
+        }
+    }
+}
+
+impl PartialEq for SyncbackContext {
+    fn eq(&self, other: &Self) -> bool {
+        self.exclude_globs == other.exclude_globs
+            && self.property_filters_diff == other.property_filters_diff
     }
 }
 

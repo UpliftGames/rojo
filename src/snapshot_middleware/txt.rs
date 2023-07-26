@@ -10,7 +10,7 @@ use rbx_dom_weak::{
 
 use crate::snapshot::{
     DeepDiff, InstanceContext, InstanceMetadata, InstanceSnapshot, MiddlewareContextAny, RojoTree,
-    SnapshotMiddleware, PRIORITY_SINGLE_READABLE,
+    SnapshotMiddleware, SnapshotOverride, PRIORITY_SINGLE_READABLE,
 };
 
 use super::{
@@ -99,7 +99,8 @@ impl SnapshotMiddleware for TxtMiddleware {
         old_ref: Ref,
         new_dom: &WeakDom,
         context: &InstanceContext,
-        middleware_context: Option<Arc<dyn MiddlewareContextAny>>,
+        _middleware_context: Option<Arc<dyn MiddlewareContextAny>>,
+        _overrides: Option<SnapshotOverride>,
     ) -> anyhow::Result<InstanceMetadata> {
         let old_inst = tree.get_instance(old_ref).unwrap();
 
@@ -118,6 +119,7 @@ impl SnapshotMiddleware for TxtMiddleware {
             new_inst,
             HashSet::from(["Value", "ClassName"]),
             Some("StringValue"),
+            &context.syncback.property_filters_save,
         )?;
 
         Ok(my_metadata
@@ -135,7 +137,8 @@ impl SnapshotMiddleware for TxtMiddleware {
         new_dom: &WeakDom,
         new_ref: Ref,
         context: &InstanceContext,
-    ) -> anyhow::Result<InstanceSnapshot> {
+        _overrides: Option<SnapshotOverride>,
+    ) -> anyhow::Result<Option<InstanceSnapshot>> {
         let instance = new_dom.get_by_ref(new_ref).unwrap();
         let path = parent_path.join(format!("{}.txt", name));
 
@@ -147,9 +150,10 @@ impl SnapshotMiddleware for TxtMiddleware {
             instance,
             HashSet::from(["Value", "ClassName"]),
             Some("StringValue"),
+            &context.syncback.property_filters_save,
         )?;
 
-        Ok(
+        Ok(Some(
             InstanceSnapshot::from_tree_copy(new_dom, new_ref, false).metadata(
                 InstanceMetadata::new()
                     .context(context)
@@ -157,7 +161,7 @@ impl SnapshotMiddleware for TxtMiddleware {
                     .relevant_paths(vec![path.clone(), path.with_extension("meta.json")])
                     .middleware_id(self.middleware_id()),
             ),
-        )
+        ))
     }
 
     fn syncback_destroy(

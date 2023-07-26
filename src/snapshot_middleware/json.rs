@@ -8,7 +8,7 @@ use crate::{
     lua_ast::{Expression, Statement},
     snapshot::{
         InstanceContext, InstanceMetadata, InstanceSnapshot, MiddlewareContextAny,
-        SnapshotMiddleware,
+        SnapshotMiddleware, SnapshotOverride,
     },
 };
 
@@ -97,6 +97,7 @@ impl SnapshotMiddleware for JsonMiddleware {
         _new_dom: &rbx_dom_weak::WeakDom,
         _context: &InstanceContext,
         _middleware_context: Option<Arc<dyn MiddlewareContextAny>>,
+        _overrides: Option<SnapshotOverride>,
     ) -> anyhow::Result<InstanceMetadata> {
         todo!()
     }
@@ -109,7 +110,8 @@ impl SnapshotMiddleware for JsonMiddleware {
         _new_dom: &rbx_dom_weak::WeakDom,
         _new_ref: rbx_dom_weak::types::Ref,
         _context: &InstanceContext,
-    ) -> anyhow::Result<InstanceSnapshot> {
+        _overrides: Option<SnapshotOverride>,
+    ) -> anyhow::Result<Option<InstanceSnapshot>> {
         todo!()
     }
 

@@ -1,6 +1,6 @@
 use std::{
     borrow::Cow,
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     path::PathBuf,
 };
 
@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     resolution::UnresolvedValue,
-    snapshot::{InstanceSnapshot, ToVariantBinaryString},
+    snapshot::{InstanceSnapshot, PropertiesFiltered, PropertyFilter, ToVariantBinaryString},
 };
 
 /// Represents metadata in a sibling file with the same basename.
@@ -53,48 +53,44 @@ impl MetadataFile {
         Ok(meta)
     }
 
-    pub fn with_instance_props(self, instance: &Instance, skip_props: HashSet<&str>) -> Self {
+    pub fn with_instance_props(
+        self,
+        instance: &Instance,
+        skip_props: HashSet<&str>,
+        filters: &BTreeMap<String, PropertyFilter>,
+    ) -> Self {
         if instance.name == "ModuleScript" {
             log::trace!("Skipping properties for ModuleScript: {:#?}", skip_props);
         }
 
         Self {
-            properties: HashMap::from_iter(instance.properties.iter().filter_map(|(k, v)| {
-                if k == "Attributes" {
-                    return None;
-                }
-                if k == "HistoryId" || k == "UniqueId" || k == "SourceAssetId" {
-                    return None;
-                }
-
-                if k == "Tags" {
-                    if let Variant::Tags(tags) = v {
-                        if !tags.iter().any(|_| true) {
-                            return None;
-                        }
+            properties: HashMap::from_iter(instance.properties_filtered(filters, true).filter_map(
+                |(k, v)| {
+                    if k == "Attributes" {
+                        return None;
                     }
-                }
 
-                let mut v = v.clone();
+                    let mut v = v.clone();
 
-                if let Variant::SharedString(_) = v {
-                    log::trace!(
-                        "Converting {}.{} from SharedString to BinaryString",
-                        instance.class,
-                        k
-                    );
-                    v = v.to_variant_binary_string().unwrap();
-                }
+                    if let Variant::SharedString(_) = v {
+                        log::trace!(
+                            "Converting {}.{} from SharedString to BinaryString",
+                            instance.class,
+                            k
+                        );
+                        v = v.to_variant_binary_string().unwrap();
+                    }
 
-                if !skip_props.contains(k.as_str()) {
-                    Some((
-                        k.clone(),
-                        UnresolvedValue::from_variant_property(&instance.class, k.as_str(), v),
-                    ))
-                } else {
-                    None
-                }
-            })),
+                    if !skip_props.contains(k) {
+                        Some((
+                            k.to_string(),
+                            UnresolvedValue::from_variant_property(&instance.class, k, v),
+                        ))
+                    } else {
+                        None
+                    }
+                },
+            )),
             attributes: instance.properties.get("Attributes").map_or_else(
                 || HashMap::new(),
                 |attributes| {

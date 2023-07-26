@@ -1,11 +1,13 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     path::Path,
 };
 
 use anyhow::Context;
 use memofs::Vfs;
 use rbx_dom_weak::Instance;
+
+use crate::snapshot::PropertyFilter;
 
 use super::MetadataFile;
 
@@ -61,6 +63,7 @@ pub fn reconcile_meta_file(
     instance: &Instance,
     skip_props: HashSet<&str>,
     base_class: Option<&str>,
+    filters: &BTreeMap<String, PropertyFilter>,
 ) -> anyhow::Result<()> {
     let existing = {
         let contents = vfs.read(path).map(Some).or_else(|e| match e.kind() {
@@ -86,7 +89,7 @@ pub fn reconcile_meta_file(
         }
     };
 
-    new_file = new_file.with_instance_props(instance, skip_props);
+    new_file = new_file.with_instance_props(instance, skip_props, filters);
 
     if Some(instance.class.as_str()) == base_class {
         new_file.class_name = None;

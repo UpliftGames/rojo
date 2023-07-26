@@ -1,24 +1,22 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     fmt::Display,
     ops::AddAssign,
 };
 
-use rbx_dom_weak::{
-    types::{Ref, Variant},
-    Instance, WeakDom,
-};
+use rbx_dom_weak::{types::Ref, Instance, WeakDom};
 
-use super::PropertiesFiltered;
+use super::{PropertiesFiltered, PropertyFilter};
 
 pub fn diff_properties<'a>(
     old_instance: &'a Instance,
     new_instance: &'a Instance,
+    filters: &'a BTreeMap<String, PropertyFilter>,
 ) -> Box<dyn Iterator<Item = String> + 'a> {
     Box::new(
         old_instance
-            .properties_filtered_cmp()
-            .chain(new_instance.properties_filtered_cmp())
+            .properties_filtered(filters, true)
+            .chain(new_instance.properties_filtered(filters, true))
             .filter_map(|(key, _)| {
                 let new_prop = new_instance.properties.get(key);
                 let old_prop = old_instance.properties.get(key);
@@ -32,8 +30,12 @@ pub fn diff_properties<'a>(
     )
 }
 
-pub fn are_properties_different(old_instance: &Instance, new_instance: &Instance) -> bool {
-    diff_properties(old_instance, new_instance).any(|_| true)
+pub fn are_properties_different(
+    old_instance: &Instance,
+    new_instance: &Instance,
+    filters: &BTreeMap<String, PropertyFilter>,
+) -> bool {
+    diff_properties(old_instance, new_instance, filters).any(|_| true)
 }
 
 #[derive(Debug, Clone, Default)]
@@ -108,9 +110,15 @@ impl<'a> Display for DeepDiffDisplay<'a> {
 }
 
 impl DeepDiff {
-    pub fn new(old_tree: &WeakDom, old_root: Ref, new_tree: &WeakDom, new_root: Ref) -> Self {
+    pub fn new<'a>(
+        old_tree: &'a WeakDom,
+        old_root: Ref,
+        new_tree: &WeakDom,
+        new_root: Ref,
+        get_filters: impl Fn(Ref) -> &'a BTreeMap<String, PropertyFilter>,
+    ) -> Self {
         let mut diff = Self::default();
-        diff.deep_diff(old_tree, old_root, new_tree, new_root);
+        diff.deep_diff(old_tree, old_root, new_tree, new_root, get_filters);
         diff
     }
 
@@ -190,6 +198,7 @@ impl DeepDiff {
         old_instance: &Instance,
         new_tree: &WeakDom,
         new_instance: &Instance,
+        filters: &BTreeMap<String, PropertyFilter>,
     ) -> HashMap<Ref, Ref> {
         let mut matches = HashMap::new();
 
@@ -220,13 +229,9 @@ impl DeepDiff {
                 let best_match_iter = new_children.iter().map(|new_child_ref| {
                     let new_child = new_tree.get_by_ref(*new_child_ref).unwrap();
                     let (diff_score, same_score) =
-                        similarity_score(old_tree, old_child, new_tree, new_child);
+                        similarity_score(old_tree, old_child, new_tree, new_child, filters);
 
                     let percent_same_score = (same_score * 100) / (diff_score + same_score);
-
-                    if old_child.name == "Workspace" {
-                        log::trace!("{}: {}", old_child.name, percent_same_score);
-                    }
 
                     (*new_child_ref, percent_same_score)
                 });
@@ -281,7 +286,14 @@ impl DeepDiff {
         }
     }
 
-    fn deep_diff(&mut self, old_tree: &WeakDom, old_root: Ref, new_tree: &WeakDom, new_root: Ref) {
+    fn deep_diff<'a>(
+        &mut self,
+        old_tree: &'a WeakDom,
+        old_root: Ref,
+        new_tree: &WeakDom,
+        new_root: Ref,
+        get_filters: impl Fn(Ref) -> &'a BTreeMap<String, PropertyFilter>,
+    ) {
         let mut process: Vec<(Ref, Ref)> = vec![(old_root, new_root)];
 
         while !process.is_empty() {
@@ -289,7 +301,9 @@ impl DeepDiff {
             let old_inst = old_tree.get_by_ref(old_ref).unwrap();
             let new_inst = new_tree.get_by_ref(new_ref).unwrap();
 
-            if are_properties_different(old_inst, new_inst) {
+            let filters = get_filters(old_ref);
+
+            if are_properties_different(old_inst, new_inst, filters) {
                 self.changed.insert(old_ref, new_ref);
                 self.mark_ancestors(old_tree, old_inst.parent());
             } else {
@@ -297,7 +311,7 @@ impl DeepDiff {
             }
 
             if !old_inst.children().is_empty() || !new_inst.children().is_empty() {
-                let matches = self.match_children(old_tree, old_inst, new_tree, new_inst);
+                let matches = self.match_children(old_tree, old_inst, new_tree, new_inst, filters);
                 process.extend(matches.into_iter());
             }
         }
@@ -309,18 +323,14 @@ pub fn similarity_score(
     old_instance: &Instance,
     new_tree: &WeakDom,
     new_instance: &Instance,
+    filters: &BTreeMap<String, PropertyFilter>,
 ) -> (i32, i32) {
     let mut diff_score = 0;
     let mut same_score = 0;
 
-    let old_properties: HashMap<&str, &Variant> = old_instance.properties_filtered_cmp_map();
+    let old_properties = old_instance.properties_filtered_map(filters, true);
 
-    let new_properties: HashMap<&str, &Variant> = new_instance.properties_filtered_cmp_map();
-
-    if old_instance.name == "Workspace" {
-        log::trace!("old_properties: {:?}", old_properties);
-        log::trace!("new_properties: {:?}", new_properties);
-    }
+    let new_properties = new_instance.properties_filtered_map(filters, true);
 
     for (k, v) in old_properties.iter() {
         if new_properties.contains_key(k) && new_properties[k] == *v {
@@ -333,6 +343,18 @@ pub fn similarity_score(
         if !old_properties.contains_key(k) {
             diff_score += 1;
         }
+    }
+
+    if old_instance.class == new_instance.class {
+        same_score += 1;
+    } else {
+        diff_score += 1;
+    }
+
+    if old_instance.name == new_instance.name {
+        same_score += 1;
+    } else {
+        diff_score += 1;
     }
 
     let mut children_by_name: HashMap<&str, i32> = HashMap::new();

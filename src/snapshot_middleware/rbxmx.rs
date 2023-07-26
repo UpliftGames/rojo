@@ -6,7 +6,7 @@ use rbx_xml::EncodeOptions;
 
 use crate::snapshot::{
     InstanceContext, InstanceMetadata, InstanceSnapshot, MiddlewareContextAny, SnapshotMiddleware,
-    PRIORITY_MODEL_XML,
+    SnapshotOverride, PRIORITY_MODEL_XML,
 };
 
 use super::util::{reconcile_meta_file_empty, try_remove_file, PathExt};
@@ -87,7 +87,8 @@ impl SnapshotMiddleware for RbxmxMiddleware {
         old_ref: rbx_dom_weak::types::Ref,
         new_dom: &rbx_dom_weak::WeakDom,
         context: &InstanceContext,
-        middleware_context: Option<Arc<dyn MiddlewareContextAny>>,
+        _middleware_context: Option<Arc<dyn MiddlewareContextAny>>,
+        _overrides: Option<SnapshotOverride>,
     ) -> anyhow::Result<InstanceMetadata> {
         let old_inst = tree.get_instance(old_ref).unwrap();
 
@@ -125,7 +126,8 @@ impl SnapshotMiddleware for RbxmxMiddleware {
         new_dom: &rbx_dom_weak::WeakDom,
         new_ref: rbx_dom_weak::types::Ref,
         context: &InstanceContext,
-    ) -> anyhow::Result<InstanceSnapshot> {
+        _overrides: Option<SnapshotOverride>,
+    ) -> anyhow::Result<Option<InstanceSnapshot>> {
         let path = parent_path.join(format!("{}.rbxmx", name));
 
         let mut contents: Vec<u8> = Vec::new();
@@ -140,7 +142,7 @@ impl SnapshotMiddleware for RbxmxMiddleware {
 
         reconcile_meta_file_empty(vfs, &path.with_extension("meta.json"))?;
 
-        Ok(
+        Ok(Some(
             InstanceSnapshot::from_tree_copy(new_dom, new_ref, false).metadata(
                 InstanceMetadata::new()
                     .context(context)
@@ -148,7 +150,7 @@ impl SnapshotMiddleware for RbxmxMiddleware {
                     .relevant_paths(vec![path.clone(), path.with_extension("meta.json")])
                     .middleware_id(self.middleware_id()),
             ),
-        )
+        ))
     }
 
     fn syncback_destroy(

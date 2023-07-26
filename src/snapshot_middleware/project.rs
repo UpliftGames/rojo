@@ -1,4 +1,10 @@
-use std::{borrow::Cow, collections::HashMap, path::Path, sync::Arc};
+use std::{
+    any::TypeId,
+    borrow::Cow,
+    collections::HashMap,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use anyhow::{bail, Context};
 use memofs::Vfs;
@@ -11,9 +17,9 @@ use crate::{
     snapshot::{
         get_best_syncback_middleware, InstanceContext, InstanceMetadata, InstanceSnapshot,
         InstigatingSource, MiddlewareContextAny, PathIgnoreRule, SnapshotMiddleware,
-        TransformerRule,
+        SnapshotOverride, TransformerRule,
     },
-    snapshot_middleware::get_middleware,
+    snapshot_middleware::{get_middleware, util::PathExt},
 };
 
 use super::snapshot_from_vfs;
@@ -23,8 +29,6 @@ pub struct ProjectMiddlewareContext {
     node_middleware: Option<&'static str>,
     node_context: Option<Arc<dyn MiddlewareContextAny>>,
 }
-
-impl MiddlewareContextAny for ProjectMiddlewareContext {}
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct ProjectMiddleware;
@@ -59,6 +63,10 @@ impl SnapshotMiddleware for ProjectMiddleware {
         });
 
         context.add_path_ignore_rules(path_ignore_rules);
+
+        if let Some(syncback_options) = &project.syncback {
+            context.add_syncback_options(syncback_options)?;
+        }
 
         let transformer_rules = project
             .transformer_rules
@@ -110,22 +118,40 @@ impl SnapshotMiddleware for ProjectMiddleware {
     fn syncback_update(
         &self,
         vfs: &Vfs,
-        path: &Path,
+        project_path: &Path,
         diff: &crate::snapshot::DeepDiff,
         tree: &mut crate::snapshot::RojoTree,
         old_ref: rbx_dom_weak::types::Ref,
         new_dom: &rbx_dom_weak::WeakDom,
         context: &InstanceContext,
-        middleware_context: Option<Arc<dyn MiddlewareContextAny>>,
+        root_middleware_context: Option<Arc<dyn MiddlewareContextAny>>,
+        _overrides: Option<SnapshotOverride>,
     ) -> anyhow::Result<InstanceMetadata> {
         let my_metadata = tree.get_metadata(old_ref).unwrap().clone();
-        let mut project = Project::load_from_slice(&vfs.read(path)?, path)
-            .with_context(|| format!("File was not a valid Rojo project: {}", path.display()))?;
+        let mut project = Project::load_from_slice(&vfs.read(project_path)?, project_path)
+            .with_context(|| {
+                format!(
+                    "File was not a valid Rojo project: {}",
+                    project_path.display()
+                )
+            })?;
         let mut project_changed = false;
 
-        let mut processing = vec![(&mut project.tree, old_ref)];
+        let project_directory = project_path.parent().unwrap_or_else(|| Path::new("."));
+
+        // We use node paths here instead of nodes to get around mutable borrow
+        // issues caused by borrowing nodes to stick them in the list.
+        let mut processing = vec![(Vec::<String>::new(), old_ref)];
         while !processing.is_empty() {
-            let (node, node_ref) = processing.pop().unwrap();
+            let (project_node_path, node_ref) = processing.pop().unwrap();
+
+            let node = {
+                let mut node = &mut project.tree;
+                for path in project_node_path.iter() {
+                    node = node.children.get_mut(path).unwrap();
+                }
+                node
+            };
 
             let node_inst = tree.get_instance(node_ref);
             let node_inst = match node_inst {
@@ -134,7 +160,7 @@ impl SnapshotMiddleware for ProjectMiddleware {
                     log::warn!(
                         "Missing instance for node. Was it deleted in a previous syncback change? Skipping. ({:?} of {})",
                         node.path,
-                        path.display()
+                        project_path.display()
                     );
                     continue;
                 }
@@ -145,14 +171,19 @@ impl SnapshotMiddleware for ProjectMiddleware {
             if diff.has_changed_descendants(node_ref) {
                 for child_ref in node_inst.children() {
                     let child_inst = tree.get_instance(*child_ref).unwrap();
-                    if let Some(InstigatingSource::ProjectNode(_, _, _, _)) =
-                        child_inst.metadata().instigating_source
+                    if let Some(InstigatingSource::ProjectNode(_, node_name, _, _)) =
+                        &child_inst.metadata().instigating_source
                     {
                         let matching_node = node.children.get_mut(child_inst.name());
-                        if let Some(matching_node) = matching_node {
-                            processing.push((matching_node, *child_ref));
+                        if let Some(_) = matching_node {
+                            let next_node_path = project_node_path
+                                .iter()
+                                .cloned()
+                                .chain(std::iter::once(node_name.clone()))
+                                .collect();
+                            processing.push((next_node_path, *child_ref));
                         } else {
-                            log::warn!("Could not find project node for instance even though it was created by a project. Skipping. ({:?} of {})", node.path, path.display());
+                            log::warn!("Could not find project node for instance even though it was created by a project. Skipping. ({:?} of {})", node.path, project_path.display());
                         }
                     }
                 }
@@ -163,6 +194,17 @@ impl SnapshotMiddleware for ProjectMiddleware {
             }
 
             if let Some(path_node) = &node.path {
+                let node_path = path_node.path();
+                let node_path = if node_path.is_relative() {
+                    Cow::Owned(project_directory.join(node_path))
+                } else {
+                    Cow::Borrowed(node_path)
+                };
+
+                if !context.should_syncback_path(&node_path) {
+                    continue;
+                }
+
                 let new_ref = diff
                     .get_matching_new_ref(node_ref)
                     .with_context(|| "no matching new ref (diff)")?;
@@ -170,31 +212,64 @@ impl SnapshotMiddleware for ProjectMiddleware {
                     .get_by_ref(new_ref)
                     .with_context(|| "missing ref (tree)")?;
 
-                let project_context = node_inst.metadata().middleware_context.clone().unwrap();
-                let project_context: ProjectMiddlewareContext = project_context
-                    .context_as_any()
-                    .downcast_ref()
-                    .cloned()
-                    .unwrap();
+                let middleware_context = if node_ref == old_ref {
+                    root_middleware_context.clone()
+                } else {
+                    node_inst.metadata().middleware_context.clone()
+                };
 
-                let node_path = path_node.path();
-                let existing_middleware_id = project_context.node_middleware;
-                let existing_middleware_context = project_context.node_context;
+                let project_context = if let Some(middleware_context) = middleware_context {
+                    let middleware_context = middleware_context.as_ref();
 
-                let new_middleware_id =
+                    let middleware_context =
+                        middleware_context.downcast_ref::<ProjectMiddlewareContext>();
+
+                    middleware_context.cloned()
+                } else {
+                    None
+                };
+
+                let project_context = project_context.as_ref();
+
+                let existing_middleware_id = project_context.map(|v| v.node_middleware).flatten();
+                let existing_middleware_context =
+                    project_context.map(|v| v.node_context.clone()).flatten();
+
+                let mut new_middleware_id =
                     get_best_syncback_middleware(new_dom, new_inst, true, existing_middleware_id);
+
+                if existing_middleware_id == Some("project") {
+                    new_middleware_id = Some("project");
+                } else if node_path.file_name_ends_with(".project.json") {
+                    log::warn!(
+                        "Skipping syncback for project file. ({:?} of {})",
+                        node.path,
+                        project_path.display()
+                    );
+                    continue;
+                }
 
                 if let Some(new_middleware_id) = new_middleware_id {
                     if Some(new_middleware_id) == existing_middleware_id {
+                        log::trace!(
+                            "snapshot update {} with {}, context: {:#?}",
+                            node_path.display(),
+                            new_middleware_id,
+                            &node_inst.metadata().middleware_context
+                        );
+
                         let mut new_metadata = get_middleware(new_middleware_id).syncback_update(
                             vfs,
-                            node_path,
+                            &node_path,
                             diff,
                             tree,
                             node_ref,
                             new_dom,
                             context,
                             existing_middleware_context,
+                            Some(SnapshotOverride {
+                                known_class: node.class_name.clone(),
+                            }),
                         )?;
 
                         new_metadata.middleware_context =
@@ -210,7 +285,7 @@ impl SnapshotMiddleware for ProjectMiddleware {
 
                         if let Some(existing_middleware_id) = existing_middleware_id {
                             get_middleware(existing_middleware_id)
-                                .syncback_destroy(vfs, node_path, tree, node_ref)?;
+                                .syncback_destroy(vfs, &node_path, tree, node_ref)?;
 
                             tree.remove(node_ref);
                         }
@@ -219,23 +294,35 @@ impl SnapshotMiddleware for ProjectMiddleware {
                         let parent_path = node_path.parent().unwrap_or_else(|| Path::new("."));
                         let name = node_path.file_name().unwrap().to_str().unwrap();
 
-                        let mut new_snapshot = get_middleware(new_middleware_id).syncback_new(
+                        log::trace!(
+                            "new snapshot of {} with parent {} for {} (existing middleware: {:?})",
+                            new_middleware_id,
+                            parent_path.display(),
+                            name,
+                            existing_middleware_id
+                        );
+                        let new_snapshot = get_middleware(new_middleware_id).syncback_new(
                             vfs,
                             parent_path,
                             name,
                             new_dom,
                             new_ref,
                             context,
+                            Some(SnapshotOverride {
+                                known_class: node.class_name.clone(),
+                            }),
                         )?;
 
-                        new_snapshot.metadata.middleware_context =
-                            Some(Arc::new(ProjectMiddlewareContext {
-                                node_middleware: new_snapshot.metadata.middleware_id,
-                                node_context: new_snapshot.metadata.middleware_context,
-                            }));
-                        new_snapshot.metadata.middleware_id = Some(self.middleware_id());
-
-                        tree.insert_instance(parent_ref, new_snapshot);
+                        let mut new_snapshot = match new_snapshot {
+                            Some(snapshot) => snapshot,
+                            None => {
+                                log::info!(
+                                    "Skipping {} because it's excluded by ignore patterns.",
+                                    node_path.display()
+                                );
+                                continue;
+                            }
+                        };
                     }
 
                     if !node.properties.is_empty() {
@@ -247,7 +334,7 @@ impl SnapshotMiddleware for ProjectMiddleware {
                     log::warn!(
                         "Project node cannot be updated from syncback (no matching middleware). Skipping. ({:?} of {})",
                         node.path,
-                        path.display()
+                        project_path.display()
                     );
                 }
             } else {
@@ -274,7 +361,7 @@ impl SnapshotMiddleware for ProjectMiddleware {
         }
 
         if project_changed {
-            vfs.write(path, serde_json::to_string_pretty(&project)?)?;
+            vfs.write(project_path, serde_json::to_string_pretty(&project)?)?;
         }
 
         Ok(my_metadata)
@@ -288,7 +375,8 @@ impl SnapshotMiddleware for ProjectMiddleware {
         _new_dom: &rbx_dom_weak::WeakDom,
         _new_ref: rbx_dom_weak::types::Ref,
         _context: &InstanceContext,
-    ) -> anyhow::Result<InstanceSnapshot> {
+        _overrides: Option<SnapshotOverride>,
+    ) -> anyhow::Result<Option<InstanceSnapshot>> {
         bail!("Cannot create new project files from syncback")
     }
 
@@ -323,6 +411,8 @@ pub fn snapshot_project_node(
     let mut properties = HashMap::new();
     let mut children = Vec::new();
     let mut metadata = InstanceMetadata::default();
+
+    metadata.middleware_id = Some("project");
 
     if let Some(path_node) = &node.path {
         let path = path_node.path();
