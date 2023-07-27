@@ -13,7 +13,7 @@ use crate::{
         get_best_syncback_middleware, get_best_syncback_middleware_must_not_serialize_children,
         get_best_syncback_middleware_sorted, DeepDiff, FsSnapshot, GetChildren, InstanceContext,
         InstanceMetadata, InstanceSnapshot, InstigatingSource, MiddlewareContextAny,
-        MiddlewareContextArc, RojoTree, SnapshotMiddleware, SnapshotOverride,
+        MiddlewareContextArc, OldTuple, RojoTree, SnapshotMiddleware, SnapshotOverride,
         SnapshotOverrideTrait, SyncbackNode, SyncbackPlanner, PRIORITY_DIRECTORY_CHECK_FALLBACK,
         PRIORITY_MANY_READABLE, PRIORITY_MODEL_DIRECTORY,
     },
@@ -92,143 +92,6 @@ impl SnapshotMiddleware for DirectoryMiddleware {
         }
     }
 
-    // fn syncback_update(
-    //     &self,
-    //     vfs: &Vfs,
-    //     path: &Path,
-    //     diff: &DeepDiff,
-    //     tree: &mut RojoTree,
-    //     old_ref: Ref,
-    //     new_dom: &WeakDom,
-    //     context: &InstanceContext,
-    //     middleware_context: Option<Arc<dyn MiddlewareContextAny>>,
-    //     overrides: Option<SnapshotOverride>,
-    // ) -> anyhow::Result<InstanceMetadata> {
-    //     log::trace!("Updating dir {}", path.display());
-    //     let mut my_metadata = tree.get_metadata(old_ref).unwrap().clone();
-    //     let mut sub_middleware_id = None;
-    //     if diff.has_changed_properties(old_ref) {
-    //         let _old_inst = tree.get_instance(old_ref).unwrap();
-
-    //         let new_ref = diff
-    //             .get_matching_new_ref(old_ref)
-    //             .with_context(|| "no matching new ref")?;
-    //         let new_inst = new_dom.get_by_ref(new_ref).with_context(|| "missing ref")?;
-
-    //         let syncback_context = if let Some(middleware_context) = middleware_context {
-    //             let middleware_context = middleware_context.as_ref();
-
-    //             let middleware_context =
-    //                 middleware_context.downcast_ref::<DirectoryMiddlewareContext>();
-
-    //             middleware_context.cloned()
-    //         } else {
-    //             None
-    //         };
-
-    //         let syncback_context = syncback_context.as_ref();
-
-    //         let init_middleware = syncback_context.map(|v| v.init_middleware).flatten();
-
-    //         let best_middleware =
-    //             get_best_syncback_middleware_sorted(tree.inner(), new_inst, false, init_middleware)
-    //                 .map(|mut iter| {
-    //                     iter.find(|&v| !get_middlewares()[v].syncback_serializes_children())
-    //                 })
-    //                 .flatten();
-
-    //         sub_middleware_id = best_middleware;
-
-    //         if best_middleware == init_middleware && best_middleware.is_some() {
-    //             let best_middleware = best_middleware.unwrap();
-
-    //             let syncback_context = syncback_context.unwrap();
-    //             let init_path = syncback_context
-    //                 .init_path
-    //                 .as_ref()
-    //                 .with_context(|| "missing existing init path")?;
-
-    //             // todo: pass in correct context. right now it will grab the wrong one (using code like above)!
-    //             let new_init_metadata = get_middlewares()[best_middleware]
-    //                 .syncback_update(
-    //                     vfs,
-    //                     &init_path,
-    //                     diff,
-    //                     tree,
-    //                     old_ref,
-    //                     new_dom,
-    //                     context,
-    //                     syncback_context.init_context.clone(),
-    //                     None,
-    //                 )
-    //                 .with_context(|| "failed to create instance on filesystem")?;
-
-    //             tree.update_props(old_ref, new_inst);
-
-    //             my_metadata.middleware_context = Some(Arc::new(DirectoryMiddlewareContext {
-    //                 init_middleware: new_init_metadata.middleware_id.clone(),
-    //                 init_context: new_init_metadata.middleware_context.clone(),
-    //                 init_path: new_init_metadata
-    //                     .snapshot_source_path()
-    //                     .map(|v| v.to_path_buf()),
-    //             }));
-    //         } else {
-    //             // tear down fs via syncback
-    //             if let Some(existing_middleware) = init_middleware {
-    //                 let syncback_context = syncback_context.unwrap();
-    //                 let init_path = syncback_context
-    //                     .init_path
-    //                     .as_ref()
-    //                     .with_context(|| "missing exiting init path")?;
-
-    //                 get_middlewares()[existing_middleware]
-    //                     .syncback_destroy(vfs, &init_path, tree, old_ref)?;
-    //             }
-
-    //             if let Some(best_middleware) = best_middleware {
-    //                 // reconstruct fs via syncback
-    //                 let new_init_snapshot = get_middlewares()[best_middleware]
-    //                     .syncback_new(vfs, path, "init", new_dom, new_ref, &context, None)
-    //                     .with_context(|| "failed to create instance on filesystem")?;
-
-    //                 let new_init_snapshot = match new_init_snapshot {
-    //                     Some(v) => v,
-    //                     None => bail!("failed to create instance on filesystem: target is disallowed by ignore paths"),
-    //                 };
-
-    //                 let new_init_metadata = new_init_snapshot.metadata;
-
-    //                 tree.update_props(old_ref, new_inst);
-
-    //                 my_metadata.middleware_context = Some(Arc::new(DirectoryMiddlewareContext {
-    //                     init_middleware: new_init_metadata.middleware_id.clone(),
-    //                     init_context: new_init_metadata.middleware_context.clone(),
-    //                     init_path: new_init_metadata
-    //                         .snapshot_source_path()
-    //                         .map(|v| v.to_path_buf()),
-    //                 }));
-    //             } else {
-    //                 my_metadata.middleware_context = None;
-
-    //                 reconcile_meta_file(
-    //                     vfs,
-    //                     &path.join("init.meta.json"),
-    //                     new_inst,
-    //                     HashSet::new(),
-    //                     Some(overrides.known_class_or("Folder")),
-    //                     &context.syncback.property_filters_save,
-    //                 )?;
-    //             }
-    //         }
-    //     }
-
-    //     if diff.has_changed_descendants(old_ref) && sub_middleware_id != Some("project") {
-    //         tree.syncback_children(vfs, diff, old_ref, path, new_dom, context)?;
-    //     }
-
-    //     Ok(my_metadata)
-    // }
-
     fn syncback_new_path(
         &self,
         parent_path: &Path,
@@ -241,130 +104,18 @@ impl SnapshotMiddleware for DirectoryMiddleware {
     fn syncback(
         &self,
         vfs: &Vfs,
+        diff: &DeepDiff,
         new_path: &Path,
         old: Option<(&mut RojoTree, Ref, Option<MiddlewareContextArc>)>,
         new: (&WeakDom, Ref),
         metadata: &InstanceMetadata,
         overrides: Option<SnapshotOverride>,
     ) -> anyhow::Result<SyncbackNode> {
-        let mut metadata = metadata.clone();
-
-        let (new_dom, new_ref, _) = new;
-        let new_inst = new_dom.get_by_ref(new_ref).with_context(|| "missing ref")?;
-
-        log::trace!("New dir {}", new_path.display());
-
-        metadata.middleware_id = Some(self.middleware_id());
-        metadata.instigating_source = Some(InstigatingSource::Path(new_path.to_path_buf()));
-        metadata.relevant_paths = get_middleware_inits()
-            .iter()
-            .map(|(&init_name, _)| new_path.join(init_name))
-            .collect();
-
-        let mut fs_snapshot = FsSnapshot::new().with_dir(new_path);
-        let mut sub_children = None;
-
-        let sub_middleware = get_best_syncback_middleware_must_not_serialize_children(
-            new_dom, new_inst, false, None,
-        );
-
-        if let Some(sub_middleware) = sub_middleware {
-            let new_file_path =
-                get_middleware(sub_middleware).syncback_new_path(new_path, "init", new_inst)?;
-
-            let sub_node = get_middlewares()[sub_middleware]
-                .syncback(
-                    vfs,
-                    &new_file_path,
-                    None,
-                    (new_dom, new_ref),
-                    &InstanceMetadata::new().context(&metadata.context),
-                    None,
-                )
-                .with_context(|| "failed to create instance on filesystem")?;
-
-            metadata.middleware_context = Some(Arc::new(DirectoryMiddlewareContext {
-                init_middleware: sub_node.instance_snapshot.metadata.middleware_id.clone(),
-                init_context: sub_node
-                    .instance_snapshot
-                    .metadata
-                    .middleware_context
-                    .clone(),
-                init_path: sub_node
-                    .instance_snapshot
-                    .metadata
-                    .snapshot_source_path()
-                    .map(|v| v.to_path_buf()),
-            }));
-
-            sub_children = sub_node.get_children;
-
-            if let Some(sub_fs_snapshot) = &sub_node.instance_snapshot.metadata.fs_snapshot {
-                fs_snapshot = fs_snapshot.merge_with(sub_fs_snapshot);
-            }
+        if let Some(old) = old {
+            syncback_update(vfs, diff, new_path, old, new, metadata, overrides)
         } else {
-            let meta = reconcile_meta_file(
-                vfs,
-                &new_path.join("init.meta.json"),
-                new_inst,
-                HashSet::new(),
-                Some(overrides.known_class_or("Folder")),
-                &metadata.context.syncback.property_filters_save,
-            )?;
-
-            fs_snapshot =
-                fs_snapshot.with_file_contents_opt(&new_path.join("init.meta.json"), meta);
+            syncback_new(vfs, diff, new_path, new, metadata, overrides)
         }
-
-        metadata.fs_snapshot = Some(fs_snapshot);
-
-        Ok(SyncbackNode::new(
-            InstanceSnapshot::new()
-                .class_name(&new_inst.class)
-                .metadata(metadata)
-                .name(&new_inst.name)
-                .properties(new_inst.properties.clone()),
-        )
-        .with_children(move || {
-            let children = Vec::new();
-
-            if let Some(sub_children) = sub_children {
-                children.extend(sub_children()?);
-            }
-
-            if sub_middleware != Some("project") {
-                for child_ref in new_inst.children() {
-                    let child_inst = new_dom
-                        .get_by_ref(*child_ref)
-                        .with_context(|| "missing ref")?;
-                    let child_middleware =
-                        get_best_syncback_middleware(new_dom, child_inst, true, None);
-
-                    if let Some(child_middleware) = child_middleware {
-                        let child_path = get_middleware(child_middleware).syncback_new_path(
-                            new_path,
-                            &child_inst.name,
-                            child_inst,
-                        )?;
-
-                        let child_snapshot = get_middlewares()[child_middleware]
-                            .syncback(
-                                vfs,
-                                &child_path,
-                                None,
-                                (new_dom, *child_ref),
-                                &InstanceMetadata::new().context(&metadata.context),
-                                None,
-                            )
-                            .with_context(|| "failed to create instance on filesystem")?;
-
-                        children.push(child_snapshot);
-                    } // TODO: warn on skipping (or fail early?)
-                }
-            }
-
-            Ok(children)
-        }))
     }
 }
 
@@ -461,6 +212,7 @@ fn syncback_update(
             let init_node = get_middleware(init_middleware)
                 .syncback(
                     vfs,
+                    diff,
                     &init_path,
                     init_old,
                     (new_dom, new_ref),
@@ -505,6 +257,7 @@ fn syncback_update(
     metadata.fs_snapshot = Some(fs_snapshot);
 
     Ok(SyncbackNode::new(
+        (old.id(), new_ref),
         InstanceSnapshot::new()
             .class_name(&new_inst.class)
             .metadata(metadata)
@@ -512,10 +265,13 @@ fn syncback_update(
             .properties(new_inst.properties.clone()),
     )
     .with_children(move || {
-        let children = Vec::new();
+        let sync_children = Vec::new();
+        let sync_removed = HashSet::new();
 
-        if let Some(sub_children) = init_children {
-            children.extend(sub_children()?);
+        if let Some(init_children) = init_children {
+            let (init_children, init_removed) = init_children()?;
+            sync_children.extend(init_children);
+            sync_removed.extend(init_removed);
         }
 
         if init_middleware != Some("project") {
@@ -523,11 +279,9 @@ fn syncback_update(
                 .get_children(old_dom.inner(), new_dom, old_ref)
                 .with_context(|| "diff failed")?;
 
-            let plans = Vec::new();
-
             for child_ref in added {
                 if let Some(plan) = SyncbackPlanner::from_new(path, new_dom, child_ref)? {
-                    children.push(plan.syncback(vfs, diff, overrides)?);
+                    sync_children.push(plan.syncback(vfs, diff, overrides)?);
                 }
             }
 
@@ -538,12 +292,14 @@ fn syncback_update(
                 if let Some(plan) =
                     SyncbackPlanner::from_update(old_dom, old_child_ref, new_dom, new_child_ref)?
                 {
-                    children.push(plan.syncback(vfs, diff, overrides)?);
+                    sync_children.push(plan.syncback(vfs, diff, overrides)?);
                 }
             }
 
-            Ok((children, removed))
+            sync_removed.extend(removed);
         }
+
+        Ok((sync_children, sync_removed))
     }))
 }
 
@@ -582,6 +338,7 @@ fn syncback_new(
         let init_node = get_middlewares()[init_middleware]
             .syncback(
                 vfs,
+                diff,
                 &init_file_path,
                 None,
                 (new_dom, new_ref),
@@ -625,6 +382,7 @@ fn syncback_new(
     metadata.fs_snapshot = Some(fs_snapshot);
 
     Ok(SyncbackNode::new(
+        new_ref,
         InstanceSnapshot::new()
             .class_name(&new_inst.class)
             .metadata(metadata)
@@ -632,10 +390,13 @@ fn syncback_new(
             .properties(new_inst.properties.clone()),
     )
     .with_children(move || {
-        let children = Vec::new();
+        let sync_children = Vec::new();
+        let sync_removed = HashSet::new();
 
-        if let Some(sub_children) = init_children {
-            children.extend(sub_children()?);
+        if let Some(init_children) = init_children {
+            let (init_children, init_removed) = init_children()?;
+            sync_children.extend(init_children);
+            sync_removed.extend(init_removed);
         }
 
         if init_middleware != Some("project") {
@@ -656,6 +417,7 @@ fn syncback_new(
                     let child_snapshot = get_middlewares()[child_middleware]
                         .syncback(
                             vfs,
+                            diff,
                             &child_path,
                             None,
                             (new_dom, *child_ref),
@@ -664,12 +426,12 @@ fn syncback_new(
                         )
                         .with_context(|| "failed to create instance on filesystem")?;
 
-                    children.push(child_snapshot);
+                    sync_children.push(child_snapshot);
                 } // TODO: warn on skipping (or fail early?)
             }
         }
 
-        Ok(children)
+        Ok((sync_children, sync_removed))
     }))
 }
 

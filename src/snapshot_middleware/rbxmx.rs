@@ -7,7 +7,7 @@ use rbx_xml::EncodeOptions;
 
 use crate::snapshot::{
     FsSnapshot, InstanceContext, InstanceMetadata, InstanceSnapshot, MiddlewareContextAny,
-    SnapshotMiddleware, SnapshotOverride, PRIORITY_MODEL_XML,
+    OldTuple, SnapshotMiddleware, SnapshotOverride, SyncbackNode, PRIORITY_MODEL_XML,
 };
 
 use super::util::{reconcile_meta_file_empty, try_remove_file, PathExt};
@@ -89,16 +89,22 @@ impl SnapshotMiddleware for RbxmxMiddleware {
         Ok(parent_path.join(format!("{}.rbxmx", name)))
     }
 
-    fn syncback_new(
+    fn syncback(
         &self,
         vfs: &Vfs,
+        diff: &crate::snapshot::DeepDiff,
         path: &Path,
-        new_dom: &WeakDom,
-        new_ref: Ref,
-        context: &InstanceContext,
-        my_metadata: &InstanceMetadata,
-        _overrides: Option<SnapshotOverride>,
-    ) -> anyhow::Result<InstanceSnapshot> {
+        old: Option<(
+            &mut crate::snapshot::RojoTree,
+            Ref,
+            Option<crate::snapshot::MiddlewareContextArc>,
+        )>,
+        new: (&WeakDom, Ref),
+        metadata: &InstanceMetadata,
+        overrides: Option<SnapshotOverride>,
+    ) -> anyhow::Result<crate::snapshot::SyncbackNode> {
+        let (new_dom, new_ref) = new;
+
         let mut contents: Vec<u8> = Vec::new();
         rbx_xml::to_writer(
             &mut contents,
@@ -107,16 +113,16 @@ impl SnapshotMiddleware for RbxmxMiddleware {
             EncodeOptions::new().property_behavior(rbx_xml::EncodePropertyBehavior::WriteUnknown),
         )?;
 
-        Ok(
+        Ok(SyncbackNode::new(
+            (old.id(), new_ref),
             InstanceSnapshot::from_tree_copy(new_dom, new_ref, false).metadata(
                 InstanceMetadata::new()
-                    .context(context)
                     .instigating_source(path.to_path_buf())
                     .relevant_paths(vec![path.to_path_buf(), path.with_extension("meta.json")])
                     .middleware_id(self.middleware_id())
                     .fs_snapshot(FsSnapshot::new().with_file_contents_owned(path, contents)),
             ),
-        )
+        ))
     }
 }
 

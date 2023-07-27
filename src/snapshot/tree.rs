@@ -16,7 +16,7 @@ use crate::{
 };
 
 use super::{
-    diff::DeepDiff, get_best_syncback_middleware, InstanceContext, InstanceMetadata,
+    diff::DeepDiff, get_best_syncback_middleware, FsSnapshot, InstanceContext, InstanceMetadata,
     InstanceSnapshot, InstigatingSource, SyncbackNode,
 };
 
@@ -235,171 +235,6 @@ impl RojoTree {
         }
     }
 
-    pub fn syncback_children(
-        &mut self,
-        vfs: &Vfs,
-        diff: &DeepDiff,
-        parent_id: Ref,
-        parent_path: &Path,
-        new_dom: &WeakDom,
-        context: &InstanceContext,
-    ) -> anyhow::Result<()> {
-        log::trace!(
-            "syncback_children for {} {}",
-            self.get_instance(parent_id).unwrap().name(),
-            parent_path.display()
-        );
-        let tree = self;
-        let children = diff.get_children(tree.inner(), new_dom, parent_id);
-        if let Some((added, removed, changed, _unchanged)) = children {
-            for old_child_ref in changed {
-                let new_child_ref = diff
-                    .get_matching_new_ref(old_child_ref)
-                    .with_context(|| "no matching new ref")?;
-                let new_child_inst = new_dom.get_by_ref(new_child_ref).unwrap();
-
-                let old_child_inst = tree.get_instance(old_child_ref).unwrap();
-                let existing_middleware = old_child_inst.metadata().middleware_id;
-
-                let child_context = old_child_inst.metadata().context.clone();
-
-                let best_middleware = get_best_syncback_middleware(
-                    tree.inner(),
-                    new_child_inst,
-                    false,
-                    existing_middleware,
-                )
-                .with_context(|| "Cannot syncback instance")?;
-
-                let existing_path = if let Some(_existing_middleware) = existing_middleware {
-                    let existing_path = old_child_inst.metadata().snapshot_source_path();
-
-                    let existing_path = match existing_path {
-                        Some(path) => path.to_path_buf(),
-                        None => {
-                            log::trace!("missing path for {} (skipping)", old_child_inst.name());
-                            continue;
-                        }
-                    };
-
-                    Some(existing_path)
-                } else {
-                    None
-                };
-
-                if let Some(existing_path) = &existing_path {
-                    if !child_context.should_syncback_path(existing_path) {
-                        continue;
-                    }
-                }
-
-                let existing_middleware_context =
-                    old_child_inst.metadata().middleware_context.clone();
-
-                if Some(best_middleware) == existing_middleware {
-                    let existing_path = existing_path.unwrap();
-
-                    let metadata = get_middlewares()[best_middleware].syncback_update(
-                        vfs,
-                        &existing_path,
-                        diff,
-                        tree,
-                        old_child_ref,
-                        new_dom,
-                        &child_context,
-                        existing_middleware_context,
-                        None,
-                    )?;
-                    tree.update_metadata(old_child_ref, metadata);
-                } else {
-                    if let Some(existing_middleware) = existing_middleware {
-                        let existing_path = existing_path.unwrap();
-
-                        get_middlewares()[existing_middleware].syncback_destroy(
-                            vfs,
-                            &existing_path,
-                            tree,
-                            old_child_ref,
-                        )?;
-                    }
-                    // reconstruct fs via syncback
-                    let child_snapshot = get_middlewares()[best_middleware]
-                        .syncback_new(
-                            vfs,
-                            parent_path,
-                            &new_child_inst.name,
-                            new_dom,
-                            new_child_ref,
-                            &child_context,
-                            None,
-                        )
-                        .with_context(|| "failed to create instance on filesystem")?;
-
-                    let child_snapshot = match child_snapshot {
-                        Some(child_snapshot) => child_snapshot,
-                        None => {
-                            log::info!(
-                                "Skipping {} because its path is excluded by ignore patterns",
-                                new_child_inst.name()
-                            );
-                            continue;
-                        }
-                    };
-
-                    tree.remove(old_child_ref);
-                    tree.insert_instance(parent_id, child_snapshot);
-                }
-            }
-
-            for old_child_ref in removed {
-                let old_child_inst = tree.get_instance(old_child_ref).unwrap();
-                let old_child_middleware = old_child_inst.metadata().middleware_id;
-                if let Some(old_child_middleware) = old_child_middleware {
-                    let old_child_path = old_child_inst
-                        .metadata()
-                        .snapshot_source_path()
-                        .with_context(|| "missing path")?
-                        .to_path_buf();
-
-                    get_middlewares()[old_child_middleware]
-                        .syncback_destroy(vfs, &old_child_path, tree, old_child_ref)
-                        .with_context(|| "failed to destroy instance on filesystem")?;
-                }
-
-                tree.remove(old_child_ref);
-            }
-
-            if !tree
-                .get_instance(parent_id)
-                .unwrap()
-                .metadata()
-                .ignore_unknown_instances
-            {
-                for new_child_ref in added {
-                    let new_child_inst = new_dom.get_by_ref(new_child_ref).unwrap();
-                    let new_child_middleware =
-                        get_best_syncback_middleware(new_dom, new_child_inst, true, None)
-                            .with_context(|| "instance cannot be synced")?;
-                    let child_snapshot = get_middlewares()[new_child_middleware]
-                        .syncback_new(
-                            vfs,
-                            parent_path,
-                            &new_child_inst.name,
-                            new_dom,
-                            new_child_ref,
-                            context,
-                            None,
-                        )
-                        .with_context(|| "failed to create instance on filesystem")?;
-
-                    tree.insert_instance(parent_id, child_snapshot);
-                }
-            }
-        }
-
-        Ok(())
-    }
-
     pub fn syncback(
         &mut self,
         vfs: &Vfs,
@@ -416,103 +251,49 @@ impl RojoTree {
             }
         });
 
-        self.syncback_update(vfs, &diff, old_id, new_dom)
+        self.syncback_process(vfs, &diff, old_id, new_dom, new_dom.root_ref())
     }
 
-    fn syncback_update(
+    pub fn syncback_process(
         &mut self,
         vfs: &Vfs,
         diff: &DeepDiff,
-        base_target: Ref,
+        old_id: Ref,
         new_dom: &WeakDom,
+        new_id: Ref,
     ) -> anyhow::Result<()> {
-        let (old_inst, old_id, old_path) = {
-            let mut syncable = self
-                .get_instance(base_target)
-                .with_context(|| "Missing ref")?;
-            loop {
-                log::trace!(
-                    "might compare {} {:?} {:?}",
-                    syncable.name(),
-                    &syncable.metadata.middleware_id,
-                    diff.get_matching_new_ref(syncable.id())
-                );
-                if syncable.metadata.middleware_id.is_some()
-                    && diff.get_matching_new_ref(syncable.id()).is_some()
-                {
-                    log::trace!("checking {}", syncable.name());
-                    log::trace!("  source: {:?}", syncable.metadata.instigating_source);
-                    if let Some(InstigatingSource::Path(path)) =
-                        &syncable.metadata.instigating_source
-                    {
-                        log::trace!("  is syncable");
-                        break (syncable, syncable.id(), path.clone());
-                        // NOTE: we skip all project nodes as we can't reconcile
-                        // those.
+        let mut processing: Vec<SyncbackNode> = Vec::new();
 
-                        // NOTE: The initial project node is a
-                        // InstigatingSource::Path, it's _children_ are
-                        // InstigatingSource::ProjectNode. In effect, we skip
-                        // its direct children and go straight to the
-                        // `.project.json` file itself.
-                    }
+        while let Some(item) = processing.pop() {
+            let inst_snapshot = item.instance_snapshot;
+            if let Some(fs_snapshot) = inst_snapshot.metadata.fs_snapshot {
+                let violates_rules = fs_snapshot
+                    .files
+                    .iter()
+                    .map(|(path, _)| path)
+                    .chain(fs_snapshot.dirs.iter())
+                    .any(|path| !inst_snapshot.metadata.context.should_syncback_path(path));
+                if violates_rules {
+                    log::info!("Skipping syncback of {} because it is excluded by syncback ignore path rules.", inst_snapshot.name);
+                    continue;
                 }
-
-                syncable = match self.get_instance(syncable.parent()) {
-                    Some(next_syncable) => next_syncable,
-                    None => bail!("No syncable ancestor"),
-                };
             }
-        };
 
-        let new_id = diff.get_matching_new_ref(old_id).unwrap();
-        let new_inst = new_dom.get_by_ref(new_id).unwrap();
+            let old_fs_snapshot = item
+                .old_ref
+                .map(|v| self.get_instance(v).unwrap().metadata.fs_snapshot.as_ref())
+                .flatten();
 
-        let context = old_inst.metadata.context.clone();
-
-        let old_middleware_id = old_inst.metadata.middleware_id.unwrap();
-        let old_middleware_context = old_inst.metadata.middleware_context.clone();
-
-        let new_middleware_id =
-            get_best_syncback_middleware(new_dom, new_inst, true, Some(old_middleware_id));
-
-        log::trace!("old_middleware_id: {:#?}", old_middleware_id);
-        log::trace!("new_middleware_id: {:#?}", new_middleware_id);
-
-        if new_middleware_id == Some(old_middleware_id) {
-            log::trace!("updating");
-            let new_middleware_id = new_middleware_id.unwrap();
-            let metadata = get_middlewares()[new_middleware_id].syncback_update(
+            FsSnapshot::reconcile(
                 vfs,
-                &old_path,
-                diff,
-                self,
-                old_id,
-                new_dom,
-                &context,
-                old_middleware_context,
-                None,
+                old_fs_snapshot,
+                inst_snapshot.metadata.fs_snapshot.as_ref(),
             )?;
-            self.update_metadata(old_id, metadata);
-            log::trace!("update complete");
-        } else {
-            get_middlewares()[old_middleware_id].syncback_destroy(vfs, &old_path, self, old_id)?;
-            self.remove(old_id);
 
-            if let Some(new_middleware_id) = new_middleware_id {
-                let snapshot = get_middlewares()[new_middleware_id]
-                    .syncback_new(
-                        vfs,
-                        &old_path,
-                        &new_inst.name,
-                        new_dom,
-                        new_id,
-                        &context,
-                        None,
-                    )
-                    .with_context(|| "failed to create instance on filesystem")?;
+            // TODO: update instance; make sure to conserve children if replacing
 
-                self.insert_instance(old_id, snapshot);
+            if let Some(get_children) = item.get_children {
+                let (children, removed) = get_children()?;
             }
         }
 

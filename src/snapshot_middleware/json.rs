@@ -94,16 +94,20 @@ impl SnapshotMiddleware for JsonMiddleware {
         todo!()
     }
 
-    fn syncback_new(
+    fn syncback(
         &self,
         vfs: &Vfs,
+        diff: &crate::snapshot::DeepDiff,
         path: &Path,
-        new_dom: &rbx_dom_weak::WeakDom,
-        new_ref: rbx_dom_weak::types::Ref,
-        context: &InstanceContext,
-        my_metadata: &InstanceMetadata,
+        old: Option<(
+            &mut crate::snapshot::RojoTree,
+            rbx_dom_weak::types::Ref,
+            Option<crate::snapshot::MiddlewareContextArc>,
+        )>,
+        new: (&rbx_dom_weak::WeakDom, rbx_dom_weak::types::Ref),
+        metadata: &InstanceMetadata,
         overrides: Option<SnapshotOverride>,
-    ) -> anyhow::Result<InstanceSnapshot> {
+    ) -> anyhow::Result<crate::snapshot::SyncbackNode> {
         todo!()
     }
 }

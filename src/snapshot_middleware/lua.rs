@@ -1,4 +1,4 @@
-use std::{collections::HashSet, path::Path, str, sync::Arc};
+use std::{borrow::Cow, collections::HashSet, path::Path, str, sync::Arc};
 
 use anyhow::{bail, Context};
 use maplit::hashmap;
@@ -10,7 +10,8 @@ use rbx_dom_weak::{
 
 use crate::snapshot::{
     DeepDiff, FsSnapshot, InstanceContext, InstanceMetadata, InstanceSnapshot,
-    MiddlewareContextAny, RojoTree, SnapshotMiddleware, SnapshotOverride, PRIORITY_SINGLE_READABLE,
+    MiddlewareContextAny, OldTuple, RojoTree, SnapshotMiddleware, SnapshotOverride, SyncbackNode,
+    PRIORITY_SINGLE_READABLE,
 };
 
 use super::{meta_file::MetadataFile, util::reconcile_meta_file};
@@ -102,54 +103,6 @@ impl SnapshotMiddleware for LuaMiddleware {
         }
     }
 
-    fn syncback_update(
-        &self,
-        vfs: &Vfs,
-        old_path: &Path,
-        diff: &DeepDiff,
-        tree: &mut RojoTree,
-        old_ref: Ref,
-        new_dom: &WeakDom,
-        instance_context: &InstanceContext,
-        middleware_context: Option<Arc<dyn MiddlewareContextAny>>,
-        overrides: Option<SnapshotOverride>,
-    ) -> anyhow::Result<InstanceMetadata> {
-        let new_ref = diff
-            .get_matching_new_ref(old_ref)
-            .with_context(|| "no matching new ref")?;
-        let new_inst = new_dom.get_by_ref(new_ref).with_context(|| "missing ref")?;
-
-        let my_metadata = tree.get_instance(old_ref).unwrap().metadata();
-
-        let (_old_script_type, name) = get_script_type_and_name(old_path);
-
-        let ext = match old_path.extension().map(|v| v.to_string_lossy()).as_deref() {
-            Some("lua") => "lua",
-            Some("luau") => "luau",
-            _ => "lua",
-        };
-
-        let new_file_name = match new_inst.class.as_str() {
-            "Script" => format!("{}.server.{}", name, ext),
-            "LocalScript" => format!("{}.client.{}", name, ext),
-            "ModuleScript" => format!("{}.{}", name, ext),
-            _ => bail!("Bad class when syncing back Lua: {:?}", new_inst.class),
-        };
-        let new_path = old_path.with_file_name(new_file_name);
-
-        let result = self.syncback_new(
-            vfs,
-            &new_path,
-            new_dom,
-            new_ref,
-            instance_context,
-            my_metadata,
-            overrides,
-        )?;
-
-        Ok(result.metadata)
-    }
-
     fn syncback_new_path(
         &self,
         parent_path: &Path,
@@ -166,19 +119,46 @@ impl SnapshotMiddleware for LuaMiddleware {
         Ok(parent_path.join(file_name))
     }
 
-    fn syncback_new(
+    fn syncback(
         &self,
         vfs: &Vfs,
+        diff: &crate::snapshot::DeepDiff,
         path: &Path,
-        new_dom: &WeakDom,
-        new_ref: Ref,
-        context: &InstanceContext,
-        my_metadata: &InstanceMetadata,
-        _overrides: Option<SnapshotOverride>,
-    ) -> anyhow::Result<InstanceSnapshot> {
+        old: Option<(
+            &mut crate::snapshot::RojoTree,
+            Ref,
+            Option<crate::snapshot::MiddlewareContextArc>,
+        )>,
+        new: (&WeakDom, Ref),
+        metadata: &InstanceMetadata,
+        overrides: Option<SnapshotOverride>,
+    ) -> anyhow::Result<crate::snapshot::SyncbackNode> {
+        let (new_dom, new_ref) = new;
+
         let instance = new_dom.get_by_ref(new_ref).unwrap();
 
         let (_old_script_type, name) = get_script_type_and_name(path);
+
+        let path = if let Some(old) = old {
+            let new_inst = new_dom.get_by_ref(new_ref).with_context(|| "missing ref")?;
+
+            let ext = match path.extension().map(|v| v.to_string_lossy()).as_deref() {
+                Some("lua") => "lua",
+                Some("luau") => "luau",
+                _ => "lua",
+            };
+
+            let new_file_name = match new_inst.class.as_str() {
+                "Script" => format!("{}.server.{}", name, ext),
+                "LocalScript" => format!("{}.client.{}", name, ext),
+                "ModuleScript" => format!("{}.{}", name, ext),
+                _ => bail!("Bad class when syncing back Lua: {:?}", new_inst.class),
+            };
+
+            Cow::Owned(path.with_file_name(new_file_name))
+        } else {
+            Cow::Borrowed(path)
+        };
 
         let meta = reconcile_meta_file(
             vfs,
@@ -186,13 +166,13 @@ impl SnapshotMiddleware for LuaMiddleware {
             instance,
             ignore_props(),
             Some(&instance.class),
-            &context.syncback.property_filters_save,
+            &metadata.context.syncback.property_filters_save,
         )?;
 
-        Ok(
+        Ok(SyncbackNode::new(
+            (old.id(), new_ref),
             InstanceSnapshot::from_tree_copy(new_dom, new_ref, false).metadata(
-                my_metadata
-                    .context(context)
+                metadata
                     .instigating_source(path.to_path_buf())
                     .relevant_paths(vec![
                         path.to_path_buf(),
@@ -208,7 +188,7 @@ impl SnapshotMiddleware for LuaMiddleware {
                             ),
                     ),
             ),
-        )
+        ))
     }
 }
 

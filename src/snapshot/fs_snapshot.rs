@@ -113,56 +113,49 @@ impl FsSnapshot {
             dirs: self.dirs.union(&other.dirs).cloned().collect(),
         }
     }
-}
 
-pub fn reconcile(
-    vfs: &Vfs,
-    old_snapshot: Option<&FsSnapshot>,
-    new_snapshot: Option<&FsSnapshot>,
-) -> Result<()> {
-    if let Some(new_snapshot) = new_snapshot {
-        for (path, data) in new_snapshot.files.iter() {
-            if data.is_none() {
-                bail!(
-                    "File {} in new snapshot lacks data, so it can't be reconciled.",
-                    path.display()
-                );
+    pub fn reconcile(
+        vfs: &Vfs,
+        old_snapshot: Option<&FsSnapshot>,
+        new_snapshot: Option<&FsSnapshot>,
+    ) -> Result<()> {
+        if let (Some(old_snapshot), Some(new_snapshot)) = (old_snapshot, new_snapshot) {
+            for (old_path, _) in old_snapshot.files.iter() {
+                if !new_snapshot.files.contains_key(old_path) {
+                    vfs.remove_file(old_path).with_not_found()?;
+                }
+            }
+            for old_path in old_snapshot.dirs.iter() {
+                if !new_snapshot.dirs.contains(old_path) {
+                    vfs.remove_dir_all(old_path).with_not_found()?;
+                }
+            }
+            for path in new_snapshot.dirs.iter() {
+                vfs.write_dir(path)?;
+            }
+            for (path, data) in new_snapshot.files.iter() {
+                if let Some(data) = data {
+                    vfs.write(path, data.as_slice())?;
+                }
+            }
+        } else if let Some(new_snapshot) = new_snapshot {
+            for path in new_snapshot.dirs.iter() {
+                vfs.write_dir(path)?;
+            }
+            for (path, data) in new_snapshot.files.iter() {
+                if let Some(data) = data {
+                    vfs.write(path, data.as_slice())?;
+                }
+            }
+        } else if let Some(old_snapshot) = old_snapshot {
+            for path in old_snapshot.dirs.iter() {
+                vfs.remove_dir_all(path).with_not_found()?;
+            }
+            for (path, _) in old_snapshot.files.iter() {
+                vfs.remove_file(path).with_not_found()?;
             }
         }
+
+        Ok(())
     }
-
-    if let (Some(old_snapshot), Some(new_snapshot)) = (old_snapshot, new_snapshot) {
-        for (old_path, _) in old_snapshot.files.iter() {
-            if !new_snapshot.files.contains_key(old_path) {
-                vfs.remove_file(old_path).with_not_found()?;
-            }
-        }
-        for old_path in old_snapshot.dirs.iter() {
-            if !new_snapshot.dirs.contains(old_path) {
-                vfs.remove_dir_all(old_path).with_not_found()?;
-            }
-        }
-        for path in new_snapshot.dirs.iter() {
-            vfs.write_dir(path)?;
-        }
-        for (path, data) in new_snapshot.files.iter() {
-            vfs.write(path, data.unwrap().as_slice())?;
-        }
-    } else if let Some(new_snapshot) = new_snapshot {
-        for path in new_snapshot.dirs.iter() {
-            vfs.write_dir(path)?;
-        }
-        for (path, data) in new_snapshot.files.iter() {
-            vfs.write(path, data.unwrap().as_slice())?;
-        }
-    } else if let Some(old_snapshot) = old_snapshot {
-        for path in old_snapshot.dirs.iter() {
-            vfs.remove_dir_all(path).with_not_found()?;
-        }
-        for (path, _) in old_snapshot.files.iter() {
-            vfs.remove_file(path).with_not_found()?;
-        }
-    }
-
-    Ok(())
 }

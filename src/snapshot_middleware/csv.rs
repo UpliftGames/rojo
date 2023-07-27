@@ -13,8 +13,9 @@ use rbx_dom_weak::{
 use serde::{Deserialize, Serialize};
 
 use crate::snapshot::{
-    FsSnapshot, InstanceContext, InstanceMetadata, InstanceSnapshot, SnapshotMiddleware,
-    SnapshotOverride, PRIORITY_SINGLE_READABLE,
+    DeepDiff, FsSnapshot, InstanceContext, InstanceMetadata, InstanceSnapshot,
+    MiddlewareContextArc, OldTuple, RojoTree, SnapshotMiddleware, SnapshotOverride, SyncbackNode,
+    PRIORITY_SINGLE_READABLE,
 };
 
 use super::{
@@ -104,16 +105,18 @@ impl SnapshotMiddleware for CsvMiddleware {
         Ok(parent_path.join(format!("{}.csv", name)))
     }
 
-    fn syncback_new(
+    fn syncback(
         &self,
         vfs: &Vfs,
+        diff: &DeepDiff,
         path: &Path,
-        new_dom: &WeakDom,
-        new_ref: Ref,
-        context: &InstanceContext,
-        my_metadata: &InstanceMetadata,
-        _overrides: Option<SnapshotOverride>,
-    ) -> anyhow::Result<InstanceSnapshot> {
+        old: Option<(&mut RojoTree, Ref, Option<MiddlewareContextArc>)>,
+        new: (&WeakDom, Ref),
+        metadata: &InstanceMetadata,
+        overrides: Option<SnapshotOverride>,
+    ) -> anyhow::Result<SyncbackNode> {
+        let (new_dom, new_ref) = new;
+
         let instance = new_dom.get_by_ref(new_ref).unwrap();
 
         let meta = reconcile_meta_file(
@@ -122,13 +125,13 @@ impl SnapshotMiddleware for CsvMiddleware {
             instance,
             HashSet::from(["Contents", "ClassName"]),
             Some("LocalizationTable"),
-            &context.syncback.property_filters_save,
+            &metadata.context.syncback.property_filters_save,
         )?;
 
-        Ok(
+        Ok(SyncbackNode::new(
+            (old.id(), new_ref),
             InstanceSnapshot::from_tree_copy(new_dom, new_ref, false).metadata(
-                my_metadata
-                    .context(context)
+                metadata
                     .instigating_source(path.to_path_buf())
                     .relevant_paths(vec![path.to_path_buf(), path.with_extension("meta.json")])
                     .middleware_id(self.middleware_id())
@@ -138,7 +141,7 @@ impl SnapshotMiddleware for CsvMiddleware {
                             .with_file_contents_opt(&path.with_extension("meta.json"), meta),
                     ),
             ),
-        )
+        ))
     }
 }
 

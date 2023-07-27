@@ -1,5 +1,7 @@
 use std::{
     any::Any,
+    borrow::Cow,
+    collections::HashSet,
     fmt::Debug,
     path::{Path, PathBuf},
     sync::Arc,
@@ -109,23 +111,93 @@ pub trait SnapshotMiddleware: Debug + DynEq + Sync + Send {
 }
 dyn_eq::eq_trait_object!(SnapshotMiddleware);
 
+pub struct RefPair {
+    pub old_ref: Option<Ref>,
+    pub new_ref: Ref,
+}
+
+impl Into<RefPair> for Ref {
+    fn into(self) -> RefPair {
+        RefPair {
+            old_ref: None,
+            new_ref: self,
+        }
+    }
+}
+
+impl Into<RefPair> for (Ref, Ref) {
+    fn into(self) -> RefPair {
+        RefPair {
+            old_ref: Some(self.0),
+            new_ref: self.1,
+        }
+    }
+}
+
+impl Into<RefPair> for (Option<Ref>, Ref) {
+    fn into(self) -> RefPair {
+        RefPair {
+            old_ref: self.0,
+            new_ref: self.1,
+        }
+    }
+}
+
+pub trait OldTuple {
+    fn id(&self) -> Option<Ref>;
+    fn dom(&mut self) -> Option<&mut RojoTree>;
+    fn middleware_context(&self) -> Option<MiddlewareContextArc>;
+}
+
+impl OldTuple for Option<(&mut RojoTree, Ref, Option<MiddlewareContextArc>)> {
+    fn id(&self) -> Option<Ref> {
+        self.as_ref().map(|(_, v, _)| *v)
+    }
+    fn dom(&mut self) -> Option<&mut RojoTree> {
+        match self.as_mut() {
+            Some((tree, _, _)) => Some(*tree),
+            None => None,
+        }
+    }
+    fn middleware_context(&self) -> Option<MiddlewareContextArc> {
+        self.as_ref().map(|(_, _, v)| v.clone()).flatten()
+    }
+}
+
+impl OldTuple for (&mut RojoTree, Ref, Option<MiddlewareContextArc>) {
+    fn id(&self) -> Option<Ref> {
+        Some(self.1)
+    }
+    fn dom(&mut self) -> Option<&mut RojoTree> {
+        Some(&mut self.0)
+    }
+    fn middleware_context(&self) -> Option<MiddlewareContextArc> {
+        self.2.clone()
+    }
+}
+
 pub type GetChildren = Box<dyn FnOnce() -> anyhow::Result<(Vec<SyncbackNode>, HashSet<Ref>)>>;
 
 pub struct SyncbackNode {
+    pub old_ref: Option<Ref>,
+    pub new_ref: Ref,
     pub instance_snapshot: InstanceSnapshot,
     pub get_children: Option<GetChildren>,
 }
 
 impl SyncbackNode {
-    pub fn new(instance_snapshot: InstanceSnapshot) -> Self {
+    pub fn new(refs: impl Into<RefPair>, instance_snapshot: InstanceSnapshot) -> Self {
+        let refs: RefPair = refs.into();
         Self {
+            old_ref: refs.old_ref,
+            new_ref: refs.new_ref,
             instance_snapshot,
             get_children: None,
         }
     }
     pub fn with_children(
         self,
-        get_children: impl FnOnce() -> anyhow::Result<(Vec<SyncbackNode>, HashSet<Ref>)>,
+        get_children: impl FnOnce() -> anyhow::Result<(Vec<SyncbackNode>, HashSet<Ref>)> + 'static,
     ) -> Self {
         Self {
             get_children: Some(Box::new(get_children)),
@@ -134,15 +206,44 @@ impl SyncbackNode {
     }
 }
 
-pub struct SyncbackPlanner<'old, 'new, 'temp> {
-    pub middleware_id: &'static str,
-    pub path: &'temp Path,
-    pub old: Option<(&'old mut RojoTree, Ref, Option<MiddlewareContextArc>)>,
-    pub new: (&'new WeakDom, Ref),
-    pub metadata: &'temp InstanceMetadata,
+pub trait SyncbackPlannerWrapped<'old, 'new> {
+    fn syncback(
+        &self,
+        vfs: &Vfs,
+        diff: &DeepDiff,
+        overrides: Option<SnapshotOverride>,
+    ) -> anyhow::Result<Option<SyncbackNode>>;
+    fn override_path(self, path: Cow<'old, Path>) -> Self;
 }
 
-impl<'old, 'new, 'temp> SyncbackPlanner<'old, 'new, 'temp> {
+impl<'old, 'new> SyncbackPlannerWrapped<'old, 'new> for Option<SyncbackPlanner<'old, 'new>> {
+    fn syncback(
+        &self,
+        vfs: &Vfs,
+        diff: &DeepDiff,
+        overrides: Option<SnapshotOverride>,
+    ) -> anyhow::Result<Option<SyncbackNode>> {
+        match self {
+            Some(planner) => planner.syncback(vfs, diff, overrides).map(Some),
+            None => Ok(None),
+        }
+    }
+    fn override_path(self, path: Cow<'old, Path>) -> Self {
+        match self {
+            Some(planner) => Some(planner.override_path(path)),
+            None => None,
+        }
+    }
+}
+pub struct SyncbackPlanner<'old, 'new> {
+    pub middleware_id: &'static str,
+    pub path: Cow<'old, Path>,
+    pub old: Option<(&'old mut RojoTree, Ref, Option<MiddlewareContextArc>)>,
+    pub new: (&'new WeakDom, Ref),
+    pub metadata: Option<&'old InstanceMetadata>,
+}
+
+impl<'old, 'new> SyncbackPlanner<'old, 'new> {
     pub fn syncback(
         &self,
         vfs: &Vfs,
@@ -152,12 +253,17 @@ impl<'old, 'new, 'temp> SyncbackPlanner<'old, 'new, 'temp> {
         todo!()
     }
 
+    pub fn override_path(mut self, path: Cow<'old, Path>) -> Self {
+        self.path = path;
+        self
+    }
+
     pub fn from_update(
         old_dom: &'old RojoTree,
         old_ref: Ref,
         new_dom: &'new WeakDom,
         new_ref: Ref,
-    ) -> anyhow::Result<Option<SyncbackPlanner<'old, 'new, 'temp>>> {
+    ) -> anyhow::Result<Option<SyncbackPlanner<'old, 'new>>> {
         let old_inst = old_dom
             .get_instance(old_ref)
             .with_context(|| "missing ref")?;
@@ -179,10 +285,10 @@ impl<'old, 'new, 'temp> SyncbackPlanner<'old, 'new, 'temp> {
         if Some(middleware_id) == old_middleware_id {
             Ok(Some(SyncbackPlanner {
                 middleware_id,
-                path: &path,
+                path: Cow::Borrowed(path),
                 old: None,
                 new: (new_dom, new_ref),
-                metadata: &InstanceMetadata::new(),
+                metadata: Some(old_inst.metadata()),
             }))
         } else {
             let parent_path = path.parent().unwrap_or_else(|| Path::new("."));
@@ -191,10 +297,10 @@ impl<'old, 'new, 'temp> SyncbackPlanner<'old, 'new, 'temp> {
     }
 
     pub fn from_new(
-        parent_path: &'temp Path,
+        parent_path: &'old Path,
         new_dom: &'new WeakDom,
         new_ref: Ref,
-    ) -> anyhow::Result<Option<SyncbackPlanner<'old, 'new, 'temp>>> {
+    ) -> anyhow::Result<Option<SyncbackPlanner<'old, 'new>>> {
         let new_inst = new_dom.get_by_ref(new_ref).with_context(|| "missing ref")?;
         let middleware_id = get_best_syncback_middleware(new_dom, new_inst, true, None);
         let middleware_id = match middleware_id {
@@ -210,10 +316,10 @@ impl<'old, 'new, 'temp> SyncbackPlanner<'old, 'new, 'temp> {
 
         Ok(Some(SyncbackPlanner {
             middleware_id,
-            path: &path,
+            path: Cow::Owned(path),
             old: None,
             new: (new_dom, new_ref),
-            metadata: &InstanceMetadata::new(),
+            metadata: None,
         }))
     }
 }

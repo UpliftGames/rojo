@@ -16,9 +16,9 @@ use serde::{Deserialize, Serialize};
 use crate::{
     resolution::UnresolvedValue,
     snapshot::{
-        FsSnapshot, InstanceContext, InstanceMetadata, InstanceSnapshot, PropertiesFiltered,
-        PropertyFilter, SnapshotMiddleware, SnapshotOverride, ToVariantBinaryString,
-        PRIORITY_MODEL_JSON,
+        FsSnapshot, InstanceContext, InstanceMetadata, InstanceSnapshot, OldTuple,
+        PropertiesFiltered, PropertyFilter, SnapshotMiddleware, SnapshotOverride, SyncbackNode,
+        ToVariantBinaryString, PRIORITY_MODEL_JSON,
     },
 };
 
@@ -114,35 +114,44 @@ impl SnapshotMiddleware for JsonModelMiddleware {
         Ok(parent_path.join(format!("{}.model.json", name)))
     }
 
-    fn syncback_new(
+    fn syncback(
         &self,
         vfs: &Vfs,
+        diff: &crate::snapshot::DeepDiff,
         path: &Path,
-        new_dom: &WeakDom,
-        new_ref: Ref,
-        context: &InstanceContext,
-        my_metadata: &InstanceMetadata,
-        _overrides: Option<SnapshotOverride>,
-    ) -> anyhow::Result<InstanceSnapshot> {
+        old: Option<(
+            &mut crate::snapshot::RojoTree,
+            Ref,
+            Option<crate::snapshot::MiddlewareContextArc>,
+        )>,
+        new: (&WeakDom, Ref),
+        metadata: &InstanceMetadata,
+        overrides: Option<SnapshotOverride>,
+    ) -> anyhow::Result<crate::snapshot::SyncbackNode> {
+        let (new_dom, new_ref) = new;
+
         let instance = new_dom.get_by_ref(new_ref).unwrap();
 
-        let mut json_model =
-            JsonModel::from_instance(new_dom, instance, &context.syncback.property_filters_save);
+        let mut json_model = JsonModel::from_instance(
+            new_dom,
+            instance,
+            &metadata.context.syncback.property_filters_save,
+        );
         json_model.name = None;
 
         let mut contents: Vec<u8> = Vec::new();
         serde_json::to_writer(&mut contents, &json_model)?;
 
-        Ok(
+        Ok(SyncbackNode::new(
+            (old.id(), new_ref),
             InstanceSnapshot::from_tree_copy(new_dom, new_ref, false).metadata(
-                my_metadata
-                    .context(context)
+                metadata
                     .instigating_source(path.to_path_buf())
                     .relevant_paths(vec![path.to_path_buf(), path.with_extension("meta.json")])
                     .middleware_id(self.middleware_id())
                     .fs_snapshot(FsSnapshot::new().with_file_contents_owned(path, contents)),
             ),
-        )
+        ))
     }
 }
 

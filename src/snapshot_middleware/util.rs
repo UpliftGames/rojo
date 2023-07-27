@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     collections::{BTreeMap, HashMap, HashSet},
     path::Path,
 };
@@ -124,6 +125,9 @@ pub trait PathExt {
     fn file_name_trim_end<'a>(&'a self, suffix: &str) -> anyhow::Result<&'a str>;
     fn file_name_trim_extension<'a>(&'a self) -> anyhow::Result<String>;
     fn file_name_trim_end_any<'a>(&'a self, suffixes: &[&str]) -> anyhow::Result<&'a str>;
+
+    fn parent_or_cdir(&self) -> anyhow::Result<&Path>;
+    fn make_absolute(&self, cdir: &Path) -> anyhow::Result<Cow<Path>>;
 }
 
 impl<P> PathExt for P
@@ -171,5 +175,26 @@ where
         }
 
         bail!("Path did not end in any of {:?}", suffixes);
+    }
+
+    fn parent_or_cdir(&self) -> anyhow::Result<&Path> {
+        let path = self.as_ref();
+        let parent = path
+            .parent()
+            .with_context(|| format!("Path did not have a parent: {}", path.display()))?;
+        if parent == Path::new("") {
+            Ok(Path::new("."))
+        } else {
+            Ok(parent)
+        }
+    }
+
+    fn make_absolute(&self, cdir: &Path) -> anyhow::Result<Cow<Path>> {
+        let path = self.as_ref();
+        if path.is_relative() {
+            Ok(Cow::Owned(cdir.join(path)))
+        } else {
+            Ok(Cow::Borrowed(path))
+        }
     }
 }
