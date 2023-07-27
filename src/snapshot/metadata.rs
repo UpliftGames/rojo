@@ -12,7 +12,9 @@ use crate::{
     glob::Glob, path_serializer, project::ProjectNode, ProjectSyncback, ProjectSyncbackPropertyMode,
 };
 
-use super::{default_filters_diff, default_filters_save, MiddlewareContextAny, PropertyFilter};
+use super::{
+    default_filters_diff, default_filters_save, FsSnapshot, MiddlewareContextAny, PropertyFilter,
+};
 
 /// Rojo-specific metadata that can be associated with an instance or a snapshot
 /// of an instance.
@@ -68,6 +70,10 @@ pub struct InstanceMetadata {
     /// The snapshot custom context we will need if a syncback is triggered.
     #[serde(skip)]
     pub middleware_context: Option<Arc<dyn MiddlewareContextAny>>,
+
+    /// The filesystem snapshot we can use to tear down and reconstruct the fs
+    /// representation of this instance, minus its children.
+    pub fs_snapshot: Option<FsSnapshot>,
 }
 
 impl InstanceMetadata {
@@ -79,6 +85,7 @@ impl InstanceMetadata {
             context: InstanceContext::default(),
             middleware_id: None,
             middleware_context: None,
+            fs_snapshot: None,
         }
     }
 
@@ -120,6 +127,13 @@ impl InstanceMetadata {
     pub fn middleware_context(self, context: Option<Arc<dyn MiddlewareContextAny>>) -> Self {
         Self {
             middleware_context: context,
+            ..self
+        }
+    }
+
+    pub fn fs_snapshot(self, fs_snapshot: FsSnapshot) -> Self {
+        Self {
+            fs_snapshot: Some(fs_snapshot),
             ..self
         }
     }

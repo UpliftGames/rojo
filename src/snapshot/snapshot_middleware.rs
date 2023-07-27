@@ -1,12 +1,20 @@
-use std::{any::Any, fmt::Debug, path::Path, sync::Arc};
+use std::{
+    any::Any,
+    fmt::Debug,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
+use anyhow::Context;
 use dyn_eq::DynEq;
 use memofs::Vfs;
 use rbx_dom_weak::{types::Ref, Instance, WeakDom};
 
-use crate::snapshot_middleware::get_middlewares;
+use crate::snapshot_middleware::{get_middleware, get_middlewares};
 
-use super::{diff::DeepDiff, InstanceContext, InstanceMetadata, InstanceSnapshot, RojoTree};
+use super::{
+    diff::DeepDiff, FsSnapshot, InstanceContext, InstanceMetadata, InstanceSnapshot, RojoTree,
+};
 
 pub const PRIORITY_MODEL_DIRECTORY: i32 = 80;
 pub const PRIORITY_MODEL_JSON: i32 = 81;
@@ -81,43 +89,134 @@ pub trait SnapshotMiddleware: Debug + DynEq + Sync + Send {
         consider_descendants: bool,
     ) -> Option<i32>;
 
-    /// Syncs an instance back to the filesystem, updating the existing files
-    /// without removing them first.
-    fn syncback_update(
+    fn syncback_new_path(
         &self,
-        vfs: &Vfs,
-        path: &Path,
-        diff: &DeepDiff,
-        tree: &mut RojoTree,
-        old_ref: Ref,
-        new_dom: &WeakDom,
-        instance_context: &InstanceContext,
-        middleware_context: Option<Arc<dyn MiddlewareContextAny>>,
-        overrides: Option<SnapshotOverride>,
-    ) -> anyhow::Result<InstanceMetadata>;
-
-    /// Syncs an instance back into the filesystem, creating new files.
-    fn syncback_new(
-        &self,
-        vfs: &Vfs,
         parent_path: &Path,
         name: &str,
-        new_dom: &WeakDom,
-        new_ref: Ref,
-        context: &InstanceContext,
-        overrides: Option<SnapshotOverride>,
-    ) -> anyhow::Result<Option<InstanceSnapshot>>;
+        new_inst: &Instance,
+    ) -> anyhow::Result<PathBuf>;
 
-    /// Destroys the filesystem representation of an instance.
-    fn syncback_destroy(
+    fn syncback(
         &self,
         vfs: &Vfs,
+        diff: &DeepDiff,
         path: &Path,
-        tree: &mut RojoTree,
-        old_ref: Ref,
-    ) -> anyhow::Result<()>;
+        old: Option<(&mut RojoTree, Ref, Option<MiddlewareContextArc>)>,
+        new: (&WeakDom, Ref),
+        metadata: &InstanceMetadata,
+        overrides: Option<SnapshotOverride>,
+    ) -> anyhow::Result<SyncbackNode>;
 }
 dyn_eq::eq_trait_object!(SnapshotMiddleware);
+
+pub type GetChildren = Box<dyn FnOnce() -> anyhow::Result<(Vec<SyncbackNode>, HashSet<Ref>)>>;
+
+pub struct SyncbackNode {
+    pub instance_snapshot: InstanceSnapshot,
+    pub get_children: Option<GetChildren>,
+}
+
+impl SyncbackNode {
+    pub fn new(instance_snapshot: InstanceSnapshot) -> Self {
+        Self {
+            instance_snapshot,
+            get_children: None,
+        }
+    }
+    pub fn with_children(
+        self,
+        get_children: impl FnOnce() -> anyhow::Result<(Vec<SyncbackNode>, HashSet<Ref>)>,
+    ) -> Self {
+        Self {
+            get_children: Some(Box::new(get_children)),
+            ..self
+        }
+    }
+}
+
+pub struct SyncbackPlanner<'old, 'new, 'temp> {
+    pub middleware_id: &'static str,
+    pub path: &'temp Path,
+    pub old: Option<(&'old mut RojoTree, Ref, Option<MiddlewareContextArc>)>,
+    pub new: (&'new WeakDom, Ref),
+    pub metadata: &'temp InstanceMetadata,
+}
+
+impl<'old, 'new, 'temp> SyncbackPlanner<'old, 'new, 'temp> {
+    pub fn syncback(
+        &self,
+        vfs: &Vfs,
+        diff: &DeepDiff,
+        overrides: Option<SnapshotOverride>,
+    ) -> anyhow::Result<SyncbackNode> {
+        todo!()
+    }
+
+    pub fn from_update(
+        old_dom: &'old RojoTree,
+        old_ref: Ref,
+        new_dom: &'new WeakDom,
+        new_ref: Ref,
+    ) -> anyhow::Result<Option<SyncbackPlanner<'old, 'new, 'temp>>> {
+        let old_inst = old_dom
+            .get_instance(old_ref)
+            .with_context(|| "missing ref")?;
+        let old_middleware_id = old_inst.metadata().middleware_id;
+
+        let new_inst = new_dom.get_by_ref(new_ref).with_context(|| "missing ref")?;
+        let middleware_id =
+            get_best_syncback_middleware(new_dom, new_inst, true, old_middleware_id);
+        let middleware_id = match middleware_id {
+            Some(v) => v,
+            None => return Ok(None),
+        };
+
+        let path = old_inst
+            .metadata()
+            .snapshot_source_path()
+            .with_context(|| "missing path")?;
+
+        if Some(middleware_id) == old_middleware_id {
+            Ok(Some(SyncbackPlanner {
+                middleware_id,
+                path: &path,
+                old: None,
+                new: (new_dom, new_ref),
+                metadata: &InstanceMetadata::new(),
+            }))
+        } else {
+            let parent_path = path.parent().unwrap_or_else(|| Path::new("."));
+            Self::from_new(parent_path, new_dom, new_ref)
+        }
+    }
+
+    pub fn from_new(
+        parent_path: &'temp Path,
+        new_dom: &'new WeakDom,
+        new_ref: Ref,
+    ) -> anyhow::Result<Option<SyncbackPlanner<'old, 'new, 'temp>>> {
+        let new_inst = new_dom.get_by_ref(new_ref).with_context(|| "missing ref")?;
+        let middleware_id = get_best_syncback_middleware(new_dom, new_inst, true, None);
+        let middleware_id = match middleware_id {
+            Some(v) => v,
+            None => return Ok(None),
+        };
+
+        let path = get_middleware(middleware_id).syncback_new_path(
+            parent_path,
+            &new_inst.name,
+            new_inst,
+        )?;
+
+        Ok(Some(SyncbackPlanner {
+            middleware_id,
+            path: &path,
+            old: None,
+            new: (new_dom, new_ref),
+            metadata: &InstanceMetadata::new(),
+        }))
+    }
+}
 
 pub trait MiddlewareContextAny: Any + Debug + DynEq + Sync + Send + 'static {
     fn as_any_ref(self: &'_ Self) -> &'_ dyn Any;
@@ -125,6 +224,8 @@ pub trait MiddlewareContextAny: Any + Debug + DynEq + Sync + Send + 'static {
     fn as_any_box(self: Box<Self>) -> Box<dyn Any>;
 }
 dyn_eq::eq_trait_object!(MiddlewareContextAny);
+
+pub type MiddlewareContextArc = Arc<dyn MiddlewareContextAny>;
 
 impl<T: Any + Debug + Eq + Send + Sync + 'static> MiddlewareContextAny for T {
     #[inline]
@@ -197,5 +298,16 @@ pub fn get_best_syncback_middleware(
 ) -> Option<&'static str> {
     get_best_syncback_middleware_sorted(dom, instance, consider_descendants, previous_middleware)
         .map(|mut iter| iter.next())
+        .flatten()
+}
+
+pub fn get_best_syncback_middleware_must_not_serialize_children(
+    dom: &WeakDom,
+    instance: &Instance,
+    consider_descendants: bool,
+    previous_middleware: Option<&'static str>,
+) -> Option<&'static str> {
+    get_best_syncback_middleware_sorted(dom, instance, consider_descendants, previous_middleware)
+        .map(|mut iter| iter.find(|&id| !get_middleware(id).syncback_serializes_children()))
         .flatten()
 }

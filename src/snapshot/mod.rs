@@ -49,6 +49,7 @@
 #![allow(dead_code)]
 
 mod diff;
+mod fs_snapshot;
 mod instance_snapshot;
 mod metadata;
 mod patch;
@@ -59,6 +60,7 @@ mod syncback_util;
 mod tree;
 
 pub use diff::*;
+pub use fs_snapshot::*;
 pub use instance_snapshot::InstanceSnapshot;
 pub use metadata::*;
 pub use patch::*;

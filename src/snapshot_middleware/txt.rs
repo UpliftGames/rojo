@@ -1,4 +1,4 @@
-use std::{collections::HashSet, path::Path, str, sync::Arc};
+use std::{collections::HashSet, path::Path, str};
 
 use anyhow::{bail, Context};
 use maplit::hashmap;
@@ -9,13 +9,13 @@ use rbx_dom_weak::{
 };
 
 use crate::snapshot::{
-    DeepDiff, InstanceContext, InstanceMetadata, InstanceSnapshot, MiddlewareContextAny, RojoTree,
-    SnapshotMiddleware, SnapshotOverride, PRIORITY_SINGLE_READABLE,
+    FsSnapshot, InstanceContext, InstanceMetadata, InstanceSnapshot, SnapshotMiddleware,
+    SnapshotOverride, PRIORITY_SINGLE_READABLE,
 };
 
 use super::{
     meta_file::MetadataFile,
-    util::{reconcile_meta_file, try_remove_file, PathExt},
+    util::{reconcile_meta_file, PathExt},
 };
 
 #[derive(Debug, PartialEq, Eq)]
@@ -62,7 +62,8 @@ impl SnapshotMiddleware for TxtMiddleware {
                     .instigating_source(path)
                     .relevant_paths(vec![path.to_path_buf(), meta_path.clone()])
                     .context(context)
-                    .middleware_id(self.middleware_id()),
+                    .middleware_id(self.middleware_id())
+                    .fs_snapshot(FsSnapshot::new().with_files(&[path, &meta_path])),
             );
 
         if let Some(meta_contents) = vfs.read(&meta_path).with_not_found()? {
@@ -90,61 +91,28 @@ impl SnapshotMiddleware for TxtMiddleware {
         }
     }
 
-    fn syncback_update(
+    fn syncback_new_path(
         &self,
-        vfs: &Vfs,
-        path: &Path,
-        diff: &DeepDiff,
-        tree: &mut RojoTree,
-        old_ref: Ref,
-        new_dom: &WeakDom,
-        context: &InstanceContext,
-        _middleware_context: Option<Arc<dyn MiddlewareContextAny>>,
-        _overrides: Option<SnapshotOverride>,
-    ) -> anyhow::Result<InstanceMetadata> {
-        let old_inst = tree.get_instance(old_ref).unwrap();
-
-        let new_ref = diff
-            .get_matching_new_ref(old_ref)
-            .with_context(|| "no matching new ref")?;
-        let new_inst = new_dom.get_by_ref(new_ref).with_context(|| "missing ref")?;
-
-        let my_metadata = old_inst.metadata().clone();
-
-        vfs.write(path, get_instance_contents(new_inst)?)?;
-
-        reconcile_meta_file(
-            vfs,
-            &path.with_extension("meta.json"),
-            new_inst,
-            HashSet::from(["Value", "ClassName"]),
-            Some("StringValue"),
-            &context.syncback.property_filters_save,
-        )?;
-
-        Ok(my_metadata
-            .instigating_source(path)
-            .context(context)
-            .relevant_paths(vec![path.to_path_buf(), path.with_extension("meta.json")])
-            .middleware_id(self.middleware_id()))
+        parent_path: &Path,
+        name: &str,
+        _instance: &Instance,
+    ) -> anyhow::Result<std::path::PathBuf> {
+        Ok(parent_path.join(format!("{}.txt", name)))
     }
 
     fn syncback_new(
         &self,
         vfs: &Vfs,
-        parent_path: &Path,
-        name: &str,
+        path: &Path,
         new_dom: &WeakDom,
         new_ref: Ref,
         context: &InstanceContext,
+        my_metadata: &InstanceMetadata,
         _overrides: Option<SnapshotOverride>,
-    ) -> anyhow::Result<Option<InstanceSnapshot>> {
+    ) -> anyhow::Result<InstanceSnapshot> {
         let instance = new_dom.get_by_ref(new_ref).unwrap();
-        let path = parent_path.join(format!("{}.txt", name));
 
-        vfs.write(&path, get_instance_contents(instance)?)?;
-
-        reconcile_meta_file(
+        let meta = reconcile_meta_file(
             vfs,
             &path.with_extension("meta.json"),
             instance,
@@ -153,27 +121,20 @@ impl SnapshotMiddleware for TxtMiddleware {
             &context.syncback.property_filters_save,
         )?;
 
-        Ok(Some(
+        Ok(
             InstanceSnapshot::from_tree_copy(new_dom, new_ref, false).metadata(
-                InstanceMetadata::new()
+                my_metadata
                     .context(context)
-                    .instigating_source(path.clone())
-                    .relevant_paths(vec![path.clone(), path.with_extension("meta.json")])
-                    .middleware_id(self.middleware_id()),
+                    .instigating_source(path.to_path_buf())
+                    .relevant_paths(vec![path.to_path_buf(), path.with_extension("meta.json")])
+                    .middleware_id(self.middleware_id())
+                    .fs_snapshot(
+                        FsSnapshot::new()
+                            .with_file_contents_borrowed(&path, get_instance_contents(instance)?)
+                            .with_file_contents_opt(&path.with_extension("meta.json"), meta),
+                    ),
             ),
-        ))
-    }
-
-    fn syncback_destroy(
-        &self,
-        vfs: &Vfs,
-        path: &Path,
-        _tree: &mut RojoTree,
-        _old_ref: Ref,
-    ) -> anyhow::Result<()> {
-        vfs.remove_file(path)?;
-        try_remove_file(vfs, &path.with_extension("meta.json"))?;
-        Ok(())
+        )
     }
 }
 

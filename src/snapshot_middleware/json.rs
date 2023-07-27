@@ -1,4 +1,4 @@
-use std::{path::Path, sync::Arc};
+use std::path::Path;
 
 use anyhow::Context;
 use maplit::hashmap;
@@ -7,15 +7,12 @@ use memofs::{IoResultExt, Vfs};
 use crate::{
     lua_ast::{Expression, Statement},
     snapshot::{
-        InstanceContext, InstanceMetadata, InstanceSnapshot, MiddlewareContextAny,
-        SnapshotMiddleware, SnapshotOverride,
+        FsSnapshot, InstanceContext, InstanceMetadata, InstanceSnapshot, SnapshotMiddleware,
+        SnapshotOverride,
     },
 };
 
-use super::{
-    meta_file::MetadataFile,
-    util::{try_remove_file, PathExt},
-};
+use super::{meta_file::MetadataFile, util::PathExt};
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct JsonMiddleware;
@@ -66,7 +63,8 @@ impl SnapshotMiddleware for JsonMiddleware {
                     .instigating_source(path)
                     .relevant_paths(vec![path.to_path_buf(), meta_path.clone()])
                     .context(context)
-                    .middleware_id(self.middleware_id()),
+                    .middleware_id(self.middleware_id())
+                    .fs_snapshot(FsSnapshot::new().with_files(&[path, &meta_path])),
             );
 
         if let Some(meta_contents) = vfs.read(&meta_path).with_not_found()? {
@@ -87,44 +85,26 @@ impl SnapshotMiddleware for JsonMiddleware {
         // TODO: implement lua ast _reading_ so we can convert lua to json
     }
 
-    fn syncback_update(
+    fn syncback_new_path(
         &self,
-        _vfs: &Vfs,
-        _path: &Path,
-        _diff: &crate::snapshot::DeepDiff,
-        _tree: &mut crate::snapshot::RojoTree,
-        _old_ref: rbx_dom_weak::types::Ref,
-        _new_dom: &rbx_dom_weak::WeakDom,
-        _context: &InstanceContext,
-        _middleware_context: Option<Arc<dyn MiddlewareContextAny>>,
-        _overrides: Option<SnapshotOverride>,
-    ) -> anyhow::Result<InstanceMetadata> {
+        parent_path: &Path,
+        name: &str,
+        new_inst: &rbx_dom_weak::Instance,
+    ) -> anyhow::Result<std::path::PathBuf> {
         todo!()
     }
 
     fn syncback_new(
         &self,
-        _vfs: &Vfs,
-        _parent_path: &Path,
-        _name: &str,
-        _new_dom: &rbx_dom_weak::WeakDom,
-        _new_ref: rbx_dom_weak::types::Ref,
-        _context: &InstanceContext,
-        _overrides: Option<SnapshotOverride>,
-    ) -> anyhow::Result<Option<InstanceSnapshot>> {
-        todo!()
-    }
-
-    fn syncback_destroy(
-        &self,
         vfs: &Vfs,
         path: &Path,
-        _tree: &mut crate::snapshot::RojoTree,
-        _old_ref: rbx_dom_weak::types::Ref,
-    ) -> anyhow::Result<()> {
-        vfs.remove_file(path)?;
-        try_remove_file(vfs, &path.with_extension("meta.json"))?;
-        Ok(())
+        new_dom: &rbx_dom_weak::WeakDom,
+        new_ref: rbx_dom_weak::types::Ref,
+        context: &InstanceContext,
+        my_metadata: &InstanceMetadata,
+        overrides: Option<SnapshotOverride>,
+    ) -> anyhow::Result<InstanceSnapshot> {
+        todo!()
     }
 }
 

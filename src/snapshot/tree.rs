@@ -10,11 +10,14 @@ use rbx_dom_weak::{
     Instance, InstanceBuilder, WeakDom,
 };
 
-use crate::{multimap::MultiMap, snapshot_middleware::get_middlewares};
+use crate::{
+    multimap::MultiMap,
+    snapshot_middleware::{get_middleware, get_middlewares},
+};
 
 use super::{
     diff::DeepDiff, get_best_syncback_middleware, InstanceContext, InstanceMetadata,
-    InstanceSnapshot, InstigatingSource,
+    InstanceSnapshot, InstigatingSource, SyncbackNode,
 };
 
 pub enum SyncbackTarget {

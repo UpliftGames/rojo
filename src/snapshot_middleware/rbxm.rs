@@ -2,10 +2,11 @@ use std::{path::Path, sync::Arc};
 
 use anyhow::Context;
 use memofs::Vfs;
+use rbx_dom_weak::{types::Ref, Instance, WeakDom};
 
 use crate::snapshot::{
-    InstanceContext, InstanceMetadata, InstanceSnapshot, MiddlewareContextAny, SnapshotMiddleware,
-    SnapshotOverride, PRIORITY_MODEL_BINARY,
+    FsSnapshot, InstanceContext, InstanceMetadata, InstanceSnapshot, MiddlewareContextAny,
+    SnapshotMiddleware, SnapshotOverride, PRIORITY_MODEL_BINARY,
 };
 
 use super::util::{reconcile_meta_file_empty, try_remove_file, PathExt};
@@ -50,7 +51,8 @@ impl SnapshotMiddleware for RbxmMiddleware {
                         .instigating_source(path)
                         .relevant_paths(vec![path.to_path_buf()])
                         .context(context)
-                        .middleware_id(self.middleware_id()),
+                        .middleware_id(self.middleware_id())
+                        .fs_snapshot(FsSnapshot::new().with_file(path)),
                 );
 
             Ok(Some(snapshot))
@@ -76,82 +78,38 @@ impl SnapshotMiddleware for RbxmMiddleware {
         Some(PRIORITY_MODEL_BINARY)
     }
 
-    fn syncback_update(
+    fn syncback_new_path(
         &self,
-        vfs: &Vfs,
-        path: &Path,
-        diff: &crate::snapshot::DeepDiff,
-        tree: &mut crate::snapshot::RojoTree,
-        old_ref: rbx_dom_weak::types::Ref,
-        new_dom: &rbx_dom_weak::WeakDom,
-        context: &InstanceContext,
-        _middleware_context: Option<Arc<dyn MiddlewareContextAny>>,
-        _overrides: Option<SnapshotOverride>,
-    ) -> anyhow::Result<InstanceMetadata> {
-        let old_inst = tree.get_instance(old_ref).unwrap();
-
-        let new_ref = diff
-            .get_matching_new_ref(old_ref)
-            .with_context(|| "no matching new ref")?;
-        let _new_inst = new_dom.get_by_ref(new_ref).with_context(|| "missing ref")?;
-
-        let my_metadata = old_inst.metadata().clone();
-
-        let mut contents: Vec<u8> = Vec::new();
-        rbx_binary::to_writer(&mut contents, new_dom, &[new_ref])?;
-
-        vfs.write(path, contents)?;
-
-        reconcile_meta_file_empty(vfs, &path.with_extension("meta.json"))?;
-
-        Ok(my_metadata
-            .instigating_source(path.clone())
-            .context(context)
-            .relevant_paths(vec![path.to_path_buf(), path.with_extension("meta.json")])
-            .middleware_id(self.middleware_id()))
+        parent_path: &Path,
+        name: &str,
+        _instance: &Instance,
+    ) -> anyhow::Result<std::path::PathBuf> {
+        Ok(parent_path.join(format!("{}.rbxm", name)))
     }
 
     fn syncback_new(
         &self,
         vfs: &Vfs,
-        parent_path: &Path,
-        name: &str,
-        new_dom: &rbx_dom_weak::WeakDom,
-        new_ref: rbx_dom_weak::types::Ref,
+        path: &Path,
+        new_dom: &WeakDom,
+        new_ref: Ref,
         context: &InstanceContext,
+        my_metadata: &InstanceMetadata,
         _overrides: Option<SnapshotOverride>,
-    ) -> anyhow::Result<Option<InstanceSnapshot>> {
-        let _instance = new_dom.get_by_ref(new_ref).unwrap();
-        let path = parent_path.join(format!("{}.rbxm", name));
-
+    ) -> anyhow::Result<InstanceSnapshot> {
         let mut contents: Vec<u8> = Vec::new();
         rbx_binary::to_writer(&mut contents, new_dom, &[new_ref])?;
 
-        vfs.write(&path, contents)?;
-
-        reconcile_meta_file_empty(vfs, &path.with_extension("meta.json"))?;
-
-        Ok(Some(
+        Ok(
             InstanceSnapshot::from_tree_copy(new_dom, new_ref, false).metadata(
-                InstanceMetadata::new()
+                my_metadata
                     .context(context)
-                    .instigating_source(path.clone())
-                    .relevant_paths(vec![path.clone(), path.with_extension("meta.json")])
-                    .middleware_id(self.middleware_id()),
+                    .instigating_source(path.to_path_buf())
+                    .relevant_paths(vec![path.to_path_buf(), path.with_extension("meta.json")])
+                    .middleware_id(self.middleware_id())
+                    .fs_snapshot(FsSnapshot::new().with_file_contents_owned(path, contents)),
             ),
-        ))
-    }
-
-    fn syncback_destroy(
-        &self,
-        vfs: &Vfs,
-        path: &Path,
-        _tree: &mut crate::snapshot::RojoTree,
-        _old_ref: rbx_dom_weak::types::Ref,
-    ) -> anyhow::Result<()> {
-        vfs.remove_file(path)?;
-        try_remove_file(vfs, &path.with_extension("meta.json"))?;
-        Ok(())
+        )
     }
 }
 

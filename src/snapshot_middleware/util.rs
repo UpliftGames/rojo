@@ -3,7 +3,7 @@ use std::{
     path::Path,
 };
 
-use anyhow::Context;
+use anyhow::{bail, Context};
 use memofs::Vfs;
 use rbx_dom_weak::Instance;
 
@@ -64,7 +64,7 @@ pub fn reconcile_meta_file(
     skip_props: HashSet<&str>,
     base_class: Option<&str>,
     filters: &BTreeMap<String, PropertyFilter>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Option<Vec<u8>>> {
     let existing = {
         let contents = vfs.read(path).map(Some).or_else(|e| match e.kind() {
             std::io::ErrorKind::NotFound => Ok(None),
@@ -102,12 +102,10 @@ pub fn reconcile_meta_file(
     }
 
     if new_file.is_empty() {
-        try_remove_file(vfs, path)?;
+        Ok(None)
     } else {
-        vfs.write(path, serde_json::to_string_pretty(&new_file)?)?;
+        Ok(Some(serde_json::to_string_pretty(&new_file)?.into()))
     }
-
-    Ok(())
 }
 
 /// If the given string ends up with the given suffix, returns the portion of
@@ -125,6 +123,7 @@ pub trait PathExt {
     fn file_name_ends_with(&self, suffix: &str) -> bool;
     fn file_name_trim_end<'a>(&'a self, suffix: &str) -> anyhow::Result<&'a str>;
     fn file_name_trim_extension<'a>(&'a self) -> anyhow::Result<String>;
+    fn file_name_trim_end_any<'a>(&'a self, suffixes: &[&str]) -> anyhow::Result<&'a str>;
 }
 
 impl<P> PathExt for P
@@ -156,5 +155,21 @@ where
             .and_then(|stem| stem.to_str())
             .map(|string| string.to_owned())
             .with_context(|| format!("Path did not have a file name: {}", self.as_ref().display()))
+    }
+
+    fn file_name_trim_end_any<'a>(&'a self, suffixes: &[&str]) -> anyhow::Result<&'a str> {
+        let path = self.as_ref();
+        let file_name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .with_context(|| format!("Path did not have a file name: {}", path.display()))?;
+
+        for suffix in suffixes {
+            if let Some(trimmed) = match_trailing(&file_name, suffix) {
+                return Ok(trimmed);
+            }
+        }
+
+        bail!("Path did not end in any of {:?}", suffixes);
     }
 }

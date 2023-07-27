@@ -9,14 +9,11 @@ use rbx_dom_weak::{
 };
 
 use crate::snapshot::{
-    DeepDiff, InstanceContext, InstanceMetadata, InstanceSnapshot, MiddlewareContextAny, RojoTree,
-    SnapshotMiddleware, SnapshotOverride, PRIORITY_SINGLE_READABLE,
+    DeepDiff, FsSnapshot, InstanceContext, InstanceMetadata, InstanceSnapshot,
+    MiddlewareContextAny, RojoTree, SnapshotMiddleware, SnapshotOverride, PRIORITY_SINGLE_READABLE,
 };
 
-use super::{
-    meta_file::MetadataFile,
-    util::{reconcile_meta_file, try_remove_file},
-};
+use super::{meta_file::MetadataFile, util::reconcile_meta_file};
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct LuaMiddleware;
@@ -113,18 +110,16 @@ impl SnapshotMiddleware for LuaMiddleware {
         tree: &mut RojoTree,
         old_ref: Ref,
         new_dom: &WeakDom,
-        context: &InstanceContext,
-        _middleware_context: Option<Arc<dyn MiddlewareContextAny>>,
-        _overrides: Option<SnapshotOverride>,
+        instance_context: &InstanceContext,
+        middleware_context: Option<Arc<dyn MiddlewareContextAny>>,
+        overrides: Option<SnapshotOverride>,
     ) -> anyhow::Result<InstanceMetadata> {
-        let old_inst = tree.get_instance(old_ref).unwrap();
-
         let new_ref = diff
             .get_matching_new_ref(old_ref)
             .with_context(|| "no matching new ref")?;
         let new_inst = new_dom.get_by_ref(new_ref).with_context(|| "missing ref")?;
 
-        let my_metadata = old_inst.metadata().clone();
+        let my_metadata = tree.get_instance(old_ref).unwrap().metadata();
 
         let (_old_script_type, name) = get_script_type_and_name(old_path);
 
@@ -142,39 +137,25 @@ impl SnapshotMiddleware for LuaMiddleware {
         };
         let new_path = old_path.with_file_name(new_file_name);
 
-        vfs.write(&new_path, get_instance_contents(new_inst)?)?;
-
-        reconcile_meta_file(
+        let result = self.syncback_new(
             vfs,
-            &new_path.with_file_name(format!("{}.meta.json", name)),
-            new_inst,
-            ignore_props(),
-            Some(&new_inst.class),
-            &context.syncback.property_filters_save,
+            &new_path,
+            new_dom,
+            new_ref,
+            instance_context,
+            my_metadata,
+            overrides,
         )?;
 
-        Ok(my_metadata
-            .instigating_source(new_path.clone())
-            .context(context)
-            .relevant_paths(vec![
-                new_path.clone(),
-                new_path.with_file_name(format!("{}.meta.json", name)),
-            ])
-            .middleware_id(self.middleware_id()))
+        Ok(result.metadata)
     }
 
-    fn syncback_new(
+    fn syncback_new_path(
         &self,
-        vfs: &Vfs,
         parent_path: &Path,
         name: &str,
-        new_dom: &WeakDom,
-        new_ref: Ref,
-        context: &InstanceContext,
-        _overrides: Option<SnapshotOverride>,
-    ) -> anyhow::Result<Option<InstanceSnapshot>> {
-        let instance = new_dom.get_by_ref(new_ref).unwrap();
-
+        instance: &Instance,
+    ) -> anyhow::Result<std::path::PathBuf> {
         let file_name = match instance.class.as_str() {
             "Script" => format!("{}.server.lua", name),
             "LocalScript" => format!("{}.client.lua", name),
@@ -182,11 +163,24 @@ impl SnapshotMiddleware for LuaMiddleware {
             _ => bail!("Bad class when syncing back Lua: {:?}", instance.class),
         };
 
-        let path = parent_path.join(file_name);
+        Ok(parent_path.join(file_name))
+    }
 
-        vfs.write(&path, get_instance_contents(instance)?)?;
+    fn syncback_new(
+        &self,
+        vfs: &Vfs,
+        path: &Path,
+        new_dom: &WeakDom,
+        new_ref: Ref,
+        context: &InstanceContext,
+        my_metadata: &InstanceMetadata,
+        _overrides: Option<SnapshotOverride>,
+    ) -> anyhow::Result<InstanceSnapshot> {
+        let instance = new_dom.get_by_ref(new_ref).unwrap();
 
-        reconcile_meta_file(
+        let (_old_script_type, name) = get_script_type_and_name(path);
+
+        let meta = reconcile_meta_file(
             vfs,
             &path.with_file_name(format!("{}.meta.json", name)),
             instance,
@@ -195,32 +189,26 @@ impl SnapshotMiddleware for LuaMiddleware {
             &context.syncback.property_filters_save,
         )?;
 
-        Ok(Some(
+        Ok(
             InstanceSnapshot::from_tree_copy(new_dom, new_ref, false).metadata(
-                InstanceMetadata::new()
+                my_metadata
                     .context(context)
-                    .instigating_source(path.clone())
+                    .instigating_source(path.to_path_buf())
                     .relevant_paths(vec![
-                        path.clone(),
+                        path.to_path_buf(),
                         path.with_file_name(format!("{}.meta.json", name)),
                     ])
-                    .middleware_id(self.middleware_id()),
+                    .middleware_id(self.middleware_id())
+                    .fs_snapshot(
+                        FsSnapshot::new()
+                            .with_file_contents_borrowed(&path, get_instance_contents(instance)?)
+                            .with_file_contents_opt(
+                                &path.with_file_name(format!("{}.meta.json", name)),
+                                meta,
+                            ),
+                    ),
             ),
-        ))
-    }
-
-    fn syncback_destroy(
-        &self,
-        vfs: &Vfs,
-        path: &Path,
-        _tree: &mut RojoTree,
-        _old_ref: Ref,
-    ) -> anyhow::Result<()> {
-        let (_script_type, name) = get_script_type_and_name(path);
-
-        vfs.remove_file(path)?;
-        try_remove_file(vfs, &path.with_file_name(format!("{}.meta.json", name)))?;
-        Ok(())
+        )
     }
 }
 
