@@ -8,7 +8,7 @@ use std::{
 use anyhow::Context;
 use memofs::Vfs;
 use rbx_dom_weak::{
-    types::{Attributes, Ref, Variant},
+    types::{Attributes, Variant},
     Instance, WeakDom,
 };
 use serde::{Deserialize, Serialize};
@@ -16,9 +16,9 @@ use serde::{Deserialize, Serialize};
 use crate::{
     resolution::UnresolvedValue,
     snapshot::{
-        FsSnapshot, InstanceContext, InstanceMetadata, InstanceSnapshot, OldTuple,
-        PropertiesFiltered, PropertyFilter, SnapshotMiddleware, SnapshotOverride, SyncbackNode,
-        ToVariantBinaryString, PRIORITY_MODEL_JSON,
+        FsSnapshot, InstanceContext, InstanceSnapshot, OptOldTuple,
+        PropertiesFiltered, PropertyFilter, SnapshotMiddleware, SyncbackContextX,
+        SyncbackNode, ToVariantBinaryString, PRIORITY_MODEL_JSON,
     },
 };
 
@@ -114,20 +114,12 @@ impl SnapshotMiddleware for JsonModelMiddleware {
         Ok(parent_path.join(format!("{}.model.json", name)))
     }
 
-    fn syncback(
-        &self,
-        vfs: &Vfs,
-        diff: &crate::snapshot::DeepDiff,
-        path: &Path,
-        old: Option<(
-            &mut crate::snapshot::RojoTree,
-            Ref,
-            Option<crate::snapshot::MiddlewareContextArc>,
-        )>,
-        new: (&WeakDom, Ref),
-        metadata: &InstanceMetadata,
-        overrides: Option<SnapshotOverride>,
-    ) -> anyhow::Result<crate::snapshot::SyncbackNode> {
+    fn syncback(&self, sync: &SyncbackContextX<'_, '_>) -> anyhow::Result<SyncbackNode> {
+        let path = sync.path;
+        let old = &sync.old;
+        let new = sync.new;
+        let metadata = sync.metadata;
+
         let (new_dom, new_ref) = new;
 
         let instance = new_dom.get_by_ref(new_ref).unwrap();
@@ -143,9 +135,10 @@ impl SnapshotMiddleware for JsonModelMiddleware {
         serde_json::to_writer(&mut contents, &json_model)?;
 
         Ok(SyncbackNode::new(
-            (old.id(), new_ref),
+            (old.opt_id(), new_ref),
             InstanceSnapshot::from_tree_copy(new_dom, new_ref, false).metadata(
                 metadata
+                    .clone()
                     .instigating_source(path.to_path_buf())
                     .relevant_paths(vec![path.to_path_buf(), path.with_extension("meta.json")])
                     .middleware_id(self.middleware_id())

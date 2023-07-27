@@ -15,7 +15,7 @@ use rbx_dom_weak::{types::Ref, Instance, WeakDom};
 use crate::snapshot_middleware::{get_middleware, get_middlewares};
 
 use super::{
-    diff::DeepDiff, FsSnapshot, InstanceContext, InstanceMetadata, InstanceSnapshot, RojoTree,
+    diff::DeepDiff, InstanceContext, InstanceMetadata, InstanceSnapshot, RojoTree,
 };
 
 pub const PRIORITY_MODEL_DIRECTORY: i32 = 80;
@@ -98,18 +98,33 @@ pub trait SnapshotMiddleware: Debug + DynEq + Sync + Send {
         new_inst: &Instance,
     ) -> anyhow::Result<PathBuf>;
 
-    fn syncback(
-        &self,
-        vfs: &Vfs,
-        diff: &DeepDiff,
-        path: &Path,
-        old: Option<(&mut RojoTree, Ref, Option<MiddlewareContextArc>)>,
-        new: (&WeakDom, Ref),
-        metadata: &InstanceMetadata,
-        overrides: Option<SnapshotOverride>,
-    ) -> anyhow::Result<SyncbackNode>;
+    fn syncback(&self, sync: &SyncbackContextX<'_, '_>) -> anyhow::Result<SyncbackNode>;
 }
 dyn_eq::eq_trait_object!(SnapshotMiddleware);
+
+pub struct SyncbackContextX<'old, 'new> {
+    pub vfs: &'old Vfs,
+    pub diff: &'new DeepDiff,
+    pub path: &'new Path,
+    pub old: Option<(&'old RojoTree, Ref, Option<MiddlewareContextArc>)>,
+    pub new: (&'new WeakDom, Ref),
+    pub metadata: &'new InstanceMetadata,
+    pub overrides: Option<SnapshotOverride>,
+}
+
+impl Clone for SyncbackContextX<'_, '_> {
+    fn clone(&self) -> Self {
+        Self {
+            vfs: self.vfs,
+            diff: self.diff,
+            path: self.path,
+            old: self.old.clone(),
+            new: self.new.clone(),
+            metadata: self.metadata,
+            overrides: self.overrides.clone(),
+        }
+    }
+}
 
 pub struct RefPair {
     pub old_ref: Option<Ref>,
@@ -143,40 +158,73 @@ impl Into<RefPair> for (Option<Ref>, Ref) {
     }
 }
 
-pub trait OldTuple {
-    fn id(&self) -> Option<Ref>;
-    fn dom(&mut self) -> Option<&mut RojoTree>;
-    fn middleware_context(&self) -> Option<MiddlewareContextArc>;
+pub trait OptOldTuple {
+    fn opt_id(&self) -> Option<Ref>;
+    fn opt_dom(&self) -> Option<&RojoTree>;
+    fn opt_middleware_context(&self) -> Option<MiddlewareContextArc>;
 }
 
-impl OldTuple for Option<(&mut RojoTree, Ref, Option<MiddlewareContextArc>)> {
-    fn id(&self) -> Option<Ref> {
+impl OptOldTuple for Option<(&RojoTree, Ref, Option<MiddlewareContextArc>)> {
+    fn opt_id(&self) -> Option<Ref> {
         self.as_ref().map(|(_, v, _)| *v)
     }
-    fn dom(&mut self) -> Option<&mut RojoTree> {
-        match self.as_mut() {
+    fn opt_dom(&self) -> Option<&RojoTree> {
+        match self.as_ref() {
             Some((tree, _, _)) => Some(*tree),
             None => None,
         }
     }
-    fn middleware_context(&self) -> Option<MiddlewareContextArc> {
+    fn opt_middleware_context(&self) -> Option<MiddlewareContextArc> {
         self.as_ref().map(|(_, _, v)| v.clone()).flatten()
     }
 }
 
-impl OldTuple for (&mut RojoTree, Ref, Option<MiddlewareContextArc>) {
-    fn id(&self) -> Option<Ref> {
+impl OptOldTuple for (&RojoTree, Ref, Option<MiddlewareContextArc>) {
+    fn opt_id(&self) -> Option<Ref> {
         Some(self.1)
     }
-    fn dom(&mut self) -> Option<&mut RojoTree> {
-        Some(&mut self.0)
+    fn opt_dom(&self) -> Option<&RojoTree> {
+        Some(&self.0)
+    }
+    fn opt_middleware_context(&self) -> Option<MiddlewareContextArc> {
+        self.2.clone()
+    }
+}
+
+pub trait OldTuple {
+    fn id(&self) -> Ref;
+    fn dom(&self) -> &RojoTree;
+    fn middleware_context(&self) -> Option<MiddlewareContextArc>;
+}
+
+impl OldTuple for (&RojoTree, Ref, Option<MiddlewareContextArc>) {
+    fn id(&self) -> Ref {
+        self.1
+    }
+    fn dom(&self) -> &RojoTree {
+        &self.0
     }
     fn middleware_context(&self) -> Option<MiddlewareContextArc> {
         self.2.clone()
     }
 }
 
-pub type GetChildren = Box<dyn FnOnce() -> anyhow::Result<(Vec<SyncbackNode>, HashSet<Ref>)>>;
+pub trait NewTuple {
+    fn id(&self) -> Ref;
+    fn dom(&self) -> &WeakDom;
+}
+
+impl NewTuple for (&WeakDom, Ref) {
+    fn id(&self) -> Ref {
+        self.1
+    }
+    fn dom(&self) -> &WeakDom {
+        &self.0
+    }
+}
+
+pub type GetChildren =
+    Box<dyn FnOnce(&SyncbackContextX<'_, '_>) -> anyhow::Result<(Vec<SyncbackNode>, HashSet<Ref>)>>;
 
 pub struct SyncbackNode {
     pub old_ref: Option<Ref>,
@@ -197,7 +245,8 @@ impl SyncbackNode {
     }
     pub fn with_children(
         self,
-        get_children: impl FnOnce() -> anyhow::Result<(Vec<SyncbackNode>, HashSet<Ref>)> + 'static,
+        get_children: impl FnOnce(&SyncbackContextX<'_, '_>) -> anyhow::Result<(Vec<SyncbackNode>, HashSet<Ref>)>
+            + 'static,
     ) -> Self {
         Self {
             get_children: Some(Box::new(get_children)),
@@ -238,7 +287,7 @@ impl<'old, 'new> SyncbackPlannerWrapped<'old, 'new> for Option<SyncbackPlanner<'
 pub struct SyncbackPlanner<'old, 'new> {
     pub middleware_id: &'static str,
     pub path: Cow<'old, Path>,
-    pub old: Option<(&'old mut RojoTree, Ref, Option<MiddlewareContextArc>)>,
+    pub old: Option<(&'old RojoTree, Ref, Option<MiddlewareContextArc>)>,
     pub new: (&'new WeakDom, Ref),
     pub metadata: Option<&'old InstanceMetadata>,
 }
@@ -246,9 +295,9 @@ pub struct SyncbackPlanner<'old, 'new> {
 impl<'old, 'new> SyncbackPlanner<'old, 'new> {
     pub fn syncback(
         &self,
-        vfs: &Vfs,
-        diff: &DeepDiff,
-        overrides: Option<SnapshotOverride>,
+        _vfs: &Vfs,
+        _diff: &DeepDiff,
+        _overrides: Option<SnapshotOverride>,
     ) -> anyhow::Result<SyncbackNode> {
         todo!()
     }

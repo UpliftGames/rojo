@@ -3,21 +3,16 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::{bail, Context};
 use memofs::Vfs;
 use rbx_dom_weak::{
     types::{Ref, Variant},
     Instance, InstanceBuilder, WeakDom,
 };
 
-use crate::{
-    multimap::MultiMap,
-    snapshot_middleware::{get_middleware, get_middlewares},
-};
+use crate::multimap::MultiMap;
 
 use super::{
-    diff::DeepDiff, get_best_syncback_middleware, FsSnapshot, InstanceContext, InstanceMetadata,
-    InstanceSnapshot, InstigatingSource, SyncbackNode,
+    diff::DeepDiff, FsSnapshot, InstanceMetadata, InstanceSnapshot, SyncbackContextX, SyncbackNode,
 };
 
 pub enum SyncbackTarget {
@@ -265,8 +260,8 @@ impl RojoTree {
         let mut processing: Vec<SyncbackNode> = Vec::new();
 
         while let Some(item) = processing.pop() {
-            let inst_snapshot = item.instance_snapshot;
-            if let Some(fs_snapshot) = inst_snapshot.metadata.fs_snapshot {
+            let inst_snapshot = &item.instance_snapshot;
+            if let Some(fs_snapshot) = &inst_snapshot.metadata.fs_snapshot {
                 let violates_rules = fs_snapshot
                     .files
                     .iter()
@@ -293,7 +288,21 @@ impl RojoTree {
             // TODO: update instance; make sure to conserve children if replacing
 
             if let Some(get_children) = item.get_children {
-                let (children, removed) = get_children()?;
+                let (_children, _removed) = get_children(&SyncbackContextX {
+                    vfs,
+                    diff,
+                    path: inst_snapshot.metadata.snapshot_source_path().unwrap(),
+                    old: item.old_ref.as_ref().map(|old_id| {
+                        (
+                            &*self,
+                            *old_id,
+                            inst_snapshot.metadata.middleware_context.clone(),
+                        )
+                    }),
+                    new: (new_dom, item.new_ref),
+                    metadata: &inst_snapshot.metadata,
+                    overrides: None, // TODO
+                })?;
             }
         }
 

@@ -1,5 +1,4 @@
 use std::{
-    any::TypeId,
     borrow::Cow,
     collections::{HashMap, HashSet},
     path::{Path, PathBuf},
@@ -8,22 +7,19 @@ use std::{
 
 use anyhow::{bail, Context};
 use memofs::Vfs;
-use rbx_dom_weak::{
-    types::{Attributes, Ref},
-    WeakDom,
-};
+use rbx_dom_weak::types::Attributes;
 use rbx_reflection::ClassTag;
 
 use crate::{
     project::{PathNode, Project, ProjectNode},
     resolution::UnresolvedValue,
     snapshot::{
-        get_best_syncback_middleware, DeepDiff, FsSnapshot, InstanceContext, InstanceMetadata,
-        InstanceSnapshot, InstigatingSource, MiddlewareContextAny, MiddlewareContextArc,
-        PathIgnoreRule, RojoTree, SnapshotMiddleware, SnapshotOverride, SyncbackNode,
-        SyncbackPlanner, SyncbackPlannerWrapped, TransformerRule,
+        get_best_syncback_middleware, FsSnapshot, InstanceContext, InstanceMetadata,
+        InstanceSnapshot, InstigatingSource, MiddlewareContextAny, PathIgnoreRule,
+        SnapshotMiddleware, SnapshotOverride, SyncbackContextX, SyncbackNode, SyncbackPlanner,
+        SyncbackPlannerWrapped, TransformerRule,
     },
-    snapshot_middleware::{get_middleware, util::PathExt},
+    snapshot_middleware::util::PathExt,
 };
 
 use super::snapshot_from_vfs;
@@ -123,23 +119,22 @@ impl SnapshotMiddleware for ProjectMiddleware {
 
     fn syncback_new_path(
         &self,
-        parent_path: &Path,
-        name: &str,
-        new_inst: &rbx_dom_weak::Instance,
+        _parent_path: &Path,
+        _name: &str,
+        _new_inst: &rbx_dom_weak::Instance,
     ) -> anyhow::Result<PathBuf> {
         bail!("Cannot create new project files from syncback")
     }
 
-    fn syncback(
-        &self,
-        vfs: &Vfs,
-        diff: &DeepDiff,
-        project_path: &Path,
-        old: Option<(&mut RojoTree, Ref, Option<MiddlewareContextArc>)>,
-        new: (&WeakDom, Ref),
-        metadata: &InstanceMetadata,
-        overrides: Option<SnapshotOverride>,
-    ) -> anyhow::Result<SyncbackNode> {
+    fn syncback(&self, sync: &SyncbackContextX<'_, '_>) -> anyhow::Result<SyncbackNode> {
+        let vfs = sync.vfs;
+        let diff = sync.diff;
+        let project_path = sync.path;
+        let old = &sync.old;
+        let new = sync.new;
+        let metadata = sync.metadata;
+        let _overrides = &sync.overrides;
+
         let (old_dom, old_root_ref, root_middleware_context) = match old {
             Some(v) => v,
             None => bail!("Cannot create new project files from syncback"),
@@ -163,7 +158,7 @@ impl SnapshotMiddleware for ProjectMiddleware {
 
         // We use node paths here instead of nodes to get around mutable borrow
         // issues caused by borrowing nodes to stick them in the list.
-        let mut processing = vec![(Vec::<String>::new(), old_root_ref)];
+        let mut processing = vec![(Vec::<String>::new(), *old_root_ref)];
         while !processing.is_empty() {
             let (project_node_path, node_ref) = processing.pop().unwrap();
 
@@ -216,7 +211,8 @@ impl SnapshotMiddleware for ProjectMiddleware {
             }
 
             if let Some(path_node) = &node.path {
-                let node_path = path_node.path().make_absolute(project_directory)?;
+                let node_path = path_node.path();
+                let node_path = node_path.make_absolute(project_directory)?;
 
                 if !metadata.context.should_syncback_path(&node_path) {
                     continue;
@@ -229,7 +225,7 @@ impl SnapshotMiddleware for ProjectMiddleware {
                     .get_by_ref(new_ref)
                     .with_context(|| "missing ref (tree)")?;
 
-                let middleware_context = if node_ref == old_root_ref {
+                let middleware_context = if node_ref == *old_root_ref {
                     &root_middleware_context
                 } else {
                     &node_inst.metadata().middleware_context
@@ -244,10 +240,10 @@ impl SnapshotMiddleware for ProjectMiddleware {
                 let project_context = project_context.as_ref();
 
                 let existing_middleware_id = project_context.map(|v| v.node_middleware).flatten();
-                let existing_middleware_context =
+                let _existing_middleware_context =
                     project_context.map(|v| v.node_context.clone()).flatten();
 
-                let mut new_middleware_id =
+                let new_middleware_id =
                     get_best_syncback_middleware(new_dom, new_inst, true, existing_middleware_id);
 
                 if existing_middleware_id != new_middleware_id {
@@ -255,9 +251,9 @@ impl SnapshotMiddleware for ProjectMiddleware {
                     continue;
                 }
 
-                if let Some(new_middleware_id) = new_middleware_id {
+                if let Some(_new_middleware_id) = new_middleware_id {
                     let child_syncback_node =
-                        SyncbackPlanner::from_update(old_dom, old_root_ref, new_dom, new_ref)?
+                        SyncbackPlanner::from_update(old_dom, *old_root_ref, new_dom, new_ref)?
                             .override_path(node_path)
                             .syncback(
                                 vfs,
@@ -314,7 +310,7 @@ impl SnapshotMiddleware for ProjectMiddleware {
 
         let mut fs_snapshot = FsSnapshot::new();
 
-        let project_contents = if project_changed {
+        let _project_contents = if project_changed {
             fs_snapshot = fs_snapshot
                 .with_file_contents_owned(project_path, serde_json::to_string_pretty(&project)?);
         } else {
@@ -322,14 +318,14 @@ impl SnapshotMiddleware for ProjectMiddleware {
         };
 
         Ok(SyncbackNode::new(
-            (old_root_ref, new_root_ref),
+            (*old_root_ref, new_root_ref),
             InstanceSnapshot::new()
                 .properties(new_root_inst.properties.clone())
-                .name(new_root_inst.name)
-                .class_name(new_root_inst.class)
+                .name(&new_root_inst.name)
+                .class_name(&new_root_inst.class)
                 .metadata(my_metadata.fs_snapshot(fs_snapshot)),
         )
-        .with_children(move || Ok((children, HashSet::new()))))
+        .with_children(move |_| Ok((children, HashSet::new()))))
     }
 }
 

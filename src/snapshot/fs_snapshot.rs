@@ -4,7 +4,7 @@ use std::{
     sync::Arc,
 };
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use memofs::{IoResultExt, Vfs};
 use serde::{Deserialize, Serialize};
 

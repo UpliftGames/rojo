@@ -1,17 +1,13 @@
-use std::{borrow::Cow, collections::HashSet, path::Path, str, sync::Arc};
+use std::{borrow::Cow, collections::HashSet, path::Path, str};
 
 use anyhow::{bail, Context};
 use maplit::hashmap;
 use memofs::{IoResultExt, Vfs};
-use rbx_dom_weak::{
-    types::{Ref, Variant},
-    Instance, WeakDom,
-};
+use rbx_dom_weak::{types::Variant, Instance};
 
 use crate::snapshot::{
-    DeepDiff, FsSnapshot, InstanceContext, InstanceMetadata, InstanceSnapshot,
-    MiddlewareContextAny, OldTuple, RojoTree, SnapshotMiddleware, SnapshotOverride, SyncbackNode,
-    PRIORITY_SINGLE_READABLE,
+    FsSnapshot, InstanceContext, InstanceMetadata, InstanceSnapshot, OptOldTuple,
+    SnapshotMiddleware, SyncbackContextX, SyncbackNode, PRIORITY_SINGLE_READABLE,
 };
 
 use super::{meta_file::MetadataFile, util::reconcile_meta_file};
@@ -119,27 +115,20 @@ impl SnapshotMiddleware for LuaMiddleware {
         Ok(parent_path.join(file_name))
     }
 
-    fn syncback(
-        &self,
-        vfs: &Vfs,
-        diff: &crate::snapshot::DeepDiff,
-        path: &Path,
-        old: Option<(
-            &mut crate::snapshot::RojoTree,
-            Ref,
-            Option<crate::snapshot::MiddlewareContextArc>,
-        )>,
-        new: (&WeakDom, Ref),
-        metadata: &InstanceMetadata,
-        overrides: Option<SnapshotOverride>,
-    ) -> anyhow::Result<crate::snapshot::SyncbackNode> {
+    fn syncback(&self, sync: &SyncbackContextX<'_, '_>) -> anyhow::Result<SyncbackNode> {
+        let vfs = sync.vfs;
+        let path = sync.path;
+        let old = &sync.old;
+        let new = sync.new;
+        let metadata = sync.metadata;
+
         let (new_dom, new_ref) = new;
 
         let instance = new_dom.get_by_ref(new_ref).unwrap();
 
         let (_old_script_type, name) = get_script_type_and_name(path);
 
-        let path = if let Some(old) = old {
+        let path = if let Some(_old) = old {
             let new_inst = new_dom.get_by_ref(new_ref).with_context(|| "missing ref")?;
 
             let ext = match path.extension().map(|v| v.to_string_lossy()).as_deref() {
@@ -170,9 +159,10 @@ impl SnapshotMiddleware for LuaMiddleware {
         )?;
 
         Ok(SyncbackNode::new(
-            (old.id(), new_ref),
+            (old.opt_id(), new_ref),
             InstanceSnapshot::from_tree_copy(new_dom, new_ref, false).metadata(
                 metadata
+                    .clone()
                     .instigating_source(path.to_path_buf())
                     .relevant_paths(vec![
                         path.to_path_buf(),

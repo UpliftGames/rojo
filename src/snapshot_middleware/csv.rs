@@ -6,16 +6,12 @@ use std::{
 use anyhow::{bail, Context};
 use maplit::hashmap;
 use memofs::{IoResultExt, Vfs};
-use rbx_dom_weak::{
-    types::{Ref, Variant},
-    Instance, WeakDom,
-};
+use rbx_dom_weak::{types::Variant, Instance, WeakDom};
 use serde::{Deserialize, Serialize};
 
 use crate::snapshot::{
-    DeepDiff, FsSnapshot, InstanceContext, InstanceMetadata, InstanceSnapshot,
-    MiddlewareContextArc, OldTuple, RojoTree, SnapshotMiddleware, SnapshotOverride, SyncbackNode,
-    PRIORITY_SINGLE_READABLE,
+    FsSnapshot, InstanceContext, InstanceMetadata, InstanceSnapshot, OptOldTuple,
+    SnapshotMiddleware, SyncbackContextX, SyncbackNode, PRIORITY_SINGLE_READABLE,
 };
 
 use super::{
@@ -105,16 +101,13 @@ impl SnapshotMiddleware for CsvMiddleware {
         Ok(parent_path.join(format!("{}.csv", name)))
     }
 
-    fn syncback(
-        &self,
-        vfs: &Vfs,
-        diff: &DeepDiff,
-        path: &Path,
-        old: Option<(&mut RojoTree, Ref, Option<MiddlewareContextArc>)>,
-        new: (&WeakDom, Ref),
-        metadata: &InstanceMetadata,
-        overrides: Option<SnapshotOverride>,
-    ) -> anyhow::Result<SyncbackNode> {
+    fn syncback(&self, sync: &SyncbackContextX<'_, '_>) -> anyhow::Result<SyncbackNode> {
+        let vfs = sync.vfs;
+        let path = sync.path;
+        let old = &sync.old;
+        let new = sync.new;
+        let metadata = sync.metadata;
+
         let (new_dom, new_ref) = new;
 
         let instance = new_dom.get_by_ref(new_ref).unwrap();
@@ -129,9 +122,10 @@ impl SnapshotMiddleware for CsvMiddleware {
         )?;
 
         Ok(SyncbackNode::new(
-            (old.id(), new_ref),
+            (old.opt_id(), new_ref),
             InstanceSnapshot::from_tree_copy(new_dom, new_ref, false).metadata(
                 metadata
+                    .clone()
                     .instigating_source(path.to_path_buf())
                     .relevant_paths(vec![path.to_path_buf(), path.with_extension("meta.json")])
                     .middleware_id(self.middleware_id())

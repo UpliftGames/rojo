@@ -1,16 +1,16 @@
-use std::{path::Path, sync::Arc};
+use std::path::Path;
 
 use anyhow::Context;
 use memofs::Vfs;
-use rbx_dom_weak::{types::Ref, Instance, WeakDom};
+use rbx_dom_weak::Instance;
 use rbx_xml::EncodeOptions;
 
 use crate::snapshot::{
-    FsSnapshot, InstanceContext, InstanceMetadata, InstanceSnapshot, MiddlewareContextAny,
-    OldTuple, SnapshotMiddleware, SnapshotOverride, SyncbackNode, PRIORITY_MODEL_XML,
+    FsSnapshot, InstanceContext, InstanceMetadata, InstanceSnapshot, OptOldTuple,
+    SnapshotMiddleware, SyncbackContextX, SyncbackNode, PRIORITY_MODEL_XML,
 };
 
-use super::util::{reconcile_meta_file_empty, try_remove_file, PathExt};
+use super::util::PathExt;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct RbxmxMiddleware;
@@ -89,20 +89,11 @@ impl SnapshotMiddleware for RbxmxMiddleware {
         Ok(parent_path.join(format!("{}.rbxmx", name)))
     }
 
-    fn syncback(
-        &self,
-        vfs: &Vfs,
-        diff: &crate::snapshot::DeepDiff,
-        path: &Path,
-        old: Option<(
-            &mut crate::snapshot::RojoTree,
-            Ref,
-            Option<crate::snapshot::MiddlewareContextArc>,
-        )>,
-        new: (&WeakDom, Ref),
-        metadata: &InstanceMetadata,
-        overrides: Option<SnapshotOverride>,
-    ) -> anyhow::Result<crate::snapshot::SyncbackNode> {
+    fn syncback(&self, sync: &SyncbackContextX<'_, '_>) -> anyhow::Result<SyncbackNode> {
+        let path = sync.path;
+        let old = &sync.old;
+        let new = sync.new;
+
         let (new_dom, new_ref) = new;
 
         let mut contents: Vec<u8> = Vec::new();
@@ -114,7 +105,7 @@ impl SnapshotMiddleware for RbxmxMiddleware {
         )?;
 
         Ok(SyncbackNode::new(
-            (old.id(), new_ref),
+            (old.opt_id(), new_ref),
             InstanceSnapshot::from_tree_copy(new_dom, new_ref, false).metadata(
                 InstanceMetadata::new()
                     .instigating_source(path.to_path_buf())

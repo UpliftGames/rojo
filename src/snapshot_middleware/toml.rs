@@ -7,8 +7,7 @@ use memofs::{IoResultExt, Vfs};
 use crate::{
     lua_ast::{Expression, Statement},
     snapshot::{
-        FsSnapshot, InstanceContext, InstanceMetadata, InstanceSnapshot, SnapshotMiddleware,
-        SnapshotOverride,
+        FsSnapshot, InstanceContext, InstanceMetadata, InstanceSnapshot, SnapshotMiddleware, SyncbackContextX, SyncbackNode,
     },
 };
 
@@ -83,27 +82,14 @@ impl SnapshotMiddleware for TomlMiddleware {
 
     fn syncback_new_path(
         &self,
-        parent_path: &Path,
-        name: &str,
-        new_inst: &rbx_dom_weak::Instance,
+        _parent_path: &Path,
+        _name: &str,
+        _new_inst: &rbx_dom_weak::Instance,
     ) -> anyhow::Result<std::path::PathBuf> {
         todo!()
     }
 
-    fn syncback(
-        &self,
-        vfs: &Vfs,
-        diff: &crate::snapshot::DeepDiff,
-        path: &Path,
-        old: Option<(
-            &mut crate::snapshot::RojoTree,
-            rbx_dom_weak::types::Ref,
-            Option<crate::snapshot::MiddlewareContextArc>,
-        )>,
-        new: (&rbx_dom_weak::WeakDom, rbx_dom_weak::types::Ref),
-        metadata: &InstanceMetadata,
-        overrides: Option<SnapshotOverride>,
-    ) -> anyhow::Result<crate::snapshot::SyncbackNode> {
+    fn syncback(&self, _sync: &SyncbackContextX<'_, '_>) -> anyhow::Result<SyncbackNode> {
         todo!()
     }
 }

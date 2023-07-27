@@ -1,15 +1,15 @@
-use std::{path::Path, sync::Arc};
+use std::path::Path;
 
 use anyhow::Context;
 use memofs::Vfs;
-use rbx_dom_weak::{types::Ref, Instance, WeakDom};
+use rbx_dom_weak::Instance;
 
 use crate::snapshot::{
-    FsSnapshot, InstanceContext, InstanceMetadata, InstanceSnapshot, MiddlewareContextAny,
-    OldTuple, SnapshotMiddleware, SnapshotOverride, SyncbackNode, PRIORITY_MODEL_BINARY,
+    FsSnapshot, InstanceContext, InstanceMetadata, InstanceSnapshot, OptOldTuple,
+    SnapshotMiddleware, SyncbackContextX, SyncbackNode, PRIORITY_MODEL_BINARY,
 };
 
-use super::util::{reconcile_meta_file_empty, try_remove_file, PathExt};
+use super::util::PathExt;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct RbxmMiddleware;
@@ -87,29 +87,22 @@ impl SnapshotMiddleware for RbxmMiddleware {
         Ok(parent_path.join(format!("{}.rbxm", name)))
     }
 
-    fn syncback(
-        &self,
-        vfs: &Vfs,
-        diff: &crate::snapshot::DeepDiff,
-        path: &Path,
-        old: Option<(
-            &mut crate::snapshot::RojoTree,
-            Ref,
-            Option<crate::snapshot::MiddlewareContextArc>,
-        )>,
-        new: (&WeakDom, Ref),
-        metadata: &InstanceMetadata,
-        overrides: Option<SnapshotOverride>,
-    ) -> anyhow::Result<crate::snapshot::SyncbackNode> {
+    fn syncback(&self, sync: &SyncbackContextX<'_, '_>) -> anyhow::Result<SyncbackNode> {
+        let path = sync.path;
+        let old = &sync.old;
+        let new = sync.new;
+        let metadata = sync.metadata;
+
         let (new_dom, new_ref) = new;
 
         let mut contents: Vec<u8> = Vec::new();
         rbx_binary::to_writer(&mut contents, new_dom, &[new_ref])?;
 
         Ok(SyncbackNode::new(
-            (old.id(), new_ref),
+            (old.opt_id(), new_ref),
             InstanceSnapshot::from_tree_copy(new_dom, new_ref, false).metadata(
                 metadata
+                    .clone()
                     .instigating_source(path.to_path_buf())
                     .relevant_paths(vec![path.to_path_buf(), path.with_extension("meta.json")])
                     .middleware_id(self.middleware_id())
