@@ -58,6 +58,7 @@ rbx_reflection_database = { git = "https://github.com/UpliftGames/rbx-dom", rev 
 rbx_xml = { git = "https://github.com/UpliftGames/rbx-dom", rev = "50e8bd040fc26e8271bbaefd05c59b2658392e80" }
 
 dyn-eq = "0.1.2"
+indexmap = { version = "2.0.0", features = ["std", "serde"] }
 
 anyhow = { version = "1.0.72", features = ["backtrace"] }
 backtrace = "0.3.61"

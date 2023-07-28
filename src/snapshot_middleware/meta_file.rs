@@ -1,11 +1,12 @@
 use std::{
     borrow::Cow,
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, HashSet},
     path::PathBuf,
 };
 
 use anyhow::{format_err, Context};
 
+use indexmap::IndexMap;
 use rbx_dom_weak::{
     types::{Attributes, Variant},
     Instance,
@@ -14,7 +15,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     resolution::UnresolvedValue,
-    snapshot::{InstanceSnapshot, PropertiesFiltered, PropertyFilter, ToVariantBinaryString},
+    snapshot::{
+        filter, InstanceSnapshot, PropertiesFiltered, PropertyFilter, ToVariantBinaryString,
+    },
 };
 
 /// Represents metadata in a sibling file with the same basename.
@@ -27,14 +30,14 @@ pub struct MetadataFile {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ignore_unknown_instances: Option<bool>,
 
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub properties: HashMap<String, UnresolvedValue>,
-
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub attributes: HashMap<String, UnresolvedValue>,
-
     #[serde(skip_serializing_if = "Option::is_none")]
     pub class_name: Option<String>,
+
+    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
+    pub properties: IndexMap<String, UnresolvedValue>,
+
+    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
+    pub attributes: IndexMap<String, UnresolvedValue>,
 
     #[serde(skip)]
     pub path: PathBuf,
@@ -56,6 +59,7 @@ impl MetadataFile {
     pub fn with_instance_props(
         self,
         instance: &Instance,
+        existing: Option<&MetadataFile>,
         skip_props: HashSet<&str>,
         filters: &BTreeMap<String, PropertyFilter>,
     ) -> Self {
@@ -63,9 +67,35 @@ impl MetadataFile {
             log::trace!("Skipping properties for ModuleScript: {:#?}", skip_props);
         }
 
+        // This complex dance inserts properties with the existing order before
+        // adding new ones.
+
+        // TODO: make this less complex
+        // TODO: generalize this as "use order from X index map for new index map"
+
         Self {
-            properties: HashMap::from_iter(instance.properties_filtered(filters, true).filter_map(
-                |(k, v)| {
+            properties: IndexMap::from_iter(
+                match existing {
+                    Some(existing) => Box::new(existing.properties.keys().filter_map(|k| {
+                        if let Some(v) = instance.properties.get(k) {
+                            Some((k.as_str(), v))
+                        } else {
+                            None
+                        }
+                    }))
+                        as Box<dyn Iterator<Item = (&str, &Variant)>>,
+                    None => Box::new(std::iter::empty::<(&str, &Variant)>())
+                        as Box<dyn Iterator<Item = (&str, &Variant)>>,
+                }
+                .chain(instance.properties.iter().filter_map(|(k, v)| {
+                    if existing.is_some() && existing.unwrap().properties.contains_key(k) {
+                        None
+                    } else {
+                        Some((k.as_str(), v))
+                    }
+                }))
+                .filter(filter(&instance.class, filters, true))
+                .filter_map(|(k, v)| {
                     if k == "Attributes" {
                         return None;
                     }
@@ -89,17 +119,34 @@ impl MetadataFile {
                     } else {
                         None
                     }
-                },
-            )),
+                }),
+            ),
             attributes: instance.properties.get("Attributes").map_or_else(
-                || HashMap::new(),
+                || IndexMap::new(),
                 |attributes| {
                     match attributes {
-                        Variant::Attributes(attributes) => attributes
-                            .iter()
-                            .map(|(k, v)| (k.clone(), UnresolvedValue::from_variant(v.clone())))
-                            .collect(),
-                        _ => HashMap::new(), // TODO: error here?
+                        Variant::Attributes(attributes) => match existing {
+                            Some(existing) => Box::new(existing.attributes.keys().filter_map(|k| {
+                                if let Some(v) = attributes.get(k.as_str()) {
+                                    Some((k.as_str(), v))
+                                } else {
+                                    None
+                                }
+                            }))
+                                as Box<dyn Iterator<Item = (&str, &Variant)>>,
+                            None => Box::new(std::iter::empty::<(&str, &Variant)>())
+                                as Box<dyn Iterator<Item = (&str, &Variant)>>,
+                        }
+                        .chain(attributes.iter().filter_map(|(k, v)| {
+                            if existing.is_some() && existing.unwrap().attributes.contains_key(k) {
+                                None
+                            } else {
+                                Some((k.as_str(), v))
+                            }
+                        }))
+                        .map(|(k, v)| (k.to_string(), UnresolvedValue::from_variant(v.clone())))
+                        .collect(),
+                        _ => IndexMap::new(), // TODO: error here?
                     }
                 },
             ),
@@ -181,7 +228,7 @@ impl MetadataFile {
     pub fn apply_properties(&mut self, snapshot: &mut InstanceSnapshot) -> anyhow::Result<()> {
         let path = &self.path;
 
-        for (key, unresolved) in self.properties.drain() {
+        for (key, unresolved) in self.properties.drain(..) {
             let value = unresolved
                 .resolve(&snapshot.class_name, &key)
                 .with_context(|| format!("error applying meta file {}", path.display()))?;
@@ -192,7 +239,7 @@ impl MetadataFile {
         if !self.attributes.is_empty() {
             let mut attributes = Attributes::new();
 
-            for (key, unresolved) in self.attributes.drain() {
+            for (key, unresolved) in self.attributes.drain(..) {
                 let value = unresolved.resolve_unambiguous()?;
                 attributes.insert(key, value);
             }

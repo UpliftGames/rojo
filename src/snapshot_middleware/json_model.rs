@@ -6,6 +6,7 @@ use std::{
 };
 
 use anyhow::Context;
+use indexmap::IndexMap;
 use memofs::Vfs;
 use rbx_dom_weak::{
     types::{Attributes, Variant},
@@ -132,7 +133,7 @@ impl SnapshotMiddleware for JsonModelMiddleware {
         json_model.name = None;
 
         let mut contents: Vec<u8> = Vec::new();
-        serde_json::to_writer(&mut contents, &json_model)?;
+        serde_json::to_writer_pretty(&mut contents, &json_model)?;
 
         Ok(SyncbackNode::new(
             (old.opt_id(), new_ref),
@@ -168,13 +169,13 @@ struct JsonModel {
 
     #[serde(
         alias = "Properties",
-        default = "HashMap::new",
-        skip_serializing_if = "HashMap::is_empty"
+        default = "IndexMap::new",
+        skip_serializing_if = "IndexMap::is_empty"
     )]
-    properties: HashMap<String, UnresolvedValue>,
+    properties: IndexMap<String, UnresolvedValue>,
 
-    #[serde(default = "HashMap::new", skip_serializing_if = "HashMap::is_empty")]
-    attributes: HashMap<String, UnresolvedValue>,
+    #[serde(default = "IndexMap::new", skip_serializing_if = "IndexMap::is_empty")]
+    attributes: IndexMap<String, UnresolvedValue>,
 }
 
 impl JsonModel {
@@ -251,13 +252,13 @@ impl JsonModel {
                 })
                 .collect(),
             attributes: instance.properties.get("attributes").map_or_else(
-                || HashMap::new(),
+                || IndexMap::new(),
                 |attributes| match attributes {
                     Variant::Attributes(attributes) => attributes
                         .iter()
                         .map(|(k, v)| (k.clone(), UnresolvedValue::from_variant(v.clone())))
                         .collect(),
-                    _ => HashMap::new(),
+                    _ => IndexMap::new(),
                 },
             ),
         }

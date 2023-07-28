@@ -6,6 +6,7 @@ use std::{
 };
 
 use anyhow::{bail, Context};
+use indexmap::IndexMap;
 use memofs::Vfs;
 use rbx_dom_weak::types::Attributes;
 use rbx_reflection::ClassTag;
@@ -291,7 +292,7 @@ impl SnapshotMiddleware for ProjectMiddleware {
                         // properties whish is different from meta properties
                         if !node.properties.is_empty() || node.class_name.is_some() {
                             // Properties are moved to a .meta file now; delete from project file
-                            node.properties = HashMap::new();
+                            node.properties = IndexMap::new();
                             // Getting class name inheritance from the project
                             // node working is a pain, so we'll just enforce
                             // putting it in the meta file if you're putting

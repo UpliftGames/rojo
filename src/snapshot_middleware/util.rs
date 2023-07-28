@@ -5,6 +5,7 @@ use std::{
 };
 
 use anyhow::{bail, Context};
+use indexmap::IndexMap;
 use memofs::Vfs;
 use rbx_dom_weak::Instance;
 
@@ -38,8 +39,8 @@ pub fn reconcile_meta_file_empty(vfs: &Vfs, path: &Path) -> anyhow::Result<()> {
     } else {
         MetadataFile {
             ignore_unknown_instances: None,
-            properties: HashMap::new(),
-            attributes: HashMap::new(),
+            properties: IndexMap::new(),
+            attributes: IndexMap::new(),
             class_name: None,
             path: path.to_path_buf(),
         }
@@ -83,14 +84,14 @@ pub fn reconcile_meta_file(
     } else {
         MetadataFile {
             ignore_unknown_instances: None,
-            properties: HashMap::new(),
-            attributes: HashMap::new(),
+            properties: IndexMap::new(),
+            attributes: IndexMap::new(),
             class_name: None,
             path: path.to_path_buf(),
         }
     };
 
-    new_file = new_file.with_instance_props(instance, skip_props, filters);
+    new_file = new_file.with_instance_props(instance, existing.as_ref(), skip_props, filters);
 
     if Some(instance.class.as_str()) == base_class {
         new_file.class_name = None;

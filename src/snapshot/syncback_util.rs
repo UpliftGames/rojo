@@ -78,6 +78,39 @@ impl PropertyFilterTrait for Option<&PropertyFilter> {
     }
 }
 
+pub fn filter<'a>(
+    class: &'a str,
+    filters: &'a BTreeMap<String, PropertyFilter>,
+    filter_defaults: bool,
+) -> Box<dyn FnMut(&(&str, &Variant)) -> bool + 'a> {
+    Box::new(move |(k, v)| {
+        if filter_defaults {
+            let default = rbx_reflection_database::get()
+                .classes
+                .get(class)
+                .map(|class_def| class_def.default_properties.get(*k))
+                .flatten();
+            if default == Some(v) {
+                return false;
+            }
+        }
+        if let Some(filter) = filters.get(*k) {
+            match filter {
+                PropertyFilter::Ignore => return false,
+                PropertyFilter::IgnoreWhenEq(values) => {
+                    for filter_value in values {
+                        if v == &filter_value {
+                            return false;
+                        }
+                    }
+                }
+            }
+        }
+
+        true
+    })
+}
+
 pub trait PropertiesFiltered {
     fn properties_iter(&self) -> Box<dyn Iterator<Item = (&str, &Variant)> + '_>;
     fn class_inner(&self) -> &str;

@@ -5,6 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -40,10 +41,6 @@ enum Error {
 pub struct Project {
     /// The name of the top-level instance described by the project.
     pub name: String,
-
-    /// The tree of instances described by this project. Projects always
-    /// describe at least one instance.
-    pub tree: ProjectNode,
 
     /// If specified, sets the default port that `rojo serve` should use when
     /// using this project for live sync.
@@ -85,6 +82,10 @@ pub struct Project {
     /// Syncback behavior settings.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub syncback: Option<ProjectSyncback>,
+
+    /// The tree of instances described by this project. Projects always
+    /// describe at least one instance.
+    pub tree: ProjectNode,
 
     /// The path to the file that this project came from. Relative paths in the
     /// project should be considered relative to the parent of this field, also
@@ -278,26 +279,22 @@ pub struct ProjectNode {
     #[serde(rename = "$className", skip_serializing_if = "Option::is_none")]
     pub class_name: Option<String>,
 
-    /// Contains all of the children of the described instance.
-    #[serde(flatten)]
-    pub children: BTreeMap<String, ProjectNode>,
-
     /// The properties that will be assigned to the resulting instance.
     ///
     // TODO: Is this legal to set if $path is set?
     #[serde(
         rename = "$properties",
         default,
-        skip_serializing_if = "HashMap::is_empty"
+        skip_serializing_if = "IndexMap::is_empty"
     )]
-    pub properties: HashMap<String, UnresolvedValue>,
+    pub properties: IndexMap<String, UnresolvedValue>,
 
     #[serde(
         rename = "$attributes",
         default,
-        skip_serializing_if = "HashMap::is_empty"
+        skip_serializing_if = "IndexMap::is_empty"
     )]
-    pub attributes: HashMap<String, UnresolvedValue>,
+    pub attributes: IndexMap<String, UnresolvedValue>,
 
     /// Defines the behavior when Rojo encounters unknown instances in Roblox
     /// Studio during live sync. `$ignoreUnknownInstances` should be considered
@@ -325,6 +322,10 @@ pub struct ProjectNode {
     /// spreadsheets (`.csv`).
     #[serde(rename = "$path", skip_serializing_if = "Option::is_none")]
     pub path: Option<PathNode>,
+
+    /// Contains all of the children of the described instance.
+    #[serde(flatten)]
+    pub children: IndexMap<String, ProjectNode>,
 }
 
 impl ProjectNode {

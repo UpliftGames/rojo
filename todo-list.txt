@@ -1,12 +1,19 @@
 wip:
-- ignore globs to prevent syncback under
 - support user-defined property ignores for diff
 
+next up:
+- "preferred ref" support to keep refs across files
+- keep-ref: replace ref in snapshot incl. ref properties if already used in tree
+- add "transformer" support (rename to middleware)
+  - req. pulling globs from state instead of static
+- fixing unique ids does not work for binary; need to generate a value instead of delete entirely (or is rbx_binary just outdated?)
+- figure out if internal diff is resulting in too many changes -> too many updates
+- "--inspect-diff" argument that prints diff for specific path in tree, incl. properties
+- support SharedString in json
+
 rojo:
-- disallow project updates from deleting files if referred to by path
 - json model preserve order
-- meta file preserve order
-- project file preserve order
+- disallow project updates from deleting files if referred to by path
 - convert concerning traces to info/warn/error
 - convert "can't sync, skipping" traces to info/warn/error
 - delete extra traces
@@ -15,8 +22,6 @@ rojo:
 - explore storing refs so ref properties work between files
 - explore round-trip diff minim
 - explore ref-matching to minimize ref property-caused diffs
-- "preferred ref" support to keep refs across files
-- keep-ref: replace ref in snapshot incl. ref properties if already used in tree
 - disallow bad filenames
 - workaround bad filenames with init.meta
 - better syncback inference
@@ -28,14 +33,8 @@ rojo:
   - lighting objects as model json
   - for some model json objects, prefer directory w/ init.meta.json if they have children
 - standardize around "middleware" name (fix refs to snapshot, syncback, and provider)
-- add "transformer" support (rename to middleware)
-  - req. pulling globs from state instead of static
 - ensure instancecontext is chosen and passed around correctly
 - convert project special-casing to new children mode enum
-- fixing unique ids does not work for binary; need to generate a value instead of delete entirely (or is rbx_binary just outdated?)
-- figure out if internal diff is resulting in too many changes -> too many updates
-- "--inspect-diff" argument that prints diff for specific path in tree, incl. properties
-- support SharedString in json
 
 adopt me:
 - figure out which folders should be synced in as models and which should be synced in as directories
@@ -43,5 +42,9 @@ adopt me:
 
 
 done:
+- ignore globs to prevent syncback under
 - project nodes should store sub syncback context
 - sync back properties to project nodes
+
+- meta file preserve order
+- project file preserve order
