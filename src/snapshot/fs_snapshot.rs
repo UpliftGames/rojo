@@ -1,5 +1,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
+    io::ErrorKind,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -8,10 +9,38 @@ use anyhow::Result;
 use memofs::{IoResultExt, Vfs};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct FsSnapshot {
     pub files: BTreeMap<PathBuf, Option<Arc<Vec<u8>>>>,
     pub dirs: BTreeSet<PathBuf>,
+}
+
+impl std::fmt::Debug for FsSnapshot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let readable_files = self
+            .files
+            .iter()
+            .map(|(path, contents)| {
+                format!(
+                    "{} ({})",
+                    path.display(),
+                    contents
+                        .as_ref()
+                        .map_or_else(|| "unchanged".to_string(), |c| format!("{} bytes", c.len()))
+                )
+            })
+            .collect::<Vec<_>>();
+        let readable_dirs = self
+            .dirs
+            .iter()
+            .map(|path| path.display())
+            .collect::<Vec<_>>();
+
+        f.debug_struct("FsSnapshot")
+            .field("files", &readable_files)
+            .field("dirs", &readable_dirs)
+            .finish()
+    }
 }
 
 impl FsSnapshot {
@@ -131,7 +160,7 @@ impl FsSnapshot {
                 }
             }
             for path in new_snapshot.dirs.iter() {
-                vfs.write_dir(path)?;
+                vfs.write_dir(path).with_errs(&[ErrorKind::AlreadyExists])?;
             }
             for (path, data) in new_snapshot.files.iter() {
                 if let Some(data) = data {
@@ -140,7 +169,7 @@ impl FsSnapshot {
             }
         } else if let Some(new_snapshot) = new_snapshot {
             for path in new_snapshot.dirs.iter() {
-                vfs.write_dir(path)?;
+                vfs.write_dir(path).with_errs(&[ErrorKind::AlreadyExists])?;
             }
             for (path, data) in new_snapshot.files.iter() {
                 if let Some(data) = data {

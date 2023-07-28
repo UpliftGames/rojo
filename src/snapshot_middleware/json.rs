@@ -7,7 +7,8 @@ use memofs::{IoResultExt, Vfs};
 use crate::{
     lua_ast::{Expression, Statement},
     snapshot::{
-        FsSnapshot, InstanceContext, InstanceMetadata, InstanceSnapshot, SnapshotMiddleware, SyncbackContextX, SyncbackNode,
+        FsSnapshot, InstanceContext, InstanceMetadata, InstanceSnapshot, SnapshotMiddleware,
+        SyncbackContextX, SyncbackNode,
     },
 };
 

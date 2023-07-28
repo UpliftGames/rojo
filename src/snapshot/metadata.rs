@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     collections::BTreeMap,
     fmt,
     path::{Path, PathBuf},
@@ -9,7 +10,8 @@ use anyhow::Context;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    glob::Glob, path_serializer, project::ProjectNode, ProjectSyncback, ProjectSyncbackPropertyMode,
+    glob::Glob, path_serializer, project::ProjectNode, snapshot_middleware::PathExt,
+    ProjectSyncback, ProjectSyncbackPropertyMode,
 };
 
 use super::{
@@ -138,9 +140,19 @@ impl InstanceMetadata {
         }
     }
 
-    pub fn snapshot_source_path(&self) -> Option<&Path> {
+    pub fn snapshot_source_path(&self, allow_project_sources: bool) -> Option<Cow<Path>> {
         match &self.instigating_source {
-            Some(InstigatingSource::Path(path)) => Some(path.as_path()),
+            Some(InstigatingSource::Path(path)) => Some(Cow::Borrowed(path.as_path())),
+            Some(InstigatingSource::ProjectNode(project_path, _, node, _)) => {
+                if !allow_project_sources {
+                    return None;
+                }
+
+                let path = node.path.as_ref()?.path();
+                let project_dir = project_path.parent_or_cdir().ok()?;
+                let absolute_path = path.make_absolute(&project_dir).ok()?;
+                Some(Cow::Owned(absolute_path.to_path_buf()))
+            }
             _ => None,
         }
     }

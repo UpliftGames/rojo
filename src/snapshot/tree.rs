@@ -3,13 +3,14 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use anyhow::{bail, Context};
 use memofs::Vfs;
 use rbx_dom_weak::{
     types::{Ref, Variant},
     Instance, InstanceBuilder, WeakDom,
 };
 
-use crate::multimap::MultiMap;
+use crate::{multimap::MultiMap, snapshot::InstigatingSource, snapshot_middleware::get_middleware};
 
 use super::{
     diff::DeepDiff, FsSnapshot, InstanceMetadata, InstanceSnapshot, SyncbackContextX, SyncbackNode,
@@ -139,18 +140,13 @@ impl RojoTree {
         referent
     }
 
-    pub fn update_props(&mut self, id: Ref, instance: &Instance) {
+    pub fn update_props(&mut self, id: Ref, snapshot: InstanceSnapshot) {
         let inst = self.inner.get_by_ref_mut(id).unwrap();
-        inst.class = instance.class.clone();
-        inst.name = instance.name.clone();
+        inst.class = snapshot.class_name.to_string();
+        inst.name = snapshot.name.to_string();
 
         inst.properties.clear();
-        inst.properties.extend(
-            instance
-                .properties
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone())),
-        );
+        inst.properties.extend(snapshot.properties);
     }
 
     pub fn remove(&mut self, id: Ref) {
@@ -246,18 +242,75 @@ impl RojoTree {
             }
         });
 
-        self.syncback_process(vfs, &diff, old_id, new_dom, new_dom.root_ref())
+        self.syncback_process(vfs, &diff, old_id, new_dom)
     }
 
     pub fn syncback_process(
         &mut self,
         vfs: &Vfs,
         diff: &DeepDiff,
-        old_id: Ref,
+        base_target: Ref,
         new_dom: &WeakDom,
-        new_id: Ref,
     ) -> anyhow::Result<()> {
         let mut processing: Vec<SyncbackNode> = Vec::new();
+        {
+            let (old_inst, old_id, old_path) = {
+                let mut syncable = self
+                    .get_instance(base_target)
+                    .with_context(|| "Missing ref")?;
+                loop {
+                    log::trace!(
+                        "might compare {} {:?} {:?}",
+                        syncable.name(),
+                        &syncable.metadata.middleware_id,
+                        diff.get_matching_new_ref(syncable.id())
+                    );
+                    if syncable.metadata.middleware_id.is_some()
+                        && diff.get_matching_new_ref(syncable.id()).is_some()
+                    {
+                        log::trace!("checking {}", syncable.name());
+                        log::trace!("  source: {:?}", syncable.metadata.instigating_source);
+                        if let Some(InstigatingSource::Path(path)) =
+                            &syncable.metadata.instigating_source
+                        {
+                            log::trace!("  is syncable");
+                            break (syncable, syncable.id(), path.clone());
+                            // NOTE: we skip all project nodes as we can't reconcile
+                            // those.
+
+                            // NOTE: The initial project node is a
+                            // InstigatingSource::Path, it's _children_ are
+                            // InstigatingSource::ProjectNode. In effect, we skip
+                            // its direct children and go straight to the
+                            // `.project.json` file itself.
+                        }
+                    }
+
+                    syncable = match self.get_instance(syncable.parent()) {
+                        Some(next_syncable) => next_syncable,
+                        None => bail!("No syncable ancestor"),
+                    };
+                }
+            };
+
+            let new_id = diff.get_matching_new_ref(old_id).unwrap();
+
+            let mut node = get_middleware(old_inst.metadata.middleware_id.unwrap()).syncback(
+                &SyncbackContextX {
+                    vfs: vfs,
+                    diff: diff,
+                    path: &old_path,
+                    old: Some((self, old_id, old_inst.metadata.middleware_context.clone())),
+                    new: (new_dom, new_id),
+                    metadata: &old_inst.metadata,
+                    overrides: None,
+                },
+            )?;
+
+            node.parent_ref = Some(old_inst.parent());
+
+            processing.push(node);
+        }
 
         while let Some(item) = processing.pop() {
             let inst_snapshot = &item.instance_snapshot;
@@ -279,30 +332,66 @@ impl RojoTree {
                 .map(|v| self.get_instance(v).unwrap().metadata.fs_snapshot.as_ref())
                 .flatten();
 
+            if item.instance_snapshot.name == "new" {
+                log::trace!(
+                    "Result for new:\n{:#?}\n{:#?}",
+                    item.instance_snapshot.metadata.fs_snapshot,
+                    old_fs_snapshot
+                );
+            }
+
             FsSnapshot::reconcile(
                 vfs,
                 old_fs_snapshot,
                 inst_snapshot.metadata.fs_snapshot.as_ref(),
             )?;
 
-            // TODO: update instance; make sure to conserve children if replacing
+            let insert_ref;
+            let metadata;
+
+            if let Some(old_ref) = item.old_ref {
+                if item.use_snapshot_children {
+                    self.remove(old_ref);
+                    insert_ref =
+                        self.insert_instance(item.parent_ref.unwrap(), item.instance_snapshot);
+                    metadata = self.get_metadata(insert_ref).unwrap();
+
+                    continue;
+                } else {
+                    self.update_props(old_ref, item.instance_snapshot);
+                    insert_ref = old_ref;
+                    metadata = self.get_metadata(old_ref).unwrap();
+                }
+            } else {
+                insert_ref = self.insert_instance(item.parent_ref.unwrap(), item.instance_snapshot);
+                metadata = self.get_metadata(insert_ref).unwrap();
+            }
+
+            let path = item.path;
+            let middleware_context = metadata.middleware_context.clone();
 
             if let Some(get_children) = item.get_children {
-                let (_children, _removed) = get_children(&SyncbackContextX {
+                let (children, removed) = get_children(&SyncbackContextX {
                     vfs,
                     diff,
-                    path: inst_snapshot.metadata.snapshot_source_path().unwrap(),
-                    old: item.old_ref.as_ref().map(|old_id| {
-                        (
-                            &*self,
-                            *old_id,
-                            inst_snapshot.metadata.middleware_context.clone(),
-                        )
-                    }),
+                    path: &path,
+                    old: item
+                        .old_ref
+                        .as_ref()
+                        .map(|old_id| (&*self, *old_id, middleware_context)),
                     new: (new_dom, item.new_ref),
-                    metadata: &inst_snapshot.metadata,
+                    metadata: metadata,
                     overrides: None, // TODO
                 })?;
+
+                for mut child in children {
+                    child.parent_ref = Some(insert_ref);
+                    processing.push(child);
+                }
+
+                for id in removed {
+                    self.remove(id);
+                }
             }
         }
 

@@ -47,6 +47,7 @@ mod sealed {
 /// `Ok(None)` takes the place of IO errors whose `io::ErrorKind` is `NotFound`.
 pub trait IoResultExt<T> {
     fn with_not_found(self) -> io::Result<Option<T>>;
+    fn with_errs(self, errs: &[io::ErrorKind]) -> io::Result<Option<T>>;
 }
 
 impl<T> IoResultExt<T> for io::Result<T> {
@@ -55,6 +56,18 @@ impl<T> IoResultExt<T> for io::Result<T> {
             Ok(v) => Ok(Some(v)),
             Err(err) => {
                 if err.kind() == io::ErrorKind::NotFound {
+                    Ok(None)
+                } else {
+                    Err(err)
+                }
+            }
+        }
+    }
+    fn with_errs(self, errs: &[io::ErrorKind]) -> io::Result<Option<T>> {
+        match self {
+            Ok(v) => Ok(Some(v)),
+            Err(err) => {
+                if errs.iter().any(|&other| other == err.kind()) {
                     Ok(None)
                 } else {
                     Err(err)

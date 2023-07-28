@@ -123,6 +123,7 @@ impl SnapshotMiddleware for CsvMiddleware {
 
         Ok(SyncbackNode::new(
             (old.opt_id(), new_ref),
+            path,
             InstanceSnapshot::from_tree_copy(new_dom, new_ref, false).metadata(
                 metadata
                     .clone()

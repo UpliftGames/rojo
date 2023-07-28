@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     collections::{HashMap, HashSet},
     path::{Path, PathBuf},
     sync::Arc,
@@ -137,8 +138,6 @@ fn syncback_update(sync: &SyncbackContextX<'_, '_>) -> anyhow::Result<SyncbackNo
     let (new_dom, new_ref) = new;
     let new_inst = new_dom.get_by_ref(new_ref).with_context(|| "missing ref")?;
 
-    log::trace!("Update dir {}", path.display());
-
     metadata.middleware_id = Some("directory");
     metadata.instigating_source = Some(InstigatingSource::Path(path.to_path_buf()));
     metadata.relevant_paths = get_middleware_inits()
@@ -157,7 +156,7 @@ fn syncback_update(sync: &SyncbackContextX<'_, '_>) -> anyhow::Result<SyncbackNo
             Ref,
             Option<Arc<(dyn MiddlewareContextAny + 'static)>>,
         )> = None;
-        let mut init_path = None;
+        let mut init_path: Option<Cow<Path>> = None;
 
         let old_init_middleware_pack = match dir_context {
             Some(middleware_context) => (
@@ -179,7 +178,7 @@ fn syncback_update(sync: &SyncbackContextX<'_, '_>) -> anyhow::Result<SyncbackNo
 
                 if let Some(_init_middleware) = init_middleware {
                     init_old = Some((*old_dom, *old_ref, old_init_context));
-                    init_path = Some(old_init_path);
+                    init_path = Some(Cow::Borrowed(&old_init_path));
                 }
             }
             (Some(_init_middleware), None, _) => {
@@ -195,8 +194,10 @@ fn syncback_update(sync: &SyncbackContextX<'_, '_>) -> anyhow::Result<SyncbackNo
                 );
 
                 if let Some(init_middleware) = init_middleware {
-                    let _init_file_path = get_middleware(init_middleware)
-                        .syncback_new_path(path, "init", new_inst)?;
+                    init_path = Some(Cow::Owned(
+                        get_middleware(init_middleware)
+                            .syncback_new_path(path, "init", new_inst)?,
+                    ));
                 }
             }
         }
@@ -223,7 +224,7 @@ fn syncback_update(sync: &SyncbackContextX<'_, '_>) -> anyhow::Result<SyncbackNo
                 init_path: init_node
                     .instance_snapshot
                     .metadata
-                    .snapshot_source_path()
+                    .snapshot_source_path(true)
                     .map(|v| v.to_path_buf()),
             }));
 
@@ -250,6 +251,7 @@ fn syncback_update(sync: &SyncbackContextX<'_, '_>) -> anyhow::Result<SyncbackNo
 
     Ok(SyncbackNode::new(
         (old.opt_id(), new_ref),
+        path,
         InstanceSnapshot::new()
             .class_name(&new_inst.class)
             .metadata(metadata)
@@ -289,11 +291,27 @@ fn syncback_update(sync: &SyncbackContextX<'_, '_>) -> anyhow::Result<SyncbackNo
                 let new_child_ref = diff
                     .get_matching_new_ref(old_child_ref)
                     .with_context(|| "missing ref")?;
+                if old
+                    .dom()
+                    .get_metadata(old_child_ref)
+                    .unwrap()
+                    .snapshot_source_path(false)
+                    .is_none()
+                {
+                    log::trace!(
+                        "skipping {} as directory child because it's sourced from a project",
+                        new.dom().get_by_ref(new_child_ref).unwrap().name
+                    );
+                    continue;
+                }
+
                 if let Some(plan) = SyncbackPlanner::from_update(
                     old.dom(),
                     old_child_ref,
                     new.dom(),
                     new_child_ref,
+                    None,
+                    None,
                 )? {
                     sync_children.push(plan.syncback(vfs, diff, overrides.clone())?);
                 }
@@ -317,8 +335,6 @@ fn syncback_new(sync: &SyncbackContextX<'_, '_>) -> anyhow::Result<SyncbackNode>
 
     let (new_dom, new_ref) = new;
     let new_inst = new_dom.get_by_ref(new_ref).with_context(|| "missing ref")?;
-
-    log::trace!("New dir {}", path.display());
 
     metadata.middleware_id = Some("directory");
     metadata.instigating_source = Some(InstigatingSource::Path(path.to_path_buf()));
@@ -358,7 +374,7 @@ fn syncback_new(sync: &SyncbackContextX<'_, '_>) -> anyhow::Result<SyncbackNode>
             init_path: init_node
                 .instance_snapshot
                 .metadata
-                .snapshot_source_path()
+                .snapshot_source_path(true)
                 .map(|v| v.to_path_buf()),
         }));
 
@@ -387,6 +403,7 @@ fn syncback_new(sync: &SyncbackContextX<'_, '_>) -> anyhow::Result<SyncbackNode>
 
     Ok(SyncbackNode::new(
         new_ref,
+        path,
         InstanceSnapshot::new()
             .class_name(&new_inst.class)
             .metadata(metadata)

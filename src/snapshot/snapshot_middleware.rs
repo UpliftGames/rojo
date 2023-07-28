@@ -14,9 +14,7 @@ use rbx_dom_weak::{types::Ref, Instance, WeakDom};
 
 use crate::snapshot_middleware::{get_middleware, get_middlewares};
 
-use super::{
-    diff::DeepDiff, InstanceContext, InstanceMetadata, InstanceSnapshot, RojoTree,
-};
+use super::{diff::DeepDiff, InstanceContext, InstanceMetadata, InstanceSnapshot, RojoTree};
 
 pub const PRIORITY_MODEL_DIRECTORY: i32 = 80;
 pub const PRIORITY_MODEL_JSON: i32 = 81;
@@ -118,8 +116,11 @@ impl Clone for SyncbackContextX<'_, '_> {
             vfs: self.vfs,
             diff: self.diff,
             path: self.path,
-            old: self.old.clone(),
-            new: self.new.clone(),
+            old: self
+                .old
+                .as_ref()
+                .map(|(dom, id, ctx)| (*dom, *id, ctx.clone())),
+            new: (self.new.0, self.new.1),
             metadata: self.metadata,
             overrides: self.overrides.clone(),
         }
@@ -229,18 +230,24 @@ pub type GetChildren =
 pub struct SyncbackNode {
     pub old_ref: Option<Ref>,
     pub new_ref: Ref,
+    pub parent_ref: Option<Ref>,
     pub instance_snapshot: InstanceSnapshot,
     pub get_children: Option<GetChildren>,
+    pub use_snapshot_children: bool,
+    pub path: PathBuf,
 }
 
 impl SyncbackNode {
-    pub fn new(refs: impl Into<RefPair>, instance_snapshot: InstanceSnapshot) -> Self {
+    pub fn new(refs: impl Into<RefPair>, path: &Path, instance_snapshot: InstanceSnapshot) -> Self {
         let refs: RefPair = refs.into();
         Self {
             old_ref: refs.old_ref,
             new_ref: refs.new_ref,
+            parent_ref: None,
             instance_snapshot,
             get_children: None,
+            use_snapshot_children: false,
+            path: path.to_path_buf(),
         }
     }
     pub fn with_children(
@@ -253,6 +260,12 @@ impl SyncbackNode {
             ..self
         }
     }
+    pub fn use_snapshot_children(self) -> Self {
+        Self {
+            use_snapshot_children: true,
+            ..self
+        }
+    }
 }
 
 pub trait SyncbackPlannerWrapped<'old, 'new> {
@@ -262,7 +275,6 @@ pub trait SyncbackPlannerWrapped<'old, 'new> {
         diff: &DeepDiff,
         overrides: Option<SnapshotOverride>,
     ) -> anyhow::Result<Option<SyncbackNode>>;
-    fn override_path(self, path: Cow<'old, Path>) -> Self;
 }
 
 impl<'old, 'new> SyncbackPlannerWrapped<'old, 'new> for Option<SyncbackPlanner<'old, 'new>> {
@@ -277,12 +289,6 @@ impl<'old, 'new> SyncbackPlannerWrapped<'old, 'new> for Option<SyncbackPlanner<'
             None => Ok(None),
         }
     }
-    fn override_path(self, path: Cow<'old, Path>) -> Self {
-        match self {
-            Some(planner) => Some(planner.override_path(path)),
-            None => None,
-        }
-    }
 }
 pub struct SyncbackPlanner<'old, 'new> {
     pub middleware_id: &'static str,
@@ -295,16 +301,40 @@ pub struct SyncbackPlanner<'old, 'new> {
 impl<'old, 'new> SyncbackPlanner<'old, 'new> {
     pub fn syncback(
         &self,
-        _vfs: &Vfs,
-        _diff: &DeepDiff,
-        _overrides: Option<SnapshotOverride>,
+        vfs: &Vfs,
+        diff: &DeepDiff,
+        overrides: Option<SnapshotOverride>,
     ) -> anyhow::Result<SyncbackNode> {
-        todo!()
-    }
+        let new_meta;
+        let metadata = match self.metadata {
+            Some(metadata) => metadata,
+            None => match self.old {
+                Some((old_dom, old_ref, _)) => {
+                    new_meta = InstanceMetadata::new()
+                        .context(&old_dom.get_metadata(old_ref).unwrap().context);
+                    &new_meta
+                }
+                None => {
+                    new_meta = InstanceMetadata::new();
+                    &new_meta
+                }
+            },
+        };
 
-    pub fn override_path(mut self, path: Cow<'old, Path>) -> Self {
-        self.path = path;
-        self
+        get_middleware(self.middleware_id).syncback(&SyncbackContextX {
+            vfs: vfs,
+            diff: diff,
+            path: &self.path,
+            old: match &self.old {
+                Some((old_dom, old_ref, old_middleware_context)) => {
+                    Some((old_dom, *old_ref, old_middleware_context.clone()))
+                }
+                None => None,
+            },
+            new: self.new,
+            metadata: metadata,
+            overrides: overrides,
+        })
     }
 
     pub fn from_update(
@@ -312,11 +342,19 @@ impl<'old, 'new> SyncbackPlanner<'old, 'new> {
         old_ref: Ref,
         new_dom: &'new WeakDom,
         new_ref: Ref,
+        path: Option<&'old Path>,
+        old_middleware: Option<(&'static str, Option<MiddlewareContextArc>)>,
     ) -> anyhow::Result<Option<SyncbackPlanner<'old, 'new>>> {
         let old_inst = old_dom
             .get_instance(old_ref)
             .with_context(|| "missing ref")?;
-        let old_middleware_id = old_inst.metadata().middleware_id;
+        let (old_middleware_id, old_middleware_context) = match old_middleware {
+            Some((middleware_id, middleware_context)) => (Some(middleware_id), middleware_context),
+            None => (
+                old_inst.metadata().middleware_id,
+                old_inst.metadata().middleware_context.clone(),
+            ),
+        };
 
         let new_inst = new_dom.get_by_ref(new_ref).with_context(|| "missing ref")?;
         let middleware_id =
@@ -326,16 +364,19 @@ impl<'old, 'new> SyncbackPlanner<'old, 'new> {
             None => return Ok(None),
         };
 
-        let path = old_inst
-            .metadata()
-            .snapshot_source_path()
-            .with_context(|| "missing path")?;
+        let path = match path {
+            Some(path) => Cow::Borrowed(path),
+            None => old_inst
+                .metadata()
+                .snapshot_source_path(true)
+                .with_context(|| format!("missing path for {}", old_inst.name()))?,
+        };
 
         if Some(middleware_id) == old_middleware_id {
             Ok(Some(SyncbackPlanner {
                 middleware_id,
-                path: Cow::Borrowed(path),
-                old: None,
+                path: path,
+                old: Some((old_dom, old_ref, old_middleware_context)),
                 new: (new_dom, new_ref),
                 metadata: Some(old_inst.metadata()),
             }))
@@ -346,7 +387,7 @@ impl<'old, 'new> SyncbackPlanner<'old, 'new> {
     }
 
     pub fn from_new(
-        parent_path: &'old Path,
+        parent_path: &Path,
         new_dom: &'new WeakDom,
         new_ref: Ref,
     ) -> anyhow::Result<Option<SyncbackPlanner<'old, 'new>>> {

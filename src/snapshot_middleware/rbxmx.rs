@@ -106,6 +106,7 @@ impl SnapshotMiddleware for RbxmxMiddleware {
 
         Ok(SyncbackNode::new(
             (old.opt_id(), new_ref),
+            path,
             InstanceSnapshot::from_tree_copy(new_dom, new_ref, false).metadata(
                 InstanceMetadata::new()
                     .instigating_source(path.to_path_buf())
@@ -113,7 +114,8 @@ impl SnapshotMiddleware for RbxmxMiddleware {
                     .middleware_id(self.middleware_id())
                     .fs_snapshot(FsSnapshot::new().with_file_contents_owned(path, contents)),
             ),
-        ))
+        )
+        .use_snapshot_children())
     }
 }
 

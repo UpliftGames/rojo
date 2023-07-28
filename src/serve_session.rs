@@ -46,8 +46,8 @@ pub struct ServeSession {
     /// RecvError, causing the main thread to panic on drop.
     ///
     /// Allowed to be unused because it has side effects when dropped.
-    #[allow(unused)]
-    change_processor: ChangeProcessor,
+    // #[allow(unused)]
+    // change_processor: ChangeProcessor,
 
     /// When the serve session was started. Used only for user-facing
     /// diagnostics.
@@ -144,16 +144,16 @@ impl ServeSession {
 
         let (tree_mutation_sender, tree_mutation_receiver) = crossbeam_channel::unbounded();
 
-        log::trace!("Starting ChangeProcessor");
-        let change_processor = ChangeProcessor::start(
-            Arc::clone(&tree),
-            Arc::clone(&vfs),
-            Arc::clone(&message_queue),
-            tree_mutation_receiver,
-        );
+        // log::trace!("Starting ChangeProcessor");
+        // let change_processor = ChangeProcessor::start(
+        //     Arc::clone(&tree),
+        //     Arc::clone(&vfs),
+        //     Arc::clone(&message_queue),
+        //     tree_mutation_receiver,
+        // );
 
         Ok(Self {
-            change_processor,
+            // change_processor,
             start_time,
             session_id,
             root_project,
