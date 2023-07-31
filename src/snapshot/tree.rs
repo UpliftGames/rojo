@@ -354,7 +354,6 @@ impl RojoTree {
                     self.remove(old_ref);
                     insert_ref =
                         self.insert_instance(item.parent_ref.unwrap(), item.instance_snapshot);
-                    metadata = self.get_metadata(insert_ref).unwrap();
 
                     continue;
                 } else {
@@ -385,6 +384,8 @@ impl RojoTree {
                 })?;
 
                 for mut child in children {
+                    // TODO: fix this, it's wrong for projects
+                    // dirs and projects can probably just do this themselves.
                     child.parent_ref = Some(insert_ref);
                     processing.push(child);
                 }

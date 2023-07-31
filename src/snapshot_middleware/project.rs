@@ -338,11 +338,25 @@ impl SnapshotMiddleware for ProjectMiddleware {
             }
         }
 
-        // if project_changed {
-        //     vfs.write(project_path, serde_json::to_string_pretty(&project)?)?;
-        // }
-
         let new_root_inst = new_dom.get_by_ref(new_root_ref).unwrap();
+
+        let mut violates_rules = false;
+        if let Some(root_syncback_node) = &root_syncback_node {
+            let inst_sync = &root_syncback_node.instance_snapshot;
+            if let Some(fs_snapshot) = &inst_sync.metadata.fs_snapshot {
+                violates_rules = fs_snapshot
+                    .files
+                    .iter()
+                    .map(|(path, _)| path)
+                    .chain(fs_snapshot.dirs.iter())
+                    .any(|path| !inst_sync.metadata.context.should_syncback_path(path));
+            }
+        }
+
+        if violates_rules {
+            log::info!("Skipping syncback of {} because it is excluded by syncback ignore path rules. (at project level; still syncing in project children, only skipping project init)", root_syncback_node.as_ref().unwrap().instance_snapshot.name);
+            root_syncback_node = None;
+        }
 
         let mut root_syncback_node = root_syncback_node.unwrap_or_else(|| {
             SyncbackNode::new(

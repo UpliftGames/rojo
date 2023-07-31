@@ -349,54 +349,78 @@ fn syncback_new(sync: &SyncbackContextX<'_, '_>) -> anyhow::Result<SyncbackNode>
     let init_middleware =
         get_best_syncback_middleware_must_not_serialize_children(new_dom, new_inst, false, None);
 
-    if let Some(init_middleware) = init_middleware {
-        let init_file_path =
-            get_middleware(init_middleware).syncback_new_path(path, "init", new_inst)?;
+    'init_context: {
+        if let Some(init_middleware) = init_middleware {
+            let init_file_path =
+                get_middleware(init_middleware).syncback_new_path(path, "init", new_inst)?;
 
-        let init_sync = SyncbackContextX {
-            path: &init_file_path,
-            metadata: &InstanceMetadata::new().context(&metadata.context),
-            overrides: None,
-            ..sync.clone()
-        };
+            let init_sync = SyncbackContextX {
+                path: &init_file_path,
+                metadata: &InstanceMetadata::new().context(&metadata.context),
+                overrides: None,
+                ..sync.clone()
+            };
 
-        let init_node = get_middlewares()[init_middleware]
-            .syncback(&init_sync)
-            .with_context(|| "failed to create instance on filesystem")?;
+            let init_node = get_middlewares()[init_middleware]
+                .syncback(&init_sync)
+                .with_context(|| "failed to create instance on filesystem")?;
 
-        metadata.middleware_context = Some(Arc::new(DirectoryMiddlewareContext {
-            init_middleware: init_node.instance_snapshot.metadata.middleware_id.clone(),
-            init_context: init_node
-                .instance_snapshot
-                .metadata
-                .middleware_context
-                .clone(),
-            init_path: init_node
-                .instance_snapshot
-                .metadata
-                .snapshot_source_path(true)
-                .map(|v| v.to_path_buf()),
-        }));
+            if let Some(fs_snapshot) = &init_node.instance_snapshot.metadata.fs_snapshot {
+                let violates_rules = fs_snapshot
+                    .files
+                    .iter()
+                    .map(|(path, _)| path)
+                    .chain(fs_snapshot.dirs.iter())
+                    .any(|path| {
+                        !init_node
+                            .instance_snapshot
+                            .metadata
+                            .context
+                            .should_syncback_path(path)
+                    });
+                if violates_rules {
+                    log::info!(
+                        "Skipping syncback of {} because it is excluded by syncback ignore path rules. (at directory level; still syncing in directory children, only skipping directory init)",
+                        init_node.instance_snapshot.name
+                    );
+                    break 'init_context;
+                }
+            }
 
-        init_children = match init_node.get_children {
-            Some(get_children) => Some(get_children(&init_sync)?),
-            None => None,
-        };
+            metadata.middleware_context = Some(Arc::new(DirectoryMiddlewareContext {
+                init_middleware: init_node.instance_snapshot.metadata.middleware_id.clone(),
+                init_context: init_node
+                    .instance_snapshot
+                    .metadata
+                    .middleware_context
+                    .clone(),
+                init_path: init_node
+                    .instance_snapshot
+                    .metadata
+                    .snapshot_source_path(true)
+                    .map(|v| v.to_path_buf()),
+            }));
 
-        if let Some(sub_fs_snapshot) = &init_node.instance_snapshot.metadata.fs_snapshot {
-            fs_snapshot = fs_snapshot.merge_with(sub_fs_snapshot);
+            init_children = match init_node.get_children {
+                Some(get_children) => Some(get_children(&init_sync)?),
+                None => None,
+            };
+
+            if let Some(sub_fs_snapshot) = &init_node.instance_snapshot.metadata.fs_snapshot {
+                fs_snapshot = fs_snapshot.merge_with(sub_fs_snapshot);
+            }
+        } else {
+            let meta = reconcile_meta_file(
+                vfs,
+                &path.join("init.meta.json"),
+                new_inst,
+                HashSet::new(),
+                Some(overrides.known_class_or("Folder")),
+                &metadata.context.syncback.property_filters_save,
+            )?;
+
+            fs_snapshot = fs_snapshot.with_file_contents_opt(&path.join("init.meta.json"), meta);
         }
-    } else {
-        let meta = reconcile_meta_file(
-            vfs,
-            &path.join("init.meta.json"),
-            new_inst,
-            HashSet::new(),
-            Some(overrides.known_class_or("Folder")),
-            &metadata.context.syncback.property_filters_save,
-        )?;
-
-        fs_snapshot = fs_snapshot.with_file_contents_opt(&path.join("init.meta.json"), meta);
     }
 
     metadata.fs_snapshot = Some(fs_snapshot);
