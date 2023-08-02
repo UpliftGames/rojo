@@ -2,6 +2,7 @@
 
 use std::{borrow::Cow, collections::HashMap};
 
+use notify::Op;
 use rbx_dom_weak::{
     types::{Ref, Variant},
     Instance, WeakDom,
@@ -24,11 +25,15 @@ pub struct InstanceSnapshot {
     /// Rojo-specific metadata associated with the instance.
     pub metadata: InstanceMetadata,
 
-    /// Correpsonds to the Name property of the instance.
+    /// Corresponds to the Name property of the instance.
     pub name: Cow<'static, str>,
 
     /// Corresponds to the ClassName property of the instance.
     pub class_name: Cow<'static, str>,
+
+    /// Corresponds to the Referent property of the instance. Only used if it
+    /// won't cause a ref collision.
+    pub preferred_ref: Option<Ref>,
 
     /// All other properties of the instance, weakly-typed.
     pub properties: HashMap<String, Variant>,
@@ -46,6 +51,7 @@ impl InstanceSnapshot {
             metadata: InstanceMetadata::default(),
             name: Cow::Borrowed("DEFAULT"),
             class_name: Cow::Borrowed("DEFAULT"),
+            preferred_ref: None,
             properties: HashMap::new(),
             children: Vec::new(),
         }
@@ -61,6 +67,13 @@ impl InstanceSnapshot {
     pub fn class_name(self, class_name: impl Into<String>) -> Self {
         Self {
             class_name: Cow::Owned(class_name.into()),
+            ..self
+        }
+    }
+
+    pub fn preferred_ref(self, preferred_ref: impl Into<Ref>) -> Self {
+        Self {
+            preferred_ref: Some(preferred_ref.into()),
             ..self
         }
     }
@@ -124,6 +137,7 @@ impl InstanceSnapshot {
             metadata: InstanceMetadata::default(),
             name: Cow::Owned(instance.name),
             class_name: Cow::Owned(instance.class),
+            preferred_ref: Some(id),
             properties: instance.properties,
             children,
         }
@@ -148,6 +162,7 @@ impl InstanceSnapshot {
             metadata: InstanceMetadata::default(),
             name: Cow::Owned(instance.name.clone()),
             class_name: Cow::Owned(instance.class.clone()),
+            preferred_ref: Some(id),
             properties: instance.properties.clone(),
             children,
         }

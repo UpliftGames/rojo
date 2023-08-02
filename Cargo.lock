@@ -1685,7 +1685,6 @@ dependencies = [
 [[package]]
 name = "rbx_binary"
 version = "0.7.0"
-source = "git+https://github.com/UpliftGames/rbx-dom?rev=50e8bd040fc26e8271bbaefd05c59b2658392e80#50e8bd040fc26e8271bbaefd05c59b2658392e80"
 dependencies = [
  "log",
  "lz4",
@@ -1699,7 +1698,6 @@ dependencies = [
 [[package]]
 name = "rbx_dom_weak"
 version = "2.4.0"
-source = "git+https://github.com/UpliftGames/rbx-dom?rev=50e8bd040fc26e8271bbaefd05c59b2658392e80#50e8bd040fc26e8271bbaefd05c59b2658392e80"
 dependencies = [
  "rbx_types",
  "serde",
@@ -1708,7 +1706,6 @@ dependencies = [
 [[package]]
 name = "rbx_reflection"
 version = "4.2.0"
-source = "git+https://github.com/UpliftGames/rbx-dom?rev=50e8bd040fc26e8271bbaefd05c59b2658392e80#50e8bd040fc26e8271bbaefd05c59b2658392e80"
 dependencies = [
  "rbx_types",
  "serde",
@@ -1718,7 +1715,6 @@ dependencies = [
 [[package]]
 name = "rbx_reflection_database"
 version = "0.2.6+roblox-572"
-source = "git+https://github.com/UpliftGames/rbx-dom?rev=50e8bd040fc26e8271bbaefd05c59b2658392e80#50e8bd040fc26e8271bbaefd05c59b2658392e80"
 dependencies = [
  "lazy_static",
  "rbx_reflection",
@@ -1729,7 +1725,6 @@ dependencies = [
 [[package]]
 name = "rbx_types"
 version = "1.5.0"
-source = "git+https://github.com/UpliftGames/rbx-dom?rev=50e8bd040fc26e8271bbaefd05c59b2658392e80#50e8bd040fc26e8271bbaefd05c59b2658392e80"
 dependencies = [
  "base64",
  "bitflags",
@@ -1743,7 +1738,6 @@ dependencies = [
 [[package]]
 name = "rbx_xml"
 version = "0.13.0"
-source = "git+https://github.com/UpliftGames/rbx-dom?rev=50e8bd040fc26e8271bbaefd05c59b2658392e80#50e8bd040fc26e8271bbaefd05c59b2658392e80"
 dependencies = [
  "base64",
  "log",

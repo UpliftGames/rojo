@@ -45,17 +45,17 @@ harness = false
 memofs = { version = "0.2.0", path = "crates/memofs" }
 
 # These dependencies can be uncommented when working on rbx-dom simultaneously
-# rbx_binary = { path = "../rbx-dom/rbx_binary" }
-# rbx_dom_weak = { path = "../rbx-dom/rbx_dom_weak" }
-# rbx_reflection = { path = "../rbx-dom/rbx_reflection" }
-# rbx_reflection_database = { path = "../rbx-dom/rbx_reflection_database" }
-# rbx_xml = { path = "../rbx-dom/rbx_xml" }
+rbx_binary = { path = "../rbx-dom/rbx_binary" }
+rbx_dom_weak = { path = "../rbx-dom/rbx_dom_weak" }
+rbx_reflection = { path = "../rbx-dom/rbx_reflection" }
+rbx_reflection_database = { path = "../rbx-dom/rbx_reflection_database" }
+rbx_xml = { path = "../rbx-dom/rbx_xml" }
 
-rbx_binary = { git = "https://github.com/UpliftGames/rbx-dom", rev = "50e8bd040fc26e8271bbaefd05c59b2658392e80" }
-rbx_dom_weak = { git = "https://github.com/UpliftGames/rbx-dom", rev = "50e8bd040fc26e8271bbaefd05c59b2658392e80" }
-rbx_reflection = { git = "https://github.com/UpliftGames/rbx-dom", rev = "50e8bd040fc26e8271bbaefd05c59b2658392e80" }
-rbx_reflection_database = { git = "https://github.com/UpliftGames/rbx-dom", rev = "50e8bd040fc26e8271bbaefd05c59b2658392e80" }
-rbx_xml = { git = "https://github.com/UpliftGames/rbx-dom", rev = "50e8bd040fc26e8271bbaefd05c59b2658392e80" }
+# rbx_binary = { git = "https://github.com/UpliftGames/rbx-dom", rev = "50e8bd040fc26e8271bbaefd05c59b2658392e80" }
+# rbx_dom_weak = { git = "https://github.com/UpliftGames/rbx-dom", rev = "50e8bd040fc26e8271bbaefd05c59b2658392e80" }
+# rbx_reflection = { git = "https://github.com/UpliftGames/rbx-dom", rev = "50e8bd040fc26e8271bbaefd05c59b2658392e80" }
+# rbx_reflection_database = { git = "https://github.com/UpliftGames/rbx-dom", rev = "50e8bd040fc26e8271bbaefd05c59b2658392e80" }
+# rbx_xml = { git = "https://github.com/UpliftGames/rbx-dom", rev = "50e8bd040fc26e8271bbaefd05c59b2658392e80" }
 
 dyn-eq = "0.1.2"
 indexmap = { version = "2.0.0", features = ["std", "serde"] }

@@ -6,6 +6,7 @@ use std::{
 };
 
 use indexmap::IndexMap;
+use rbx_dom_weak::types::Ref;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -278,6 +279,10 @@ pub struct ProjectNode {
     /// by that path has a ClassName other than Folder.
     #[serde(rename = "$className", skip_serializing_if = "Option::is_none")]
     pub class_name: Option<String>,
+
+    /// The referent id of the instance, used by Object Reference properties.
+    #[serde(rename = "$referent", skip_serializing_if = "Option::is_none")]
+    pub referent: Option<Ref>,
 
     /// The properties that will be assigned to the resulting instance.
     ///

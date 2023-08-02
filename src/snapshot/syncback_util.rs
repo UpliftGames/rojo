@@ -1,8 +1,8 @@
 use std::{collections::BTreeMap, sync::OnceLock};
 
 use rbx_dom_weak::{
-    types::{BinaryString, Tags, Variant},
-    Instance,
+    types::{BinaryString, Ref, Tags, Variant},
+    Instance, WeakDom,
 };
 use serde::{Deserialize, Serialize};
 
@@ -205,5 +205,60 @@ impl ToVariantUnicodeString for Variant {
             Variant::String(s) => Some(Variant::String(s.to_owned())),
             _ => None,
         }
+    }
+}
+
+pub trait WeakDomExtra {
+    fn descendants(&self) -> Box<dyn Iterator<Item = Ref> + '_>;
+    fn deduplicate_refs(&mut self, other: &Self) -> BTreeMap<Ref, Ref>;
+}
+
+impl WeakDomExtra for WeakDom {
+    fn descendants(&self) -> Box<dyn Iterator<Item = Ref> + '_> {
+        let mut processing = vec![self.root_ref()];
+
+        Box::new(std::iter::from_fn(move || loop {
+            let referent = processing.pop()?;
+            let instance = self.get_by_ref(referent);
+            let instance = match instance {
+                Some(instance) => instance,
+                None => continue,
+            };
+            processing.extend(instance.children());
+            return Some(referent);
+        }))
+    }
+
+    fn deduplicate_refs(&mut self, other: &Self) -> BTreeMap<Ref, Ref> {
+        let mut ref_map = BTreeMap::new();
+        {
+            // Fix duplicate refs
+            for referent in self.descendants().collect::<Vec<_>>() {
+                if other.get_by_ref(referent).is_some() {
+                    let new_ref = loop {
+                        let new_ref = Ref::new();
+                        if other.get_by_ref(new_ref).is_none() {
+                            break new_ref;
+                        }
+                    };
+                    self.swap_ref(referent, new_ref);
+                    ref_map.insert(referent, new_ref);
+                }
+            }
+        }
+        {
+            // Fix properties
+            for referent in self.descendants().collect::<Vec<_>>() {
+                for (k, v) in self.get_by_ref_mut(referent).unwrap().properties.iter_mut() {
+                    if let Variant::Ref(prop_ref) = v {
+                        if let Some(fixed_ref) = ref_map.get(prop_ref) {
+                            *v = Variant::Ref(*fixed_ref);
+                        }
+                    }
+                }
+            }
+        }
+
+        ref_map
     }
 }

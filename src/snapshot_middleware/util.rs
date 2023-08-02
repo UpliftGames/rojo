@@ -7,7 +7,7 @@ use std::{
 use anyhow::{bail, Context};
 use indexmap::IndexMap;
 use memofs::Vfs;
-use rbx_dom_weak::Instance;
+use rbx_dom_weak::{types::Ref, Instance};
 
 use crate::snapshot::PropertyFilter;
 
@@ -42,6 +42,7 @@ pub fn reconcile_meta_file_empty(vfs: &Vfs, path: &Path) -> anyhow::Result<()> {
             properties: IndexMap::new(),
             attributes: IndexMap::new(),
             class_name: None,
+            referent: None,
             path: path.to_path_buf(),
         }
     };
@@ -63,6 +64,7 @@ pub fn reconcile_meta_file(
     vfs: &Vfs,
     path: &Path,
     instance: &Instance,
+    referent: Option<Ref>,
     skip_props: HashSet<&str>,
     base_class: Option<&str>,
     filters: &BTreeMap<String, PropertyFilter>,
@@ -87,6 +89,7 @@ pub fn reconcile_meta_file(
             properties: IndexMap::new(),
             attributes: IndexMap::new(),
             class_name: None,
+            referent: None,
             path: path.to_path_buf(),
         }
     };
@@ -102,6 +105,8 @@ pub fn reconcile_meta_file(
     if let Some(existing) = &existing {
         new_file.minimize_diff(existing, base_class);
     }
+
+    new_file.referent = referent;
 
     if new_file.is_empty() {
         Ok(None)

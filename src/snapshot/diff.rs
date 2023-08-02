@@ -4,9 +4,12 @@ use std::{
     ops::AddAssign,
 };
 
-use rbx_dom_weak::{types::Ref, Instance, WeakDom};
+use rbx_dom_weak::{
+    types::{Ref, Variant},
+    Instance, WeakDom,
+};
 
-use super::{PropertiesFiltered, PropertyFilter};
+use super::{default_filters_diff, PropertiesFiltered, PropertyFilter, WeakDomExtra};
 
 pub fn diff_properties<'a>(
     old_instance: &'a Instance,
@@ -41,7 +44,9 @@ pub fn are_properties_different(
 #[derive(Debug, Clone, Default)]
 pub struct DeepDiff {
     /// Refs in the old tree that have any changes to their descendants.
-    pub changed_descendants: HashSet<Ref>,
+    ///
+    /// Maps to the count of changed children.
+    pub changed_children: HashMap<Ref, u64>,
 
     /// Refs in the old tree that were removed
     pub removed: HashSet<Ref>,
@@ -51,6 +56,12 @@ pub struct DeepDiff {
     pub changed: HashMap<Ref, Ref>,
     /// Mapping of old-Ref to new-Ref for unchanged Refs
     pub unchanged: HashMap<Ref, Ref>,
+
+    /// Mapping of new-Ref to old-Ref for all Refs
+    pub new_to_old: HashMap<Ref, Ref>,
+
+    /// Set of refs referenced by any property
+    pub property_refs: HashSet<Ref>,
 }
 
 pub struct DeepDiffDisplay<'a> {
@@ -75,9 +86,9 @@ impl<'a> DeepDiffDisplay<'a> {
 impl<'a> Display for DeepDiffDisplay<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "DeepDiff")?;
-        writeln!(f, "  changed_descendants")?;
-        for old_ref in &self.diff.changed_descendants {
-            writeln!(f, "    {}", self.old_name(old_ref))?;
+        writeln!(f, "  changed_children")?;
+        for (old_ref, count) in &self.diff.changed_children {
+            writeln!(f, "    {}  ({})", self.old_name(old_ref), *count)?;
         }
         writeln!(f, "  removed")?;
         for old_ref in &self.diff.removed {
@@ -113,12 +124,15 @@ impl DeepDiff {
     pub fn new<'a>(
         old_tree: &'a WeakDom,
         old_root: Ref,
-        new_tree: &WeakDom,
+        new_tree: &mut WeakDom,
         new_root: Ref,
         get_filters: impl Fn(Ref) -> &'a BTreeMap<String, PropertyFilter>,
     ) -> Self {
         let mut diff = Self::default();
         diff.deep_diff(old_tree, old_root, new_tree, new_root, get_filters);
+        diff.deduplicate_refs(old_tree, new_tree);
+        diff.prune_matching_ref_properties(old_tree, new_tree);
+        diff.find_ref_properties(old_tree, new_tree);
         diff
     }
 
@@ -135,7 +149,7 @@ impl DeepDiff {
     }
 
     pub fn has_changed_descendants(&self, old_ref: Ref) -> bool {
-        self.changed_descendants.contains(&old_ref)
+        self.changed_children.contains_key(&old_ref)
     }
 
     pub fn has_changed_properties(&self, old_ref: Ref) -> bool {
@@ -147,12 +161,20 @@ impl DeepDiff {
             .or_else(|| self.unchanged.get(&old_ref))
             .cloned()
     }
+    pub fn get_matching_old_ref(&self, new_ref: Ref) -> Option<Ref> {
+        self.new_to_old.get(&new_ref).cloned()
+    }
     pub fn was_removed(&self, old_ref: Ref) -> bool {
         self.removed.contains(&old_ref)
     }
     pub fn was_added(&self, new_ref: Ref) -> bool {
         self.added.contains(&new_ref)
     }
+
+    pub fn is_ref_used_in_property(&self, referent: Ref) -> bool {
+        self.property_refs.contains(&referent)
+    }
+
     pub fn get_children(
         &self,
         old_tree: &WeakDom,
@@ -192,6 +214,106 @@ impl DeepDiff {
         Some((added, removed, changed, unchanged))
     }
 
+    fn prune_matching_ref_properties(&mut self, old_tree: &WeakDom, new_tree: &WeakDom) -> () {
+        let changed: Vec<(Ref, Ref)> = self.changed.iter().map(|(v1, v2)| (*v1, *v2)).collect();
+        for (old_ref, new_ref) in changed.into_iter() {
+            let old_inst = old_tree.get_by_ref(old_ref).unwrap();
+            let new_inst = new_tree.get_by_ref(new_ref).unwrap();
+            let only_unchanged_ref_props =
+                diff_properties(old_inst, new_inst, default_filters_diff()).all(|property_name| {
+                    let old_prop = old_inst.properties.get(&property_name);
+                    let new_prop = new_inst.properties.get(&property_name);
+                    if let Some(Variant::Ref(old_ref)) = old_prop {
+                        if let Some(Variant::Ref(new_ref)) = new_prop {
+                            if self.new_to_old[new_ref] == *old_ref {
+                                return true;
+                            }
+                        }
+                    }
+                    false
+                });
+            if only_unchanged_ref_props {
+                self.changed.remove(&old_ref);
+                self.new_to_old.remove(&new_ref);
+                self.unchanged.insert(old_ref, new_ref);
+                self.unmark_ancestors(old_tree, old_ref)
+            }
+        }
+    }
+
+    fn move_ref(&mut self, new_dom_ref: Ref, replacement: Ref) -> () {
+        if let Some(old_ref) = self.new_to_old.remove(&new_dom_ref) {
+            self.new_to_old.insert(replacement, old_ref);
+
+            if self.changed.remove(&old_ref).is_some() {
+                self.changed.insert(old_ref, replacement);
+            } else if self.unchanged.remove(&old_ref).is_some() {
+                self.unchanged.insert(old_ref, replacement);
+            }
+        }
+
+        if self.property_refs.remove(&new_dom_ref) {
+            self.property_refs.insert(replacement);
+        }
+    }
+
+    fn deduplicate_refs(&mut self, old_tree: &WeakDom, new_tree: &mut WeakDom) -> () {
+        let mut ref_map = BTreeMap::new();
+        {
+            // Fix duplicate refs
+            for referent in new_tree.descendants().collect::<Vec<_>>() {
+                if old_tree.get_by_ref(referent).is_some()
+                    && self.get_matching_old_ref(referent) != Some(referent)
+                {
+                    let replacement = loop {
+                        let replacement = Ref::new();
+                        if old_tree.get_by_ref(replacement).is_none() {
+                            break replacement;
+                        }
+                    };
+                    new_tree.swap_ref(referent, replacement);
+                    self.move_ref(referent, replacement);
+                    ref_map.insert(referent, replacement);
+                }
+            }
+        }
+        {
+            // Fix properties
+            for referent in new_tree.descendants().collect::<Vec<_>>() {
+                for (k, v) in new_tree
+                    .get_by_ref_mut(referent)
+                    .unwrap()
+                    .properties
+                    .iter_mut()
+                {
+                    if let Variant::Ref(prop_ref) = v {
+                        if let Some(fixed_ref) = ref_map.get(prop_ref) {
+                            *v = Variant::Ref(*fixed_ref);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn find_ref_properties(&mut self, old_tree: &WeakDom, new_tree: &WeakDom) -> () {
+        for referent in old_tree.descendants() {
+            for (k, v) in old_tree.get_by_ref(referent).unwrap().properties.iter() {
+                if let Variant::Ref(prop_ref) = v {
+                    self.property_refs.insert(*prop_ref);
+                }
+            }
+        }
+
+        for referent in new_tree.descendants() {
+            for (k, v) in new_tree.get_by_ref(referent).unwrap().properties.iter() {
+                if let Variant::Ref(prop_ref) = v {
+                    self.property_refs.insert(*prop_ref);
+                }
+            }
+        }
+    }
+
     fn match_children(
         &mut self,
         old_tree: &WeakDom,
@@ -220,6 +342,12 @@ impl DeepDiff {
                 if new_children.is_empty() {
                     self.removed.insert(old_child_ref);
                     any_changes = true;
+                    continue;
+                }
+
+                if new_children.contains(&old_child_ref) {
+                    matches.insert(old_child_ref, old_child_ref);
+                    new_children.remove(&old_child_ref);
                     continue;
                 }
 
@@ -274,11 +402,38 @@ impl DeepDiff {
         loop {
             match old_tree.get_by_ref(ancestor_ref) {
                 Some(old_inst) => {
-                    if self.changed_descendants.contains(&ancestor_ref) {
+                    if self.changed_children.contains_key(&ancestor_ref) {
+                        self.changed_children
+                            .entry(ancestor_ref)
+                            .and_modify(|v| *v += 1);
                         break;
                     }
 
-                    self.changed_descendants.insert(ancestor_ref);
+                    self.changed_children.insert(ancestor_ref, 1);
+                    ancestor_ref = old_inst.parent();
+                }
+                None => break,
+            }
+        }
+    }
+
+    fn unmark_ancestors(&mut self, old_tree: &WeakDom, ancestor_ref: Ref) {
+        // log::trace!("unmarking ancestors for {}", ancestor_ref);
+        let mut ancestor_ref = ancestor_ref;
+        loop {
+            match old_tree.get_by_ref(ancestor_ref) {
+                Some(old_inst) => {
+                    if !self.changed_children.contains_key(&ancestor_ref) {
+                        break;
+                    }
+
+                    let changed_children = self.changed_children[&ancestor_ref] - 1;
+                    if changed_children != 0 {
+                        self.changed_children.insert(ancestor_ref, changed_children);
+                        break;
+                    }
+
+                    self.changed_children.remove(&ancestor_ref);
                     ancestor_ref = old_inst.parent();
                 }
                 None => break,
@@ -305,9 +460,11 @@ impl DeepDiff {
 
             if are_properties_different(old_inst, new_inst, filters) {
                 self.changed.insert(old_ref, new_ref);
+                self.new_to_old.insert(new_ref, old_ref);
                 self.mark_ancestors(old_tree, old_inst.parent());
             } else {
                 self.unchanged.insert(old_ref, new_ref);
+                self.new_to_old.insert(new_ref, old_ref);
             }
 
             if !old_inst.children().is_empty() || !new_inst.children().is_empty() {

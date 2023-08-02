@@ -9,7 +9,7 @@ use anyhow::Context;
 use indexmap::IndexMap;
 use memofs::Vfs;
 use rbx_dom_weak::{
-    types::{Attributes, Variant},
+    types::{Attributes, Ref, Variant},
     Instance, WeakDom,
 };
 use serde::{Deserialize, Serialize};
@@ -129,6 +129,7 @@ impl SnapshotMiddleware for JsonModelMiddleware {
             new_dom,
             instance,
             &metadata.context.syncback.property_filters_save,
+            &(|referent| sync.diff.is_ref_used_in_property(referent)),
         );
         json_model.name = None;
 
@@ -159,6 +160,9 @@ struct JsonModel {
 
     #[serde(alias = "ClassName")]
     class_name: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    referent: Option<Ref>,
 
     #[serde(
         alias = "Children",
@@ -211,6 +215,7 @@ impl JsonModel {
             name: Cow::Owned(name),
             class_name: Cow::Owned(class_name),
             properties,
+            preferred_ref: self.referent,
             children,
         })
     }
@@ -219,14 +224,22 @@ impl JsonModel {
         dom: &WeakDom,
         instance: &Instance,
         filters: &BTreeMap<String, PropertyFilter>,
+        include_ref: &impl Fn(Ref) -> bool,
     ) -> Self {
         Self {
             name: Some(instance.name.clone()),
             class_name: instance.class.clone(),
+            referent: if include_ref(instance.referent()) {
+                Some(instance.referent().clone())
+            } else {
+                None
+            },
             children: instance
                 .children()
                 .iter()
-                .map(|c| JsonModel::from_instance(dom, dom.get_by_ref(*c).unwrap(), filters))
+                .map(|c| {
+                    JsonModel::from_instance(dom, dom.get_by_ref(*c).unwrap(), filters, include_ref)
+                })
                 .collect(),
             properties: instance
                 .properties_filtered(filters, true)

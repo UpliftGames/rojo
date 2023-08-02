@@ -110,6 +110,23 @@ pub struct SyncbackContextX<'old, 'new> {
     pub overrides: Option<SnapshotOverride>,
 }
 
+impl SyncbackContextX<'_, '_> {
+    pub fn ref_for_save(&self) -> Ref {
+        self.old.opt_id().unwrap_or(self.new.id())
+    }
+    pub fn ref_for_save_if_used(&self) -> Option<Ref> {
+        if self.diff.is_ref_used_in_property(self.new.id()) {
+            return Some(self.new.id());
+        }
+        if let Some(old_ref) = self.old.opt_id() {
+            if self.diff.is_ref_used_in_property(old_ref) {
+                return Some(old_ref);
+            }
+        }
+        None
+    }
+}
+
 impl Clone for SyncbackContextX<'_, '_> {
     fn clone(&self) -> Self {
         Self {

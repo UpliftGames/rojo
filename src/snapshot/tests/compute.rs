@@ -19,6 +19,7 @@ fn set_name_and_class_name() {
         metadata: Default::default(),
         name: Cow::Borrowed("Some Folder"),
         class_name: Cow::Borrowed("Folder"),
+        preferred_ref: None,
         properties: Default::default(),
         children: Vec::new(),
     };
@@ -41,6 +42,7 @@ fn set_property() {
         metadata: Default::default(),
         name: Cow::Borrowed("ROOT"),
         class_name: Cow::Borrowed("ROOT"),
+        preferred_ref: None,
         properties: hashmap! {
             "PropertyName".to_owned() => "Hello, world!".into(),
         },
@@ -74,6 +76,7 @@ fn remove_property() {
         metadata: Default::default(),
         name: Cow::Borrowed("ROOT"),
         class_name: Cow::Borrowed("ROOT"),
+        preferred_ref: None,
         properties: Default::default(),
         children: Vec::new(),
     };
@@ -96,12 +99,14 @@ fn add_child() {
         metadata: Default::default(),
         name: Cow::Borrowed("ROOT"),
         class_name: Cow::Borrowed("ROOT"),
+        preferred_ref: None,
         properties: Default::default(),
         children: vec![InstanceSnapshot {
             snapshot_id: None,
             metadata: Default::default(),
             name: Cow::Borrowed("New"),
             class_name: Cow::Borrowed("Folder"),
+            preferred_ref: None,
             properties: Default::default(),
             children: Vec::new(),
         }],
@@ -135,6 +140,7 @@ fn remove_child() {
         metadata: Default::default(),
         name: Cow::Borrowed("ROOT"),
         class_name: Cow::Borrowed("ROOT"),
+        preferred_ref: None,
         properties: Default::default(),
         children: Vec::new(),
     };

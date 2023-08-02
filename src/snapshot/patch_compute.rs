@@ -250,6 +250,7 @@ mod test {
             properties: hashmap! {
                 "Self".to_owned() => Variant::Ref(snapshot_id),
             },
+            preferred_ref: None,
 
             metadata: Default::default(),
             name: Cow::Borrowed("foo"),
@@ -293,6 +294,7 @@ mod test {
                 properties: hashmap! {
                     "Self".to_owned() => Variant::Ref(snapshot_id),
                 },
+                preferred_ref: None,
 
                 snapshot_id: None,
                 metadata: Default::default(),
@@ -303,6 +305,7 @@ mod test {
 
             metadata: Default::default(),
             properties: HashMap::new(),
+            preferred_ref: None,
             name: Cow::Borrowed("foo"),
             class_name: Cow::Borrowed("foo"),
         };
@@ -318,6 +321,7 @@ mod test {
                     properties: hashmap! {
                         "Self".to_owned() => Variant::Ref(root_id),
                     },
+                    preferred_ref: None,
                     name: Cow::Borrowed("child"),
                     class_name: Cow::Borrowed("child"),
                     children: Vec::new(),

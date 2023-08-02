@@ -107,7 +107,7 @@ impl SnapshotMiddleware for RbxmxMiddleware {
         Ok(SyncbackNode::new(
             (old.opt_id(), new_ref),
             path,
-            InstanceSnapshot::from_tree_copy(new_dom, new_ref, false).metadata(
+            InstanceSnapshot::from_tree_copy(new_dom, new_ref, true).metadata(
                 InstanceMetadata::new()
                     .instigating_source(path.to_path_buf())
                     .relevant_paths(vec![path.to_path_buf(), path.with_extension("meta.json")])

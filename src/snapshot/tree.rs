@@ -42,6 +42,12 @@ pub struct RojoTree {
     /// appearing multiple times in the same Rojo project. This is sometimes
     /// called "path aliasing" in various Rojo documentation.
     path_to_ids: MultiMap<PathBuf, Ref>,
+
+    /// A map of preferred_ref -> actual ref
+    ///
+    /// This is temporarily filled during syncback then cleared once no longer
+    /// needed.
+    syncback_refs_map: HashMap<Ref, Ref>,
 }
 
 impl RojoTree {
@@ -54,6 +60,7 @@ impl RojoTree {
             inner: WeakDom::new(root_builder),
             metadata_map: HashMap::new(),
             path_to_ids: MultiMap::new(),
+            syncback_refs_map: HashMap::new(),
         };
 
         let root_ref = tree.inner.root_ref();
@@ -125,13 +132,23 @@ impl RojoTree {
     }
 
     pub fn insert_instance(&mut self, parent_ref: Ref, snapshot: InstanceSnapshot) -> Ref {
-        let builder = InstanceBuilder::empty()
+        let mut builder = InstanceBuilder::empty()
             .with_class(snapshot.class_name.into_owned())
             .with_name(snapshot.name.into_owned())
             .with_properties(snapshot.properties);
 
+        if let Some(preferred_ref) = snapshot.preferred_ref {
+            if self.inner.get_by_ref(preferred_ref).is_none() {
+                builder.set_referent(preferred_ref);
+            }
+        }
+
         let referent = self.inner.insert(parent_ref, builder);
         self.insert_metadata(referent, snapshot.metadata);
+
+        if let Some(preferred_ref) = snapshot.preferred_ref {
+            self.syncback_refs_map.insert(preferred_ref, referent);
+        }
 
         for child in snapshot.children {
             self.insert_instance(referent, child);
@@ -226,11 +243,26 @@ impl RojoTree {
         }
     }
 
+    pub fn fix_referent_properties_post_syncback(&mut self, ref_map: HashMap<Ref, Ref>) {
+        let mut processing = vec![self.inner.root_ref()];
+        while let Some(inst_ref) = processing.pop() {
+            let inst = self.inner.get_by_ref_mut(inst_ref).unwrap();
+            inst.properties.iter_mut().for_each(|(k, v)| {
+                if let Variant::Ref(ref_id) = v {
+                    if let Some(ref_id) = ref_map.get(ref_id) {
+                        *v = Variant::Ref(*ref_id);
+                    }
+                }
+            });
+            processing.extend(inst.children());
+        }
+    }
+
     pub fn syncback(
         &mut self,
         vfs: &Vfs,
         old_id: Ref,
-        new_dom: &WeakDom,
+        new_dom: &mut WeakDom,
         new_id: Ref,
     ) -> anyhow::Result<()> {
         let empty_map = BTreeMap::new();
@@ -352,8 +384,7 @@ impl RojoTree {
             if let Some(old_ref) = item.old_ref {
                 if item.use_snapshot_children {
                     self.remove(old_ref);
-                    insert_ref =
-                        self.insert_instance(item.parent_ref.unwrap(), item.instance_snapshot);
+                    self.insert_instance(item.parent_ref.unwrap(), item.instance_snapshot);
 
                     continue;
                 } else {

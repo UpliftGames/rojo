@@ -366,7 +366,8 @@ impl SnapshotMiddleware for ProjectMiddleware {
                     .properties(new_root_inst.properties.clone())
                     .name(&new_root_inst.name)
                     .class_name(&new_root_inst.class)
-                    .metadata(my_metadata),
+                    .metadata(my_metadata)
+                    .preferred_ref(sync.ref_for_save()),
             )
         });
 
@@ -652,6 +653,7 @@ pub fn snapshot_project_node(
         snapshot_id: None,
         name,
         class_name,
+        preferred_ref: node.referent,
         properties,
         children,
         metadata,

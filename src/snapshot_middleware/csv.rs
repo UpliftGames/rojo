@@ -116,6 +116,7 @@ impl SnapshotMiddleware for CsvMiddleware {
             vfs,
             &path.with_extension("meta.json"),
             instance,
+            sync.ref_for_save_if_used(),
             HashSet::from(["Contents", "ClassName"]),
             Some("LocalizationTable"),
             &metadata.context.syncback.property_filters_save,
@@ -124,18 +125,20 @@ impl SnapshotMiddleware for CsvMiddleware {
         Ok(SyncbackNode::new(
             (old.opt_id(), new_ref),
             path,
-            InstanceSnapshot::from_tree_copy(new_dom, new_ref, false).metadata(
-                metadata
-                    .clone()
-                    .instigating_source(path.to_path_buf())
-                    .relevant_paths(vec![path.to_path_buf(), path.with_extension("meta.json")])
-                    .middleware_id(self.middleware_id())
-                    .fs_snapshot(
-                        FsSnapshot::new()
-                            .with_file_contents_owned(&path, get_instance_contents(instance)?)
-                            .with_file_contents_opt(&path.with_extension("meta.json"), meta),
-                    ),
-            ),
+            InstanceSnapshot::from_tree_copy(new_dom, new_ref, false)
+                .metadata(
+                    metadata
+                        .clone()
+                        .instigating_source(path.to_path_buf())
+                        .relevant_paths(vec![path.to_path_buf(), path.with_extension("meta.json")])
+                        .middleware_id(self.middleware_id())
+                        .fs_snapshot(
+                            FsSnapshot::new()
+                                .with_file_contents_owned(&path, get_instance_contents(instance)?)
+                                .with_file_contents_opt(&path.with_extension("meta.json"), meta),
+                        ),
+                )
+                .preferred_ref(sync.ref_for_save()),
         ))
     }
 }

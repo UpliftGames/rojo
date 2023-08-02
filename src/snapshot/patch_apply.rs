@@ -236,6 +236,7 @@ mod test {
             metadata: Default::default(),
             name: Cow::Borrowed("Foo"),
             class_name: Cow::Borrowed("Bar"),
+            preferred_ref: None,
             properties: hashmap! {
                 "Baz".to_owned() => Variant::Int32(5),
             },

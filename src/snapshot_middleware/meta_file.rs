@@ -8,7 +8,7 @@ use anyhow::{format_err, Context};
 
 use indexmap::IndexMap;
 use rbx_dom_weak::{
-    types::{Attributes, Variant},
+    types::{Attributes, Ref, Variant},
     Instance,
 };
 use serde::{Deserialize, Serialize};
@@ -32,6 +32,9 @@ pub struct MetadataFile {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub class_name: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub referent: Option<Ref>,
 
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub properties: IndexMap<String, UnresolvedValue>,
@@ -252,7 +255,7 @@ impl MetadataFile {
         Ok(())
     }
 
-    fn apply_class_name(&mut self, snapshot: &mut InstanceSnapshot) -> anyhow::Result<()> {
+    pub fn apply_class_name(&mut self, snapshot: &mut InstanceSnapshot) -> anyhow::Result<()> {
         if let Some(class_name) = self.class_name.take() {
             if snapshot.class_name != "Folder" {
                 // TODO: Turn into error type
@@ -268,12 +271,21 @@ impl MetadataFile {
         Ok(())
     }
 
+    pub fn apply_ref(&mut self, snapshot: &mut InstanceSnapshot) -> anyhow::Result<()> {
+        if let Some(referent) = self.referent.take() {
+            snapshot.preferred_ref = Some(referent);
+        }
+
+        Ok(())
+    }
+
     pub fn apply_all(&mut self, snapshot: &mut InstanceSnapshot) -> anyhow::Result<()> {
         self.apply_ignore_unknown_instances(snapshot);
         // We must apply class name before properties because property decoding
         // may depend on class name.
         self.apply_class_name(snapshot)?;
         self.apply_properties(snapshot)?;
+        self.apply_ref(snapshot)?;
         Ok(())
     }
 

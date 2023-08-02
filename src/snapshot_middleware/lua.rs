@@ -153,6 +153,7 @@ impl SnapshotMiddleware for LuaMiddleware {
             vfs,
             &path.with_file_name(format!("{}.meta.json", name)),
             instance,
+            sync.ref_for_save_if_used(),
             ignore_props(),
             Some(&instance.class),
             &metadata.context.syncback.property_filters_save,
@@ -161,24 +162,29 @@ impl SnapshotMiddleware for LuaMiddleware {
         Ok(SyncbackNode::new(
             (old.opt_id(), new_ref),
             &path,
-            InstanceSnapshot::from_tree_copy(new_dom, new_ref, false).metadata(
-                metadata
-                    .clone()
-                    .instigating_source(path.to_path_buf())
-                    .relevant_paths(vec![
-                        path.to_path_buf(),
-                        path.with_file_name(format!("{}.meta.json", name)),
-                    ])
-                    .middleware_id(self.middleware_id())
-                    .fs_snapshot(
-                        FsSnapshot::new()
-                            .with_file_contents_borrowed(&path, get_instance_contents(instance)?)
-                            .with_file_contents_opt(
-                                &path.with_file_name(format!("{}.meta.json", name)),
-                                meta,
-                            ),
-                    ),
-            ),
+            InstanceSnapshot::from_tree_copy(new_dom, new_ref, false)
+                .metadata(
+                    metadata
+                        .clone()
+                        .instigating_source(path.to_path_buf())
+                        .relevant_paths(vec![
+                            path.to_path_buf(),
+                            path.with_file_name(format!("{}.meta.json", name)),
+                        ])
+                        .middleware_id(self.middleware_id())
+                        .fs_snapshot(
+                            FsSnapshot::new()
+                                .with_file_contents_borrowed(
+                                    &path,
+                                    get_instance_contents(instance)?,
+                                )
+                                .with_file_contents_opt(
+                                    &path.with_file_name(format!("{}.meta.json", name)),
+                                    meta,
+                                ),
+                        ),
+                )
+                .preferred_ref(sync.ref_for_save()),
         ))
     }
 }
