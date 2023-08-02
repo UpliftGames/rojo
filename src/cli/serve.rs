@@ -41,6 +41,8 @@ impl ServeCommand {
 
         let session = Arc::new(ServeSession::new(vfs, &project_path)?);
 
+        session.tree().warn_for_broken_refs();
+
         let ip = self
             .address
             .or_else(|| session.serve_address())

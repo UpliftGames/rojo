@@ -113,6 +113,8 @@ fn write_model(
     let mut tree = session.tree();
     let root_id = tree.get_root_id();
 
+    tree.warn_for_broken_refs();
+
     log::trace!("Fixing duplicate unique ids");
     tree.fix_unique_id_collisions();
 

@@ -97,6 +97,8 @@ fn syncback(session: &ServeSession, output: &Path, output_kind: InputKind) -> an
 
     // log::trace!("Tree: {:#?}", tree);
 
+    tree.warn_for_broken_refs();
+
     log::trace!("Opening input file");
     let mut file = File::open(&output)?;
 
@@ -111,6 +113,8 @@ fn syncback(session: &ServeSession, output: &Path, output_kind: InputKind) -> an
     log::trace!("Diffing and applying changes");
 
     tree.syncback(session.vfs(), root_id, &mut new_dom, new_root)?;
+
+    tree.warn_for_broken_refs();
 
     Ok(())
 }

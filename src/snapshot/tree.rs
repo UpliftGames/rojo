@@ -111,6 +111,25 @@ impl RojoTree {
         }
     }
 
+    pub fn warn_for_broken_refs(&self) {
+        for inst in self.descendants(self.get_root_id()) {
+            for (key, value) in inst.properties().iter() {
+                if let Variant::Ref(ref_id) = value {
+                    if ref_id.is_some() && self.get_instance(*ref_id).is_none() {
+                        let full_name = std::iter::successors(Some(inst), |inst| {
+                            self.get_instance(inst.parent())
+                        })
+                        .map(|inst| inst.name())
+                        .collect::<Vec<_>>()
+                        .join(".");
+
+                        log::warn!("Broken object reference property: {} of {}", key, full_name);
+                    }
+                }
+            }
+        }
+    }
+
     pub fn get_instance(&self, id: Ref) -> Option<InstanceWithMeta> {
         if let Some(instance) = self.inner.get_by_ref(id) {
             let metadata = self.metadata_map.get(&id).unwrap();
@@ -378,15 +397,17 @@ impl RojoTree {
                 inst_snapshot.metadata.fs_snapshot.as_ref(),
             )?;
 
+            let preferred_ref = inst_snapshot.preferred_ref;
+
             let insert_ref;
             let metadata;
 
             if let Some(old_ref) = item.old_ref {
                 if item.use_snapshot_children {
                     self.remove(old_ref);
-                    self.insert_instance(item.parent_ref.unwrap(), item.instance_snapshot);
-
-                    continue;
+                    insert_ref =
+                        self.insert_instance(item.parent_ref.unwrap(), item.instance_snapshot);
+                    metadata = self.get_metadata(insert_ref).unwrap();
                 } else {
                     self.update_props(old_ref, item.instance_snapshot);
                     insert_ref = old_ref;
@@ -395,6 +416,19 @@ impl RojoTree {
             } else {
                 insert_ref = self.insert_instance(item.parent_ref.unwrap(), item.instance_snapshot);
                 metadata = self.get_metadata(insert_ref).unwrap();
+            }
+
+            if let Some(preferred_ref) = preferred_ref {
+                if insert_ref != preferred_ref {
+                    log::trace!(
+                        "Item {} needed to have a new id generated for it.",
+                        self.get_instance(insert_ref).unwrap().name()
+                    );
+                }
+            }
+
+            if item.old_ref.is_some() && item.use_snapshot_children {
+                continue;
             }
 
             let path = item.path;
