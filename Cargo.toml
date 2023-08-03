@@ -20,6 +20,7 @@ exclude = [
 panic = "abort"
 
 [profile.release]
+debug = true
 panic = "abort"
 
 [features]
@@ -59,6 +60,7 @@ rbx_xml = { path = "../rbx-dom/rbx_xml" }
 
 dyn-eq = "0.1.2"
 indexmap = { version = "2.0.0", features = ["std", "serde"] }
+float-cmp = "0.9.0"
 
 anyhow = { version = "1.0.72", features = ["backtrace"] }
 backtrace = "0.3.61"

@@ -1,6 +1,7 @@
 //! Defines Rojo's CLI through clap types.
 
 mod build;
+mod diff;
 mod doc;
 mod fmt_project;
 mod init;
@@ -16,13 +17,14 @@ use clap::Parser;
 use thiserror::Error;
 
 pub use self::build::BuildCommand;
+pub use self::diff::DiffCommand;
 pub use self::doc::DocCommand;
 pub use self::fmt_project::FmtProjectCommand;
 pub use self::init::{InitCommand, InitKind};
 pub use self::plugin::{PluginCommand, PluginSubcommand};
 pub use self::serve::ServeCommand;
 pub use self::sourcemap::SourcemapCommand;
-use self::syncback::SyncbackCommand;
+pub use self::syncback::SyncbackCommand;
 pub use self::upload::UploadCommand;
 
 /// Command line options that Rojo accepts, defined using the clap crate.
@@ -44,6 +46,7 @@ impl Options {
             Subcommand::Serve(subcommand) => subcommand.run(self.global),
             Subcommand::Build(subcommand) => subcommand.run(),
             Subcommand::Syncback(subcommand) => subcommand.run(),
+            Subcommand::Diff(subcommand) => subcommand.run(),
             Subcommand::Upload(subcommand) => subcommand.run(),
             Subcommand::Sourcemap(subcommand) => subcommand.run(),
             Subcommand::FmtProject(subcommand) => subcommand.run(),
@@ -118,6 +121,7 @@ pub enum Subcommand {
     Serve(ServeCommand),
     Build(BuildCommand),
     Syncback(SyncbackCommand),
+    Diff(DiffCommand),
     Upload(UploadCommand),
     Sourcemap(SourcemapCommand),
     FmtProject(FmtProjectCommand),

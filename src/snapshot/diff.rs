@@ -1,15 +1,16 @@
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     fmt::Display,
     ops::AddAssign,
 };
 
+use float_cmp::approx_eq;
 use rbx_dom_weak::{
-    types::{Ref, Variant},
+    types::{Ref, Variant, Vector2, Vector3},
     Instance, WeakDom,
 };
 
-use super::{default_filters_diff, PropertiesFiltered, PropertyFilter, WeakDomExtra};
+use super::{default_filters_diff, filter, PropertiesFiltered, PropertyFilter, WeakDomExtra};
 
 pub fn diff_properties<'a>(
     old_instance: &'a Instance,
@@ -18,17 +19,22 @@ pub fn diff_properties<'a>(
 ) -> Box<dyn Iterator<Item = String> + 'a> {
     Box::new(
         old_instance
-            .properties_filtered(filters, true)
-            .chain(new_instance.properties_filtered(filters, true))
-            .filter_map(|(key, _)| {
+            .properties_filtered(filters, false)
+            .chain(new_instance.properties_filtered(filters, false))
+            .map(|(k, _)| k)
+            .collect::<BTreeSet<_>>() // Deduplicate property names
+            .into_iter()
+            .filter_map(|key| {
                 let new_prop = new_instance.properties.get(key);
                 let old_prop = old_instance.properties.get(key);
 
-                if old_prop == new_prop {
-                    None
-                } else {
-                    Some(key.to_owned())
+                if let (Some(new_prop), Some(old_prop)) = (new_prop, old_prop) {
+                    if are_variants_similar(old_prop, new_prop) {
+                        return None;
+                    }
                 }
+
+                Some(key.to_owned())
             }),
     )
 }
@@ -39,6 +45,148 @@ pub fn are_properties_different(
     filters: &BTreeMap<String, PropertyFilter>,
 ) -> bool {
     diff_properties(old_instance, new_instance, filters).any(|_| true)
+}
+
+pub fn are_vector3s_similar(old_vector: &Vector3, new_vector: &Vector3) -> bool {
+    approx_eq!(f32, old_vector.x, new_vector.x)
+        && approx_eq!(f32, old_vector.y, new_vector.y)
+        && approx_eq!(f32, old_vector.z, new_vector.z)
+}
+
+pub fn are_vector2s_similar(old_vector: &Vector2, new_vector: &Vector2) -> bool {
+    approx_eq!(f32, old_vector.x, new_vector.x) && approx_eq!(f32, old_vector.y, new_vector.y)
+}
+
+pub fn are_variants_similar(old_variant: &Variant, new_variant: &Variant) -> bool {
+    match (old_variant, new_variant) {
+        (Variant::CFrame(old_cframe), Variant::CFrame(new_cframe)) => {
+            are_vector3s_similar(&old_cframe.position, &new_cframe.position)
+                && are_vector3s_similar(&old_cframe.orientation.x, &new_cframe.orientation.x)
+                && are_vector3s_similar(&old_cframe.orientation.y, &new_cframe.orientation.y)
+                && are_vector3s_similar(&old_cframe.orientation.z, &new_cframe.orientation.z)
+        }
+        (Variant::OptionalCFrame(old_cframe), Variant::OptionalCFrame(new_cframe)) => {
+            match (old_cframe, new_cframe) {
+                (Some(old_cframe), Some(new_cframe)) => are_variants_similar(
+                    &Variant::CFrame(old_cframe.clone()),
+                    &Variant::CFrame(new_cframe.clone()),
+                ),
+                _ => false,
+            }
+        }
+        (Variant::Vector3(old_vector), Variant::Vector3(new_vector)) => {
+            are_vector3s_similar(&old_vector, &new_vector)
+        }
+        (Variant::Vector2(old_vector), Variant::Vector2(new_vector)) => {
+            are_vector2s_similar(&old_vector, &new_vector)
+        }
+        (Variant::Color3(old_color), Variant::Color3(new_color)) => {
+            approx_eq!(f32, old_color.r, new_color.r)
+                && approx_eq!(f32, old_color.g, new_color.g)
+                && approx_eq!(f32, old_color.b, new_color.b)
+        }
+        (Variant::Float32(old_float), Variant::Float32(new_float)) => {
+            approx_eq!(f32, *old_float, *new_float)
+        }
+        (Variant::Float64(old_float), Variant::Float64(new_float)) => {
+            approx_eq!(f64, *old_float, *new_float)
+        }
+        _ => old_variant == new_variant,
+    }
+}
+
+pub fn display_variant_short(value: &Variant) -> String {
+    match value {
+        Variant::Axes(v) => format!("{:?}", v),
+        Variant::BinaryString(v) => format!(
+            "BinaryString(length = {})",
+            <rbx_dom_weak::types::BinaryString as AsRef<[u8]>>::as_ref(v).len()
+        ),
+        Variant::Bool(v) => format!("{}", v),
+        Variant::BrickColor(v) => format!("BrickColor({})", v),
+        Variant::CFrame(v) => format!("CFrame"),
+        Variant::Color3(v) => format!("Color3({}, {}, {})", v.r, v.g, v.b),
+        Variant::Color3uint8(v) => format!("Color3uint8({}, {}, {})", v.r, v.g, v.b),
+        Variant::ColorSequence(v) => format!(
+            "ColorSequence[{}]",
+            v.keypoints
+                .iter()
+                .map(|point| {
+                    format!(
+                        "({}s, ({}, {}, {}))",
+                        point.time, point.color.r, point.color.g, point.color.b
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        Variant::Content(v) => format!(
+            "Content({})",
+            <rbx_dom_weak::types::Content as AsRef<str>>::as_ref(v)
+        ),
+        Variant::Enum(v) => format!("Enum({})", v.to_u32()),
+        Variant::Faces(v) => format!("{:?}", v),
+        Variant::Float32(v) => format!("{}", v),
+        Variant::Float64(v) => format!("{}", v),
+        Variant::Int32(v) => format!("{}", v),
+        Variant::Int64(v) => format!("{}", v),
+        Variant::NumberRange(v) => format!("NumberRange({}, {})", v.min, v.max),
+        Variant::NumberSequence(v) => format!(
+            "NumberSequence[{}]",
+            v.keypoints
+                .iter()
+                .map(|point| { format!("({}s, {}, {})", point.time, point.value, point.envelope) })
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        Variant::PhysicalProperties(v) => format!("{:?}", v),
+        Variant::Ray(v) => format!(
+            "Ray(({}, {}, {}) -> ({}, {}, {}))",
+            v.origin.x, v.origin.y, v.origin.z, v.direction.x, v.direction.y, v.direction.z
+        ),
+        Variant::Rect(v) => format!(
+            "Rect([{}, {}], [{}, {}])",
+            v.min.x, v.min.y, v.max.x, v.max.y
+        ),
+        Variant::Ref(v) => format!("Ref({})", v),
+        Variant::Region3(v) => format!(
+            "Region3([{}, {}, {}], [{}, {}, {}])",
+            v.min.x, v.min.y, v.min.z, v.max.x, v.max.y, v.max.z
+        ),
+        Variant::Region3int16(v) => format!(
+            "Region3int16([{}, {}, {}], [{}, {}, {}])",
+            v.min.x, v.min.y, v.min.z, v.max.x, v.max.y, v.max.z
+        ),
+        Variant::SharedString(v) => format!("SharedString(length = {})", v.data().len()),
+        Variant::String(v) => {
+            if v.len() < 80 {
+                format!("\"{}\"", v)
+            } else {
+                format!("\"{}...\"", &v[0..77])
+            }
+        }
+        Variant::UDim(v) => format!("UDim({}, {})", v.scale, v.offset),
+        Variant::UDim2(v) => format!(
+            "UDim2({}, {}, {}, {})",
+            v.x.scale, v.x.offset, v.y.scale, v.y.offset
+        ),
+        Variant::Vector2(v) => format!("Vector2({}, {})", v.x, v.y),
+        Variant::Vector2int16(v) => format!("Vector2int16({}, {})", v.x, v.y),
+        Variant::Vector3(v) => format!("Vector3({}, {}, {})", v.x, v.y, v.z),
+        Variant::Vector3int16(v) => format!("Vector3int16({}, {}, {})", v.x, v.y, v.z),
+        Variant::OptionalCFrame(v) => {
+            if let Some(cframe) = v {
+                "OptionalCFrame(CFrame)".to_owned()
+            } else {
+                "OptionalCFrame(None)".to_owned()
+            }
+        }
+        Variant::Tags(v) => format!("Tags[{}]", v.iter().collect::<Vec<_>>().join(", ")),
+        Variant::Attributes(v) => format!("Attributes(count = {})", v.iter().count()),
+        Variant::Font(v) => format!("{:?}", v),
+        Variant::UniqueId(v) => format!("{}", v),
+        _ => "Unknown Type".to_owned(),
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -214,6 +362,158 @@ impl DeepDiff {
         Some((added, removed, changed, unchanged))
     }
 
+    pub fn show_diff(&self, old_tree: &WeakDom, new_tree: &WeakDom, path: &Vec<String>) -> () {
+        let old_root_ref = 'old_ref: {
+            let mut item = old_tree.root_ref();
+            for name in path.iter() {
+                let next_item = old_tree
+                    .get_by_ref(item)
+                    .expect(
+                        format!("Invalid ref {} when traversing tree (next: {})", item, name)
+                            .as_str(),
+                    )
+                    .children()
+                    .iter()
+                    .find(|&child_ref| old_tree.get_by_ref(*child_ref).unwrap().name == *name);
+                item = match next_item {
+                    Some(item) => *item,
+                    None => {
+                        break 'old_ref None;
+                    }
+                };
+            }
+            Some(item)
+        };
+        let new_root_ref = 'new_ref: {
+            let mut item = new_tree.root_ref();
+            for name in path.iter() {
+                let next_item = new_tree
+                    .get_by_ref(item)
+                    .expect(
+                        format!("Invalid ref {} when traversing tree (next: {})", item, name)
+                            .as_str(),
+                    )
+                    .children()
+                    .iter()
+                    .find(|&child_ref| new_tree.get_by_ref(*child_ref).unwrap().name == *name);
+                item = match next_item {
+                    Some(item) => *item,
+                    None => {
+                        break 'new_ref None;
+                    }
+                };
+            }
+            Some(item)
+        };
+
+        let get_name_old = |old_ref: Ref| -> &str {
+            old_tree
+                .get_by_ref(old_ref)
+                .map_or("[invalid ref]", |v| v.name.as_str())
+        };
+        let get_name_new = |new_ref: Ref| -> &str {
+            new_tree
+                .get_by_ref(new_ref)
+                .map_or("[invalid ref]", |v| v.name.as_str())
+        };
+
+        match (old_root_ref, new_root_ref) {
+            (None, None) => {
+                println!("Could not find {} in the old or new tree", path.join("."));
+            }
+            (Some(old_ref), None) => {
+                println!("- {}", get_name_old(old_ref));
+            }
+            (None, Some(new_ref)) => {
+                println!("+ {}", get_name_new(new_ref));
+            }
+            (Some(old_root_ref), Some(_)) => {
+                let mut processing = vec![(old_root_ref, 0)];
+                while let Some((old_ref, tabs)) = processing.pop() {
+                    let new_ref = self.get_matching_new_ref(old_ref);
+                    match new_ref {
+                        None => {
+                            println!("{}- {}", "  ".repeat(tabs), get_name_old(old_ref));
+                        }
+                        Some(new_ref) => {
+                            if self.has_changed_properties(old_ref) {
+                                println!("{}~ {}", "  ".repeat(tabs), get_name_old(old_ref));
+                            } else if self.has_changed_descendants(old_ref) {
+                                println!(
+                                    "{}  {}  (~{} children)",
+                                    "  ".repeat(tabs),
+                                    get_name_old(old_ref),
+                                    self.changed_children[&old_ref]
+                                );
+                            }
+                            if self.has_changed_properties(old_ref) {
+                                let old_inst = old_tree.get_by_ref(old_ref).unwrap();
+                                let new_inst = new_tree.get_by_ref(new_ref).unwrap();
+
+                                let changed_properties =
+                                    diff_properties(old_inst, new_inst, default_filters_diff());
+                                for property_name in changed_properties {
+                                    let old_value = old_inst.properties.get(&property_name);
+                                    let new_value = new_inst.properties.get(&property_name);
+                                    match (old_value, new_value) {
+                                        (None, None) => (),
+                                        (Some(old_value), Some(new_value)) => {
+                                            println!(
+                                                "{}~ {}: {} -> {}",
+                                                "  ".repeat(tabs + 2),
+                                                property_name,
+                                                display_variant_short(old_value),
+                                                display_variant_short(new_value)
+                                            );
+                                        }
+                                        (Some(old_value), None) => {
+                                            println!(
+                                                "{}~ {}: {} -> None",
+                                                "  ".repeat(tabs + 2),
+                                                property_name,
+                                                display_variant_short(old_value)
+                                            )
+                                        }
+                                        (None, Some(new_value)) => {
+                                            println!(
+                                                "{}~ {}: None -> {}",
+                                                "  ".repeat(tabs + 2),
+                                                property_name,
+                                                display_variant_short(new_value)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                            if self.has_changed_descendants(old_ref) {
+                                let changes = self.get_children(old_tree, new_tree, old_ref);
+                                if let Some((added, removed, changed, _unchanged)) = changes {
+                                    for removed_ref in removed {
+                                        println!(
+                                            "{}- {}",
+                                            "  ".repeat(tabs + 1),
+                                            get_name_old(removed_ref)
+                                        );
+                                    }
+                                    for added_ref in added {
+                                        println!(
+                                            "{}+ {}",
+                                            "  ".repeat(tabs + 1),
+                                            get_name_new(added_ref)
+                                        );
+                                    }
+                                    for changed_ref in changed {
+                                        processing.push((changed_ref, tabs + 1));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     fn prune_matching_ref_properties(&mut self, old_tree: &WeakDom, new_tree: &WeakDom) -> () {
         let changed: Vec<(Ref, Ref)> = self.changed.iter().map(|(v1, v2)| (*v1, *v2)).collect();
         for (old_ref, new_ref) in changed.into_iter() {
@@ -225,7 +525,7 @@ impl DeepDiff {
                     let new_prop = new_inst.properties.get(&property_name);
                     if let Some(Variant::Ref(old_ref)) = old_prop {
                         if let Some(Variant::Ref(new_ref)) = new_prop {
-                            if self.new_to_old[new_ref] == *old_ref {
+                            if self.new_to_old.get(new_ref) == Some(old_ref) {
                                 return true;
                             }
                         }
@@ -236,7 +536,9 @@ impl DeepDiff {
                 self.changed.remove(&old_ref);
                 self.new_to_old.remove(&new_ref);
                 self.unchanged.insert(old_ref, new_ref);
-                self.unmark_ancestors(old_tree, old_ref)
+                if !self.has_changed_descendants(old_ref) {
+                    self.unmark_ancestors(old_tree, old_inst.parent())
+                }
             }
         }
     }
@@ -262,15 +564,29 @@ impl DeepDiff {
         {
             // Fix duplicate refs
             for referent in new_tree.descendants().collect::<Vec<_>>() {
-                if old_tree.get_by_ref(referent).is_some()
-                    && self.get_matching_old_ref(referent) != Some(referent)
-                {
-                    let replacement = loop {
-                        let replacement = Ref::new();
-                        if old_tree.get_by_ref(replacement).is_none() {
-                            break replacement;
+                let matching_old_ref = self.get_matching_old_ref(referent);
+                let replacement = match matching_old_ref {
+                    Some(old_ref) => {
+                        if referent != old_ref {
+                            Some(old_ref)
+                        } else {
+                            None
                         }
-                    };
+                    }
+                    None => {
+                        if old_tree.get_by_ref(referent).is_some() {
+                            Some(loop {
+                                let replacement = Ref::new();
+                                if old_tree.get_by_ref(replacement).is_none() {
+                                    break replacement;
+                                }
+                            })
+                        } else {
+                            None
+                        }
+                    }
+                };
+                if let Some(replacement) = replacement {
                     new_tree.swap_ref(referent, replacement);
                     self.move_ref(referent, replacement);
                     ref_map.insert(referent, replacement);
@@ -280,7 +596,7 @@ impl DeepDiff {
         {
             // Fix properties
             for referent in new_tree.descendants().collect::<Vec<_>>() {
-                for (k, v) in new_tree
+                for (_k, v) in new_tree
                     .get_by_ref_mut(referent)
                     .unwrap()
                     .properties
@@ -298,7 +614,7 @@ impl DeepDiff {
 
     fn find_ref_properties(&mut self, old_tree: &WeakDom, new_tree: &WeakDom) -> () {
         for referent in old_tree.descendants() {
-            for (k, v) in old_tree.get_by_ref(referent).unwrap().properties.iter() {
+            for (_k, v) in old_tree.get_by_ref(referent).unwrap().properties.iter() {
                 if let Variant::Ref(prop_ref) = v {
                     self.property_refs.insert(*prop_ref);
                 }
@@ -306,7 +622,7 @@ impl DeepDiff {
         }
 
         for referent in new_tree.descendants() {
-            for (k, v) in new_tree.get_by_ref(referent).unwrap().properties.iter() {
+            for (_k, v) in new_tree.get_by_ref(referent).unwrap().properties.iter() {
                 if let Variant::Ref(prop_ref) = v {
                     self.property_refs.insert(*prop_ref);
                 }
@@ -396,9 +712,9 @@ impl DeepDiff {
         matches
     }
 
-    fn mark_ancestors(&mut self, old_tree: &WeakDom, ancestor_ref: Ref) {
+    fn mark_ancestors(&mut self, old_tree: &WeakDom, parent_ref: Ref) {
         // log::trace!("marking ancestors for {}", ancestor_ref);
-        let mut ancestor_ref = ancestor_ref;
+        let mut ancestor_ref = parent_ref;
         loop {
             match old_tree.get_by_ref(ancestor_ref) {
                 Some(old_inst) => {
@@ -410,6 +726,10 @@ impl DeepDiff {
                     }
 
                     self.changed_children.insert(ancestor_ref, 1);
+
+                    if self.changed.contains_key(&ancestor_ref) {
+                        break;
+                    }
                     ancestor_ref = old_inst.parent();
                 }
                 None => break,
@@ -417,9 +737,9 @@ impl DeepDiff {
         }
     }
 
-    fn unmark_ancestors(&mut self, old_tree: &WeakDom, ancestor_ref: Ref) {
+    fn unmark_ancestors(&mut self, old_tree: &WeakDom, parent_ref: Ref) {
         // log::trace!("unmarking ancestors for {}", ancestor_ref);
-        let mut ancestor_ref = ancestor_ref;
+        let mut ancestor_ref = parent_ref;
         loop {
             match old_tree.get_by_ref(ancestor_ref) {
                 Some(old_inst) => {
@@ -428,7 +748,7 @@ impl DeepDiff {
                     }
 
                     let changed_children = self.changed_children[&ancestor_ref] - 1;
-                    if changed_children != 0 {
+                    if changed_children > 0 {
                         self.changed_children.insert(ancestor_ref, changed_children);
                         break;
                     }
@@ -485,16 +805,18 @@ pub fn similarity_score(
     let mut diff_score = 0;
     let mut same_score = 0;
 
-    let old_properties = old_instance.properties_filtered_map(filters, true);
+    let old_properties = old_instance.properties_filtered_map(filters, false);
 
-    let new_properties = new_instance.properties_filtered_map(filters, true);
+    let new_properties = new_instance.properties_filtered_map(filters, false);
 
     for (k, v) in old_properties.iter() {
-        if new_properties.contains_key(k) && new_properties[k] == *v {
-            same_score += 1;
-        } else {
-            diff_score += 1;
+        if let Some(new_property) = new_properties.get(k) {
+            if are_variants_similar(old_properties[k], new_property) {
+                same_score += 1;
+                continue;
+            }
         }
+        diff_score += 1;
     }
     for (k, _v) in new_properties.iter() {
         if !old_properties.contains_key(k) {

@@ -2,11 +2,11 @@ use std::path::Path;
 
 use anyhow::Context;
 use memofs::Vfs;
-use rbx_dom_weak::Instance;
+use rbx_dom_weak::{Instance, InstanceBuilder, WeakDom};
 
 use crate::snapshot::{
     FsSnapshot, InstanceContext, InstanceMetadata, InstanceSnapshot, OptOldTuple,
-    SnapshotMiddleware, SyncbackContextX, SyncbackNode, PRIORITY_MODEL_BINARY,
+    SnapshotMiddleware, SyncbackContextX, SyncbackNode, WeakDomExtra, PRIORITY_MODEL_BINARY,
 };
 
 use super::util::PathExt;
@@ -36,8 +36,9 @@ impl SnapshotMiddleware for RbxmMiddleware {
     ) -> anyhow::Result<Option<InstanceSnapshot>> {
         let name = path.file_name_trim_extension()?;
 
-        let temp_tree = rbx_binary::from_reader(vfs.read(path)?.as_slice())
+        let mut temp_tree = rbx_binary::from_reader(vfs.read(path)?.as_slice())
             .with_context(|| format!("Malformed rbxm file: {}", path.display()))?;
+        temp_tree.apply_marked_external_refs(temp_tree.root_ref());
 
         let root_instance = temp_tree.root();
         let children = root_instance.children();
@@ -95,8 +96,14 @@ impl SnapshotMiddleware for RbxmMiddleware {
 
         let (new_dom, new_ref) = new;
 
+        // FIXME: This is a hack to allow mutation before save. It's not ideal
+        // because we have to clone the whole save target in memory. We only
+        // need to do this to add external ref attributes.
+        let mut temp_tree = WeakDom::new(InstanceBuilder::from_instance(new_dom, new_ref));
+        temp_tree.mark_external_refs(new_ref, &sync.diff.property_refs);
+
         let mut contents: Vec<u8> = Vec::new();
-        rbx_binary::to_writer(&mut contents, new_dom, &[new_ref])?;
+        rbx_binary::to_writer(&mut contents, &temp_tree, &[new_ref])?;
 
         Ok(SyncbackNode::new(
             (old.opt_id(), new_ref),

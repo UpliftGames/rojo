@@ -78,6 +78,10 @@ impl RojoTree {
         &self.inner
     }
 
+    pub fn into_weakdom(self) -> WeakDom {
+        self.inner
+    }
+
     pub fn get_root_id(&self) -> Ref {
         self.inner.root_ref()
     }
@@ -120,6 +124,9 @@ impl RojoTree {
                             self.get_instance(inst.parent())
                         })
                         .map(|inst| inst.name())
+                        .collect::<Vec<_>>()
+                        .into_iter()
+                        .rev()
                         .collect::<Vec<_>>()
                         .join(".");
 
@@ -456,6 +463,13 @@ impl RojoTree {
                 }
 
                 for id in removed {
+                    let remove_metadata = self.get_metadata(id);
+                    if let Some(remove_metadata) = remove_metadata {
+                        if let Some(remove_fs_snapshot) = &remove_metadata.fs_snapshot {
+                            FsSnapshot::reconcile(vfs, Some(remove_fs_snapshot), None)?;
+                        }
+                    }
+
                     self.remove(id);
                 }
             }

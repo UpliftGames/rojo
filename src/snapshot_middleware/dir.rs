@@ -1,6 +1,6 @@
 use std::{
     borrow::Cow,
-    collections::{HashMap, HashSet},
+    collections::{BTreeSet, HashMap, HashSet},
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -77,10 +77,19 @@ impl SnapshotMiddleware for DirectoryMiddleware {
 
     fn syncback_priority(
         &self,
-        _dom: &WeakDom,
+        dom: &WeakDom,
         instance: &Instance,
         consider_descendants: bool,
     ) -> Option<i32> {
+        // Directory representation is not an option of we have more than one
+        // child with the same name
+        let mut names = HashSet::new();
+        for child_ref in instance.children() {
+            if !names.insert(dom.get_by_ref(*child_ref).unwrap().name.as_str()) {
+                return None;
+            }
+        }
+
         if instance.class == "Folder" {
             if consider_descendants {
                 Some(PRIORITY_MANY_READABLE)

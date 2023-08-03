@@ -3,12 +3,7 @@
   "tree": {
     "$className": "DataModel",
     "Workspace": {
-      "$className": "Workspace",
       "$path": "Workspace"
-    },
-    "Lighting": {
-      "$className": "Lighting",
-      "$path": "Lighting"
     }
   }
 }
