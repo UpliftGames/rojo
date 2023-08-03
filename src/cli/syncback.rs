@@ -133,8 +133,8 @@ fn test_syncback() -> Result<(), anyhow::Error> {
     let input = PathBuf::from("C:/Projects/Uplift/adopt-me/game.rbxl");
     let project_path = PathBuf::from("C:/Projects/Uplift/adopt-me/default.project.json");
 
-    println!("Press enter when profiler is attached");
-    std::io::stdin().read_line(&mut String::new()).ok();
+    // println!("Press enter when profiler is attached");
+    // std::io::stdin().read_line(&mut String::new()).ok();
 
     // let input = PathBuf::from("C:/Projects/Uplift/rojo/syncback_test/game.rbxl");
     // let project_path = PathBuf::from("C:/Projects/Uplift/rojo/syncback_test/default.project.json");

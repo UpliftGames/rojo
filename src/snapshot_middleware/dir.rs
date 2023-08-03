@@ -81,7 +81,7 @@ impl SnapshotMiddleware for DirectoryMiddleware {
         instance: &Instance,
         consider_descendants: bool,
     ) -> Option<i32> {
-        // Directory representation is not an option of we have more than one
+        // Directory representation is not an option if we have more than one
         // child with the same name
         let mut names = HashSet::new();
         for child_ref in instance.children() {
@@ -599,7 +599,7 @@ pub fn snapshot_dir_no_meta(
         }
     }
 
-    let snapshot = match snapshot_parent {
+    let mut snapshot = match snapshot_parent {
         None => InstanceSnapshot::new()
             .name(instance_name)
             .class_name("Folder")
@@ -637,6 +637,13 @@ pub fn snapshot_dir_no_meta(
                 )
         }
     };
+
+    if snapshot.metadata.fs_snapshot.is_none() {
+        snapshot.metadata.fs_snapshot = Some(FsSnapshot::new());
+    }
+
+    let fs_snapshot = snapshot.metadata.fs_snapshot.as_mut().unwrap();
+    fs_snapshot.dirs.insert(path.to_path_buf());
 
     Ok(Some(snapshot))
 }

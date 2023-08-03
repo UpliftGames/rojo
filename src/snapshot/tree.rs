@@ -390,14 +390,6 @@ impl RojoTree {
                 .map(|v| self.get_instance(v).unwrap().metadata.fs_snapshot.as_ref())
                 .flatten();
 
-            if item.instance_snapshot.name == "new" {
-                log::trace!(
-                    "Result for new:\n{:#?}\n{:#?}",
-                    item.instance_snapshot.metadata.fs_snapshot,
-                    old_fs_snapshot
-                );
-            }
-
             FsSnapshot::reconcile(
                 vfs,
                 old_fs_snapshot,

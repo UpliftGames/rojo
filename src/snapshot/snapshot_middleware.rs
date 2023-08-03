@@ -311,6 +311,7 @@ pub struct SyncbackPlanner<'old, 'new> {
     pub middleware_id: &'static str,
     pub path: Cow<'old, Path>,
     pub old: Option<(&'old RojoTree, Ref, Option<MiddlewareContextArc>)>,
+    pub delete_old: Option<Ref>,
     pub new: (&'new WeakDom, Ref),
     pub metadata: Option<&'old InstanceMetadata>,
 }
@@ -338,7 +339,7 @@ impl<'old, 'new> SyncbackPlanner<'old, 'new> {
             },
         };
 
-        get_middleware(self.middleware_id).syncback(&SyncbackContextX {
+        let mut result = get_middleware(self.middleware_id).syncback(&SyncbackContextX {
             vfs: vfs,
             diff: diff,
             path: &self.path,
@@ -351,7 +352,14 @@ impl<'old, 'new> SyncbackPlanner<'old, 'new> {
             new: self.new,
             metadata: metadata,
             overrides: overrides,
-        })
+        });
+        if let Some(delete_old) = self.delete_old {
+            result = result.map(|mut v| {
+                v.old_ref = Some(delete_old);
+                v
+            })
+        }
+        result
     }
 
     pub fn from_update(
@@ -395,11 +403,17 @@ impl<'old, 'new> SyncbackPlanner<'old, 'new> {
                 path: path,
                 old: Some((old_dom, old_ref, old_middleware_context)),
                 new: (new_dom, new_ref),
+                delete_old: None,
                 metadata: Some(old_inst.metadata()),
             }))
         } else {
             let parent_path = path.parent().unwrap_or_else(|| Path::new("."));
-            Self::from_new(parent_path, new_dom, new_ref)
+            Self::from_new(parent_path, new_dom, new_ref).map(|v| {
+                v.map(|mut v| {
+                    v.delete_old = Some(old_ref);
+                    v
+                })
+            })
         }
     }
 
@@ -425,6 +439,7 @@ impl<'old, 'new> SyncbackPlanner<'old, 'new> {
             middleware_id,
             path: Cow::Owned(path),
             old: None,
+            delete_old: None,
             new: (new_dom, new_ref),
             metadata: None,
         }))
