@@ -1,42 +1,61 @@
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     fmt::Display,
+    iter::{Chain, FilterMap, Map},
     ops::AddAssign,
 };
 
 use float_cmp::approx_eq;
+use itertools::{Itertools, Unique};
 use rbx_dom_weak::{
     types::{Ref, Variant, Vector2, Vector3},
     Instance, WeakDom,
 };
 
-use super::{default_filters_diff, filter, PropertiesFiltered, PropertyFilter, WeakDomExtra};
+use super::{
+    default_filters_diff, filter, get_default_property, PropertiesFiltered, PropertyFilter,
+    WeakDomExtra,
+};
 
 pub fn diff_properties<'a>(
     old_instance: &'a Instance,
     new_instance: &'a Instance,
     filters: &'a BTreeMap<String, PropertyFilter>,
-) -> Box<dyn Iterator<Item = String> + 'a> {
-    Box::new(
-        old_instance
-            .properties_filtered(filters, false)
-            .chain(new_instance.properties_filtered(filters, false))
-            .map(|(k, _)| k)
-            .collect::<BTreeSet<_>>() // Deduplicate property names
-            .into_iter()
-            .filter_map(|key| {
-                let new_prop = new_instance.properties.get(key);
-                let old_prop = old_instance.properties.get(key);
+) -> FilterMap<
+    Unique<
+        Map<
+            Chain<
+                Box<dyn Iterator<Item = (&'a str, &'a Variant)> + 'a>,
+                Box<dyn Iterator<Item = (&'a str, &'a Variant)> + 'a>,
+            >,
+            impl FnMut((&'a str, &'a Variant)) -> &'a str + 'a,
+        >,
+    >,
+    impl FnMut(&'a str) -> Option<String> + 'a,
+> {
+    old_instance
+        .properties_filtered(filters, false)
+        .chain(new_instance.properties_filtered(filters, false))
+        .map(|(k, _)| k)
+        .unique()
+        .filter_map(|key| {
+            let new_prop = new_instance
+                .properties
+                .get(key)
+                .or_else(|| get_default_property(&new_instance.class, key));
+            let old_prop = old_instance
+                .properties
+                .get(key)
+                .or_else(|| get_default_property(&old_instance.class, key));
 
-                if let (Some(new_prop), Some(old_prop)) = (new_prop, old_prop) {
-                    if are_variants_similar(old_prop, new_prop) {
-                        return None;
-                    }
+            if let (Some(new_prop), Some(old_prop)) = (new_prop, old_prop) {
+                if are_variants_similar(old_prop, new_prop) {
+                    return None;
                 }
+            }
 
-                Some(key.to_owned())
-            }),
-    )
+            Some(key.to_owned())
+        })
 }
 
 pub fn are_properties_different(
@@ -653,6 +672,14 @@ impl DeepDiff {
             by_name.entry(&child.name).or_default().1.insert(*child_ref);
         }
 
+        let mut scorer = SimilarityScorer {
+            old_tree,
+            new_tree,
+            filters,
+            prop_cache_old: HashMap::new(),
+            prop_cache_new: HashMap::new(),
+        };
+
         for (_name, (old_children, mut new_children)) in by_name.into_iter() {
             for old_child_ref in old_children {
                 if new_children.is_empty() {
@@ -672,8 +699,7 @@ impl DeepDiff {
                 let old_child = old_tree.get_by_ref(old_child_ref).unwrap();
                 let best_match_iter = new_children.iter().map(|new_child_ref| {
                     let new_child = new_tree.get_by_ref(*new_child_ref).unwrap();
-                    let (diff_score, same_score) =
-                        similarity_score(old_tree, old_child, new_tree, new_child, filters);
+                    let (diff_score, same_score) = scorer.similarity_score(old_child, new_child);
 
                     let percent_same_score = (same_score * 100) / (diff_score + same_score);
 
@@ -795,67 +821,81 @@ impl DeepDiff {
     }
 }
 
-pub fn similarity_score(
-    old_tree: &WeakDom,
-    old_instance: &Instance,
-    new_tree: &WeakDom,
-    new_instance: &Instance,
-    filters: &BTreeMap<String, PropertyFilter>,
-) -> (i32, i32) {
-    let mut diff_score = 0;
-    let mut same_score = 0;
+pub struct SimilarityScorer<'a> {
+    old_tree: &'a WeakDom,
+    new_tree: &'a WeakDom,
+    filters: &'a BTreeMap<String, PropertyFilter>,
+    prop_cache_old: HashMap<Ref, BTreeMap<&'a str, &'a Variant>>,
+    prop_cache_new: HashMap<Ref, BTreeMap<&'a str, &'a Variant>>,
+}
 
-    let old_properties = old_instance.properties_filtered_map(filters, false);
+impl<'a> SimilarityScorer<'a> {
+    #[inline(never)] // for profiling
+    pub fn similarity_score(
+        &mut self,
+        old_instance: &'a Instance,
+        new_instance: &'a Instance,
+    ) -> (i32, i32) {
+        let mut diff_score = 0;
+        let mut same_score = 0;
 
-    let new_properties = new_instance.properties_filtered_map(filters, false);
+        let old_properties = self
+            .prop_cache_old
+            .entry(old_instance.referent())
+            .or_insert_with(|| old_instance.properties_filtered_map(self.filters, false));
+        let new_properties = self
+            .prop_cache_new
+            .entry(new_instance.referent())
+            .or_insert_with(|| new_instance.properties_filtered_map(self.filters, false));
 
-    for (k, v) in old_properties.iter() {
-        if let Some(new_property) = new_properties.get(k) {
-            if are_variants_similar(old_properties[k], new_property) {
-                same_score += 1;
-                continue;
+        for (k, old_property) in old_properties.iter() {
+            if let Some(new_property) = new_properties.get(k) {
+                if are_variants_similar(old_property, new_property) {
+                    same_score += 1;
+                    continue;
+                }
             }
-        }
-        diff_score += 1;
-    }
-    for (k, _v) in new_properties.iter() {
-        if !old_properties.contains_key(k) {
             diff_score += 1;
         }
-    }
-
-    if old_instance.class == new_instance.class {
-        same_score += 1;
-    } else {
-        diff_score += 1;
-    }
-
-    if old_instance.name == new_instance.name {
-        same_score += 1;
-    } else {
-        diff_score += 1;
-    }
-
-    let mut children_by_name: HashMap<&str, i32> = HashMap::new();
-    for child_ref in old_instance.children() {
-        let child = old_tree.get_by_ref(*child_ref).unwrap();
-        diff_score += 1;
-        children_by_name
-            .entry(&child.name)
-            .or_default()
-            .add_assign(1);
-    }
-    for child_ref in new_instance.children() {
-        let child = new_tree.get_by_ref(*child_ref).unwrap();
-        diff_score += 1;
-        children_by_name.entry(&child.name).and_modify(|v| {
-            if v > &mut 0 {
-                same_score += 1;
-                diff_score -= 2; // subtract diff added by both loops
-                *v -= 1;
+        for (k, _v) in new_properties.iter() {
+            if !old_properties.contains_key(k) {
+                diff_score += 1;
             }
-        });
-    }
+        }
 
-    (diff_score, same_score)
+        if old_instance.class == new_instance.class {
+            same_score += 1;
+        } else {
+            diff_score += 1;
+        }
+
+        if old_instance.name == new_instance.name {
+            same_score += 1;
+        } else {
+            diff_score += 1;
+        }
+
+        let mut children_by_name: HashMap<&str, i32> = HashMap::new();
+        for child_ref in old_instance.children() {
+            let child = self.old_tree.get_by_ref(*child_ref).unwrap();
+            diff_score += 1;
+            children_by_name
+                .entry(&child.name)
+                .or_default()
+                .add_assign(1);
+        }
+        for child_ref in new_instance.children() {
+            let child = self.new_tree.get_by_ref(*child_ref).unwrap();
+            diff_score += 1;
+            children_by_name.entry(&child.name).and_modify(|v| {
+                if v > &mut 0 {
+                    same_score += 1;
+                    diff_score -= 2; // subtract diff added by both loops
+                    *v -= 1;
+                }
+            });
+        }
+
+        (diff_score, same_score)
+    }
 }

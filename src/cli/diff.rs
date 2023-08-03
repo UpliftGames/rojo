@@ -72,6 +72,9 @@ impl DiffCommand {
 
         log::trace!("Opened both trees; about to create diff");
 
+        println!("Press enter when profiler is attached");
+        std::io::stdin().read_line(&mut String::new()).ok();
+
         let empty_filters = BTreeMap::new();
         let diff = DeepDiff::new(
             &old_tree,
@@ -109,9 +112,6 @@ fn test_diff() -> Result<(), anyhow::Error> {
         // Indent following lines equal to the log level label, like `[ERROR] `
         .format_indent(Some(8))
         .init();
-
-    println!("Press enter when profiler is attached");
-    std::io::stdin().read_line(&mut String::new()).ok();
 
     let old_path = PathBuf::from("C:/Projects/Uplift/adopt-me/default.project.json");
     let new_path = PathBuf::from("C:/Projects/Uplift/adopt-me/game.rbxl");

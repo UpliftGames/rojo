@@ -125,12 +125,20 @@ impl PropertyFilterTrait for Option<&PropertyFilter> {
     }
 }
 
+pub fn get_default_property(class: &str, property: &str) -> Option<&'static Variant> {
+    rbx_reflection_database::get()
+        .classes
+        .get(class)
+        .map(|class_def| class_def.default_properties.get(property))
+        .flatten()
+}
+
 pub fn filter<'a>(
     class: &'a str,
     filters: &'a BTreeMap<String, PropertyFilter>,
     filter_defaults: bool,
-) -> Box<dyn FnMut(&(&str, &Variant)) -> bool + 'a> {
-    Box::new(move |(k, v)| {
+) -> impl FnMut(&(&str, &Variant)) -> bool + 'a {
+    move |(k, v)| {
         if filter_defaults {
             let default = rbx_reflection_database::get()
                 .classes
@@ -155,7 +163,7 @@ pub fn filter<'a>(
         }
 
         true
-    })
+    }
 }
 
 pub trait PropertiesFiltered {
@@ -179,7 +187,9 @@ pub trait PropertiesFiltered {
         filters: &'a BTreeMap<String, PropertyFilter>,
         filter_defaults: bool,
     ) -> BTreeMap<&str, &Variant> {
-        self.properties_filtered(filters, filter_defaults).collect()
+        self.properties_iter()
+            .filter(filter(self.class_inner(), filters, filter_defaults))
+            .collect()
     }
 }
 
@@ -190,6 +200,17 @@ impl PropertiesFiltered for Instance {
     fn properties_iter(&self) -> Box<dyn Iterator<Item = (&str, &Variant)> + '_> {
         Box::new(self.properties.iter().map(|(k, v)| (k.as_str(), v)))
     }
+    fn properties_filtered_map<'a>(
+        &'a self,
+        filters: &'a BTreeMap<String, PropertyFilter>,
+        filter_defaults: bool,
+    ) -> BTreeMap<&str, &Variant> {
+        self.properties
+            .iter()
+            .map(|(k, v)| (k.as_str(), v))
+            .filter(filter(self.class.as_str(), filters, filter_defaults))
+            .collect()
+    }
 }
 
 impl PropertiesFiltered for InstanceWithMeta<'_> {
@@ -198,6 +219,17 @@ impl PropertiesFiltered for InstanceWithMeta<'_> {
     }
     fn properties_iter(&self) -> Box<dyn Iterator<Item = (&str, &Variant)> + '_> {
         Box::new(self.properties().iter().map(|(k, v)| (k.as_str(), v)))
+    }
+    fn properties_filtered_map<'a>(
+        &'a self,
+        filters: &'a BTreeMap<String, PropertyFilter>,
+        filter_defaults: bool,
+    ) -> BTreeMap<&str, &Variant> {
+        self.properties()
+            .iter()
+            .map(|(k, v)| (k.as_str(), v))
+            .filter(filter(self.class_name(), filters, filter_defaults))
+            .collect()
     }
 }
 
