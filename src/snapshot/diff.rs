@@ -14,7 +14,7 @@ use rbx_dom_weak::{
 
 use super::{
     default_filters_diff, filter, get_default_property, PropertiesFiltered, PropertyFilter,
-    WeakDomExtra,
+    ToVariantBinaryString, WeakDomExtra,
 };
 
 pub fn diff_properties<'a>(
@@ -109,6 +109,34 @@ pub fn are_variants_similar(old_variant: &Variant, new_variant: &Variant) -> boo
         }
         (Variant::Float64(old_float), Variant::Float64(new_float)) => {
             approx_eq!(f64, *old_float, *new_float)
+        }
+        (Variant::Attributes(old_attrs), Variant::Attributes(new_attrs)) => {
+            for (key, old_value) in old_attrs.iter() {
+                if !new_attrs.get(key.as_str()).is_some() {
+                    return false;
+                } else {
+                    let new_value = new_attrs.get(key.as_str()).unwrap();
+
+                    if let (Some(old_bytes), Some(new_bytes)) = (
+                        old_value.to_variant_binary_string(),
+                        new_value.to_variant_binary_string(),
+                    ) {
+                        if old_bytes != new_bytes {
+                            return false;
+                        }
+                    } else if old_value != new_value {
+                        return false;
+                    }
+                }
+            }
+
+            for (key, _) in new_attrs.iter() {
+                if !old_attrs.get(key.as_str()).is_some() {
+                    return false;
+                }
+            }
+
+            true
         }
         _ => old_variant == new_variant,
     }
@@ -830,7 +858,6 @@ pub struct SimilarityScorer<'a> {
 }
 
 impl<'a> SimilarityScorer<'a> {
-    #[inline(never)] // for profiling
     pub fn similarity_score(
         &mut self,
         old_instance: &'a Instance,

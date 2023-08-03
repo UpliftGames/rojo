@@ -72,9 +72,6 @@ impl DiffCommand {
 
         log::trace!("Opened both trees; about to create diff");
 
-        println!("Press enter when profiler is attached");
-        std::io::stdin().read_line(&mut String::new()).ok();
-
         let empty_filters = BTreeMap::new();
         let diff = DeepDiff::new(
             &old_tree,
