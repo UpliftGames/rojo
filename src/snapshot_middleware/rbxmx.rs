@@ -7,7 +7,7 @@ use rbx_xml::EncodeOptions;
 
 use crate::snapshot::{
     FsSnapshot, InstanceContext, InstanceMetadata, InstanceSnapshot, OptOldTuple,
-    SnapshotMiddleware, SyncbackContextX, SyncbackNode, WeakDomExtra, PRIORITY_MODEL_XML,
+    SnapshotMiddleware, SyncbackArgs, SyncbackNode, WeakDomExtra, PRIORITY_MODEL_XML,
 };
 
 use super::util::PathExt;
@@ -90,7 +90,7 @@ impl SnapshotMiddleware for RbxmxMiddleware {
         Ok(parent_path.join(format!("{}.rbxmx", name)))
     }
 
-    fn syncback(&self, sync: &SyncbackContextX<'_, '_>) -> anyhow::Result<SyncbackNode> {
+    fn syncback(&self, sync: &SyncbackArgs<'_, '_>) -> anyhow::Result<SyncbackNode> {
         let path = sync.path;
         let old = &sync.old;
         let new = sync.new;

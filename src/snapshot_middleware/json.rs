@@ -8,7 +8,7 @@ use crate::{
     lua_ast::{Expression, Statement},
     snapshot::{
         FsSnapshot, InstanceContext, InstanceMetadata, InstanceSnapshot, SnapshotMiddleware,
-        SyncbackContextX, SyncbackNode,
+        SyncbackArgs, SyncbackNode,
     },
 };
 
@@ -94,7 +94,7 @@ impl SnapshotMiddleware for JsonMiddleware {
         todo!()
     }
 
-    fn syncback(&self, _sync: &SyncbackContextX<'_, '_>) -> anyhow::Result<SyncbackNode> {
+    fn syncback(&self, _sync: &SyncbackArgs<'_, '_>) -> anyhow::Result<SyncbackNode> {
         todo!()
     }
 }

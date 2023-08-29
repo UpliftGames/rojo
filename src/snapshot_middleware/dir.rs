@@ -14,7 +14,7 @@ use crate::{
         get_best_syncback_middleware, get_best_syncback_middleware_must_not_serialize_children,
         FsSnapshot, InstanceContext, InstanceMetadata, InstanceSnapshot, InstigatingSource,
         MiddlewareContextAny, NewTuple, OldTuple, OptOldTuple, RojoTree, SnapshotMiddleware,
-        SnapshotOverrideTrait, SyncbackContextX, SyncbackNode, SyncbackPlanner,
+        SnapshotOverrideTrait, SyncbackArgs, SyncbackNode, SyncbackPlanner,
         PRIORITY_DIRECTORY_CHECK_FALLBACK, PRIORITY_MANY_READABLE, PRIORITY_MODEL_DIRECTORY,
     },
     snapshot_middleware::{get_middleware, get_middleware_inits},
@@ -110,7 +110,7 @@ impl SnapshotMiddleware for DirectoryMiddleware {
         Ok(parent_path.join(name))
     }
 
-    fn syncback(&self, sync: &SyncbackContextX<'_, '_>) -> anyhow::Result<SyncbackNode> {
+    fn syncback(&self, sync: &SyncbackArgs<'_, '_>) -> anyhow::Result<SyncbackNode> {
         if sync.old.is_some() {
             syncback_update(sync)
         } else {
@@ -119,7 +119,7 @@ impl SnapshotMiddleware for DirectoryMiddleware {
     }
 }
 
-fn syncback_update(sync: &SyncbackContextX<'_, '_>) -> anyhow::Result<SyncbackNode> {
+fn syncback_update(sync: &SyncbackArgs<'_, '_>) -> anyhow::Result<SyncbackNode> {
     let vfs = sync.vfs;
     let _diff = sync.diff;
     let path = sync.path;
@@ -214,7 +214,7 @@ fn syncback_update(sync: &SyncbackContextX<'_, '_>) -> anyhow::Result<SyncbackNo
         if let Some(init_middleware) = init_middleware {
             let init_path = init_path.unwrap();
             let init_node = get_middleware(init_middleware)
-                .syncback(&SyncbackContextX {
+                .syncback(&SyncbackArgs {
                     path: &init_path,
                     old: init_old,
                     metadata: &InstanceMetadata::new().context(&metadata.context),
@@ -334,7 +334,7 @@ fn syncback_update(sync: &SyncbackContextX<'_, '_>) -> anyhow::Result<SyncbackNo
     }))
 }
 
-fn syncback_new(sync: &SyncbackContextX<'_, '_>) -> anyhow::Result<SyncbackNode> {
+fn syncback_new(sync: &SyncbackArgs<'_, '_>) -> anyhow::Result<SyncbackNode> {
     let vfs = sync.vfs;
     let path = sync.path;
     let new = sync.new;
@@ -364,7 +364,7 @@ fn syncback_new(sync: &SyncbackContextX<'_, '_>) -> anyhow::Result<SyncbackNode>
             let init_file_path =
                 get_middleware(init_middleware).syncback_new_path(path, "init", new_inst)?;
 
-            let init_sync = SyncbackContextX {
+            let init_sync = SyncbackArgs {
                 path: &init_file_path,
                 metadata: &InstanceMetadata::new().context(&metadata.context),
                 overrides: None,
@@ -477,7 +477,7 @@ fn syncback_new(sync: &SyncbackContextX<'_, '_>) -> anyhow::Result<SyncbackNode>
                     )?;
 
                     let child_snapshot = get_middlewares()[child_middleware]
-                        .syncback(&SyncbackContextX {
+                        .syncback(&SyncbackArgs {
                             path: &child_path,
                             old: None,
                             new: (new_dom, *child_ref),

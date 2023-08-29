@@ -13,7 +13,7 @@ use rbx_dom_weak::{
 use crate::{multimap::MultiMap, snapshot::InstigatingSource, snapshot_middleware::get_middleware};
 
 use super::{
-    diff::DeepDiff, FsSnapshot, InstanceMetadata, InstanceSnapshot, SyncbackContextX, SyncbackNode,
+    diff::DeepDiff, FsSnapshot, InstanceMetadata, InstanceSnapshot, SyncbackArgs, SyncbackNode,
 };
 
 pub enum SyncbackTarget {
@@ -354,7 +354,7 @@ impl RojoTree {
             let new_id = diff.get_matching_new_ref(old_id).unwrap();
 
             let mut node = get_middleware(old_inst.metadata.middleware_id.unwrap()).syncback(
-                &SyncbackContextX {
+                &SyncbackArgs {
                     vfs: vfs,
                     diff: diff,
                     path: &old_path,
@@ -434,7 +434,7 @@ impl RojoTree {
             let middleware_context = metadata.middleware_context.clone();
 
             if let Some(get_children) = item.get_children {
-                let (children, removed) = get_children(&SyncbackContextX {
+                let (children, removed) = get_children(&SyncbackArgs {
                     vfs,
                     diff,
                     path: &path,

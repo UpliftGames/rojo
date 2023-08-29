@@ -18,7 +18,7 @@ use crate::{
     resolution::UnresolvedValue,
     snapshot::{
         FsSnapshot, InstanceContext, InstanceSnapshot, OptOldTuple, PropertiesFiltered,
-        PropertyFilter, SnapshotMiddleware, SyncbackContextX, SyncbackNode, ToVariantBinaryString,
+        PropertyFilter, SnapshotMiddleware, SyncbackArgs, SyncbackNode, ToVariantBinaryString,
         PRIORITY_MODEL_JSON,
     },
 };
@@ -115,7 +115,7 @@ impl SnapshotMiddleware for JsonModelMiddleware {
         Ok(parent_path.join(format!("{}.model.json", name)))
     }
 
-    fn syncback(&self, sync: &SyncbackContextX<'_, '_>) -> anyhow::Result<SyncbackNode> {
+    fn syncback(&self, sync: &SyncbackArgs<'_, '_>) -> anyhow::Result<SyncbackNode> {
         let path = sync.path;
         let old = &sync.old;
         let new = sync.new;

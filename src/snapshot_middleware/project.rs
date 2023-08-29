@@ -17,7 +17,7 @@ use crate::{
     snapshot::{
         get_best_syncback_middleware, FsSnapshot, InstanceContext, InstanceMetadata,
         InstanceSnapshot, InstigatingSource, MiddlewareContextAny, PathIgnoreRule,
-        PropertiesFiltered, SnapshotMiddleware, SnapshotOverride, SyncbackContextX, SyncbackNode,
+        PropertiesFiltered, SnapshotMiddleware, SnapshotOverride, SyncbackArgs, SyncbackNode,
         SyncbackPlanner, SyncbackPlannerWrapped, TransformerRule,
     },
     snapshot_middleware::util::PathExt,
@@ -133,7 +133,7 @@ impl SnapshotMiddleware for ProjectMiddleware {
         bail!("Cannot create new project files from syncback")
     }
 
-    fn syncback(&self, sync: &SyncbackContextX<'_, '_>) -> anyhow::Result<SyncbackNode> {
+    fn syncback(&self, sync: &SyncbackArgs<'_, '_>) -> anyhow::Result<SyncbackNode> {
         let vfs = sync.vfs;
         let diff = sync.diff;
         let project_path = sync.path;
@@ -402,7 +402,7 @@ impl SnapshotMiddleware for ProjectMiddleware {
             let mut result_remove = HashSet::new();
 
             if let Some(inner_get_children) = inner_get_children {
-                let (children, remove) = inner_get_children(&SyncbackContextX {
+                let (children, remove) = inner_get_children(&SyncbackArgs {
                     path: &inner_path,
                     old: sync.old.as_ref().map(|(old_dom, old_ref, _)| {
                         (*old_dom, *old_ref, inner_root_middleware_context)

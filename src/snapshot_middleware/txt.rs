@@ -7,7 +7,7 @@ use rbx_dom_weak::{types::Variant, Instance, WeakDom};
 
 use crate::snapshot::{
     FsSnapshot, InstanceContext, InstanceMetadata, InstanceSnapshot, OptOldTuple,
-    SnapshotMiddleware, SyncbackContextX, SyncbackNode, PRIORITY_SINGLE_READABLE,
+    SnapshotMiddleware, SyncbackArgs, SyncbackNode, PRIORITY_SINGLE_READABLE,
 };
 
 use super::{
@@ -97,7 +97,7 @@ impl SnapshotMiddleware for TxtMiddleware {
         Ok(parent_path.join(format!("{}.txt", name)))
     }
 
-    fn syncback(&self, sync: &SyncbackContextX<'_, '_>) -> anyhow::Result<SyncbackNode> {
+    fn syncback(&self, sync: &SyncbackArgs<'_, '_>) -> anyhow::Result<SyncbackNode> {
         let vfs = sync.vfs;
         let path = sync.path;
         let old = &sync.old;

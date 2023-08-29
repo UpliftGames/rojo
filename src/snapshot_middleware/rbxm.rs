@@ -6,7 +6,7 @@ use rbx_dom_weak::{Instance, InstanceBuilder, WeakDom};
 
 use crate::snapshot::{
     FsSnapshot, InstanceContext, InstanceMetadata, InstanceSnapshot, OptOldTuple,
-    SnapshotMiddleware, SyncbackContextX, SyncbackNode, WeakDomExtra, PRIORITY_MODEL_BINARY,
+    SnapshotMiddleware, SyncbackArgs, SyncbackNode, WeakDomExtra, PRIORITY_MODEL_BINARY,
 };
 
 use super::util::PathExt;
@@ -88,7 +88,7 @@ impl SnapshotMiddleware for RbxmMiddleware {
         Ok(parent_path.join(format!("{}.rbxm", name)))
     }
 
-    fn syncback(&self, sync: &SyncbackContextX<'_, '_>) -> anyhow::Result<SyncbackNode> {
+    fn syncback(&self, sync: &SyncbackArgs<'_, '_>) -> anyhow::Result<SyncbackNode> {
         let path = sync.path;
         let old = &sync.old;
         let new = sync.new;

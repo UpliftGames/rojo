@@ -96,11 +96,11 @@ pub trait SnapshotMiddleware: Debug + DynEq + Sync + Send {
         new_inst: &Instance,
     ) -> anyhow::Result<PathBuf>;
 
-    fn syncback(&self, sync: &SyncbackContextX<'_, '_>) -> anyhow::Result<SyncbackNode>;
+    fn syncback(&self, sync: &SyncbackArgs<'_, '_>) -> anyhow::Result<SyncbackNode>;
 }
 dyn_eq::eq_trait_object!(SnapshotMiddleware);
 
-pub struct SyncbackContextX<'old, 'new> {
+pub struct SyncbackArgs<'old, 'new> {
     pub vfs: &'old Vfs,
     pub diff: &'new DeepDiff,
     pub path: &'new Path,
@@ -110,7 +110,7 @@ pub struct SyncbackContextX<'old, 'new> {
     pub overrides: Option<SnapshotOverride>,
 }
 
-impl SyncbackContextX<'_, '_> {
+impl SyncbackArgs<'_, '_> {
     pub fn ref_for_save(&self) -> Ref {
         self.old.opt_id().unwrap_or(self.new.id())
     }
@@ -127,7 +127,7 @@ impl SyncbackContextX<'_, '_> {
     }
 }
 
-impl Clone for SyncbackContextX<'_, '_> {
+impl Clone for SyncbackArgs<'_, '_> {
     fn clone(&self) -> Self {
         Self {
             vfs: self.vfs,
@@ -242,7 +242,7 @@ impl NewTuple for (&WeakDom, Ref) {
 }
 
 pub type GetChildren =
-    Box<dyn FnOnce(&SyncbackContextX<'_, '_>) -> anyhow::Result<(Vec<SyncbackNode>, HashSet<Ref>)>>;
+    Box<dyn FnOnce(&SyncbackArgs<'_, '_>) -> anyhow::Result<(Vec<SyncbackNode>, HashSet<Ref>)>>;
 
 pub struct SyncbackNode {
     pub old_ref: Option<Ref>,
@@ -269,7 +269,7 @@ impl SyncbackNode {
     }
     pub fn with_children(
         self,
-        get_children: impl FnOnce(&SyncbackContextX<'_, '_>) -> anyhow::Result<(Vec<SyncbackNode>, HashSet<Ref>)>
+        get_children: impl FnOnce(&SyncbackArgs<'_, '_>) -> anyhow::Result<(Vec<SyncbackNode>, HashSet<Ref>)>
             + 'static,
     ) -> Self {
         Self {
@@ -339,7 +339,7 @@ impl<'old, 'new> SyncbackPlanner<'old, 'new> {
             },
         };
 
-        let mut result = get_middleware(self.middleware_id).syncback(&SyncbackContextX {
+        let mut result = get_middleware(self.middleware_id).syncback(&SyncbackArgs {
             vfs: vfs,
             diff: diff,
             path: &self.path,
