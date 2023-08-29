@@ -284,13 +284,13 @@ impl RojoTree {
         }
     }
 
-    pub fn syncback(
+    pub fn syncback_start(
         &mut self,
         vfs: &Vfs,
         old_id: Ref,
         new_dom: &mut WeakDom,
         new_id: Ref,
-    ) -> anyhow::Result<()> {
+    ) -> DeepDiff {
         let empty_map = BTreeMap::new();
 
         let diff = DeepDiff::new(&self.inner, old_id, new_dom, new_id, |old_ref| {
@@ -300,7 +300,7 @@ impl RojoTree {
             }
         });
 
-        self.syncback_process(vfs, &diff, old_id, new_dom)
+        diff
     }
 
     pub fn syncback_process(

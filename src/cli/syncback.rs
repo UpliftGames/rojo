@@ -1,10 +1,11 @@
 use std::{
     borrow::BorrowMut,
+    io::Write,
     mem::forget,
     path::{Path, PathBuf},
 };
 
-use crate::serve_session::ServeSession;
+use crate::{serve_session::ServeSession, snapshot::RojoTree};
 use anyhow::{bail, Context};
 use clap::Parser;
 use fs_err::File;
@@ -27,6 +28,10 @@ pub struct SyncbackCommand {
     /// Should end in .rbxm, .rbxl, .rbxmx, or .rbxlx.
     #[clap(long, short)]
     pub input: PathBuf,
+
+    /// Skip (say "yes" to) the diff viewer confirmation screen.
+    #[clap(short = 'y', long, required = false)]
+    pub non_interactive: bool,
 }
 
 impl SyncbackCommand {
@@ -40,7 +45,7 @@ impl SyncbackCommand {
 
         let session = ServeSession::new(vfs, &project_path)?;
 
-        let result = syncback(&session, &self.input, output_kind);
+        let result = syncback(&session, &self.input, output_kind, self.non_interactive);
         log::trace!("syncback out");
         if let Err(e) = result {
             log::trace!("{:#?}", e);
@@ -88,7 +93,12 @@ fn xml_encode_config() -> rbx_xml::DecodeOptions {
 }
 
 #[profiling::function]
-fn syncback(session: &ServeSession, output: &Path, output_kind: InputKind) -> anyhow::Result<()> {
+fn syncback(
+    session: &ServeSession,
+    output: &Path,
+    output_kind: InputKind,
+    skip_prompt: bool,
+) -> anyhow::Result<()> {
     println!("Syncback project '{}'", session.project_name());
 
     let mut tree = session.tree();
@@ -112,7 +122,26 @@ fn syncback(session: &ServeSession, output: &Path, output_kind: InputKind) -> an
 
     log::trace!("Diffing and applying changes");
 
-    tree.syncback(session.vfs(), root_id, &mut new_dom, new_root)?;
+    // diff.show_diff(&old_tree, &new_tree, &path_parts.unwrap_or(vec![]));
+
+    let diff = tree.syncback_start(session.vfs(), root_id, &mut new_dom, new_root);
+
+    if !skip_prompt {
+        println!("The following is a diff of the changes to be synced back to the filesystem:");
+        let old_tree: &RojoTree = &*session.tree();
+        diff.show_diff(old_tree.inner(), &new_dom, &vec![]);
+        println!("\nDo you want to continue and apply these changes? [Y/n]");
+        std::io::stdout().flush()?;
+
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input)?;
+        if input.trim().to_lowercase() != "y" && input.trim() != "" {
+            println!("Cancelled.");
+            return Ok(());
+        }
+    }
+
+    tree.syncback_process(session.vfs(), &diff, root_id, &mut new_dom)?;
 
     tree.warn_for_broken_refs();
 
@@ -146,7 +175,7 @@ fn test_syncback() -> Result<(), anyhow::Error> {
 
     let session = ServeSession::new(vfs, &project_path)?;
 
-    let result = syncback(&session, &input, input_kind);
+    let result = syncback(&session, &input, input_kind, false);
     log::trace!("syncback out");
     if let Err(e) = result {
         log::trace!("{:#?}", e);
