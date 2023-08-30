@@ -58,6 +58,23 @@ pub fn diff_properties<'a>(
         })
 }
 
+pub fn diff_individual_property<'a>(
+    old_instance: &'a Instance,
+    new_instance: &'a Instance,
+    key: &'a str,
+    filters: &'a BTreeMap<String, PropertyFilter>,
+) -> bool {
+    let old_value = old_instance
+        .properties
+        .get(key)
+        .filter(|v| filter(&old_instance.class, filters, true)(&(key, *v)));
+    let new_value = new_instance
+        .properties
+        .get(key)
+        .filter(|v| filter(&new_instance.class, filters, true)(&(key, *v)));
+    old_value != new_value
+}
+
 pub fn are_properties_different(
     old_instance: &Instance,
     new_instance: &Instance,
@@ -256,7 +273,7 @@ pub struct DeepDiff {
     pub new_to_old: HashMap<Ref, Ref>,
 
     /// Set of refs referenced by any property
-    pub property_refs: HashSet<Ref>,
+    pub property_refs: HashMap<Ref, bool>,
 }
 
 pub struct DeepDiffDisplay<'a> {
@@ -350,6 +367,28 @@ impl DeepDiff {
     pub fn has_changed_properties(&self, old_ref: Ref) -> bool {
         self.changed.contains_key(&old_ref)
     }
+    pub fn is_property_changed(
+        &self,
+        old_tree: &WeakDom,
+        new_tree: &WeakDom,
+        old_ref: Ref,
+        property_name: &str,
+        filters: &BTreeMap<String, PropertyFilter>,
+    ) -> bool {
+        match self.changed.get(&old_ref) {
+            Some(new_ref) => {
+                let old_inst = old_tree.get_by_ref(old_ref);
+                let new_inst = new_tree.get_by_ref(*new_ref);
+                if let (Some(old_inst), Some(new_inst)) = (old_inst, new_inst) {
+                    diff_individual_property(old_inst, new_inst, property_name, filters)
+                } else {
+                    false
+                }
+            }
+            None => false,
+        }
+    }
+
     pub fn get_matching_new_ref(&self, old_ref: Ref) -> Option<Ref> {
         self.changed
             .get(&old_ref)
@@ -367,7 +406,7 @@ impl DeepDiff {
     }
 
     pub fn is_ref_used_in_property(&self, referent: Ref) -> bool {
-        self.property_refs.contains(&referent)
+        self.property_refs.contains_key(&referent)
     }
 
     pub fn get_children(
@@ -497,6 +536,13 @@ impl DeepDiff {
                                 let old_inst = old_tree.get_by_ref(old_ref).unwrap();
                                 let new_inst = new_tree.get_by_ref(new_ref).unwrap();
 
+                                if let Some(true) = self.property_refs.get(&old_ref) {
+                                    println!(
+                                        "{}~ referred to by a changed property",
+                                        "  ".repeat(tabs + 2)
+                                    )
+                                }
+
                                 let changed_properties =
                                     diff_properties(old_inst, new_inst, default_filters_diff());
                                 for property_name in changed_properties {
@@ -601,8 +647,8 @@ impl DeepDiff {
             }
         }
 
-        if self.property_refs.remove(&new_dom_ref) {
-            self.property_refs.insert(replacement);
+        if let Some(v) = self.property_refs.remove(&new_dom_ref) {
+            self.property_refs.insert(replacement, v);
         }
     }
 
@@ -660,18 +706,60 @@ impl DeepDiff {
     }
 
     fn find_ref_properties(&mut self, old_tree: &WeakDom, new_tree: &WeakDom) -> () {
-        for referent in old_tree.descendants() {
-            for (_k, v) in old_tree.get_by_ref(referent).unwrap().properties.iter() {
+        for old_ref in old_tree.descendants() {
+            for (property_name, v) in old_tree.get_by_ref(old_ref).unwrap().properties.iter() {
                 if let Variant::Ref(prop_ref) = v {
-                    self.property_refs.insert(*prop_ref);
+                    self.property_refs.insert(
+                        *prop_ref,
+                        self.is_property_changed(
+                            old_tree,
+                            new_tree,
+                            old_ref,
+                            property_name,
+                            &BTreeMap::new(),
+                        ),
+                    );
                 }
             }
         }
 
-        for referent in new_tree.descendants() {
-            for (_k, v) in new_tree.get_by_ref(referent).unwrap().properties.iter() {
+        for new_ref in new_tree.descendants() {
+            for (property_name, v) in new_tree.get_by_ref(new_ref).unwrap().properties.iter() {
                 if let Variant::Ref(prop_ref) = v {
-                    self.property_refs.insert(*prop_ref);
+                    let is_changed = if let Some(old_ref) = self.get_matching_old_ref(new_ref) {
+                        self.is_property_changed(
+                            old_tree,
+                            new_tree,
+                            old_ref,
+                            property_name,
+                            &BTreeMap::new(),
+                        )
+                    } else {
+                        true
+                    };
+
+                    self.property_refs.insert(*prop_ref, is_changed);
+                }
+            }
+        }
+
+        // Mark all instances that are referred to by a changed property as
+        // changed instances as well, to ensure that they're re-serialized with
+        // a persistent ref id if they weren't already.
+        for old_ref in self
+            .property_refs
+            .iter()
+            .filter(|(_prop_ref, &is_changed)| is_changed)
+            .map(|(&prop_ref, _)| prop_ref)
+            .collect_vec()
+        {
+            if let Some(old_inst) = old_tree.get_by_ref(old_ref) {
+                if self.unchanged.contains_key(&old_ref) {
+                    if let Some(new_ref) = self.get_matching_new_ref(old_ref) {
+                        self.changed.insert(old_ref, new_ref);
+                        self.unchanged.remove(&old_ref);
+                        self.mark_ancestors(old_tree, old_inst.parent());
+                    }
                 }
             }
         }

@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, BTreeSet, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     sync::OnceLock,
 };
 
@@ -314,7 +314,7 @@ pub trait WeakDomExtra {
 
     fn deduplicate_refs(&mut self, other: &Self) -> BTreeMap<Ref, Ref>;
 
-    fn mark_external_refs(&mut self, ancestor: Ref, global_prop_refs: &HashSet<Ref>) -> ();
+    fn mark_external_refs(&mut self, ancestor: Ref, global_prop_refs: &HashMap<Ref, bool>) -> ();
     fn apply_marked_external_refs(&mut self, ancestor: Ref) -> ();
 }
 
@@ -370,7 +370,7 @@ impl WeakDomExtra for WeakDom {
         ref_map
     }
 
-    fn mark_external_refs(&mut self, ancestor: Ref, global_prop_refs: &HashSet<Ref>) -> () {
+    fn mark_external_refs(&mut self, ancestor: Ref, global_prop_refs: &HashMap<Ref, bool>) -> () {
         let refs: BTreeSet<Ref> = self.descendants_of(ancestor).collect();
         let mut my_prop_refs: BTreeSet<Ref> = BTreeSet::new();
         for referent in refs.iter() {
@@ -401,7 +401,7 @@ impl WeakDomExtra for WeakDom {
         }
 
         for referent in refs.iter() {
-            if global_prop_refs.contains(referent) && !my_prop_refs.contains(referent) {
+            if global_prop_refs.contains_key(referent) && !my_prop_refs.contains(referent) {
                 log::trace!(
                     "{} is used externally as a property, storing {} ref",
                     self.get_by_ref(*referent).unwrap().name,

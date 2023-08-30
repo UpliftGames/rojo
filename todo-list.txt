@@ -1,14 +1,13 @@
-wip:
+test:
 - make sure instances that are newly referred to by a property are marked as changed (to ensure ref gets saved)
 
+wip:
+
 next up:
-- "preferred ref" support to keep refs across files
-- keep-ref: replace ref in snapshot incl. ref properties if already used in tree
 - add "transformer" support (rename to middleware)
   - req. pulling globs from state instead of static
 - fixing unique ids does not work for binary; need to generate a value instead of delete entirely (or is rbx_binary just outdated?)
 - figure out if internal diff is resulting in too many changes -> too many updates
-- "--inspect-diff" argument that prints diff for specific path in tree, incl. properties
 - support SharedString in json
 
 rojo:
@@ -42,6 +41,9 @@ adopt me:
 
 
 done:
+- "--inspect-diff" argument that prints diff for specific path in tree, incl. properties
+- "preferred ref" support to keep refs across files
+- keep-ref: replace ref in snapshot incl. ref properties if already used in tree
 - support user-defined property ignores for diff
 - ignore globs to prevent syncback under
 - project nodes should store sub syncback context
