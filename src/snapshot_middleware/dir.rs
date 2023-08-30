@@ -90,7 +90,7 @@ impl SnapshotMiddleware for DirectoryMiddleware {
             }
         }
 
-        if instance.class == "Folder" {
+        if instance.class == "Folder" || instance.class == "Configuration" {
             if consider_descendants {
                 Some(PRIORITY_MANY_READABLE)
             } else {

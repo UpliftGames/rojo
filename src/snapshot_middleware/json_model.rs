@@ -19,7 +19,7 @@ use crate::{
     snapshot::{
         FsSnapshot, InstanceContext, InstanceSnapshot, OptOldTuple, PropertiesFiltered,
         PropertyFilter, SnapshotMiddleware, SyncbackArgs, SyncbackNode, ToVariantBinaryString,
-        PRIORITY_MODEL_JSON,
+        PRIORITY_ALWAYS, PRIORITY_MANY_READABLE_PREFERRED, PRIORITY_MODEL_JSON,
     },
 };
 
@@ -99,10 +99,23 @@ impl SnapshotMiddleware for JsonModelMiddleware {
 
     fn syncback_priority(
         &self,
-        _dom: &rbx_dom_weak::WeakDom,
-        _instance: &rbx_dom_weak::Instance,
+        dom: &rbx_dom_weak::WeakDom,
+        instance: &rbx_dom_weak::Instance,
         _consider_descendants: bool,
     ) -> Option<i32> {
+        if instance.class == "Configuration" {
+            let any_values = instance.children().iter().any(|&child_ref| {
+                if let Some(child) = dom.get_by_ref(child_ref) {
+                    child.class != "Folder" && child.class != "Configuration"
+                } else {
+                    false
+                }
+            });
+
+            if any_values {
+                return Some(PRIORITY_MANY_READABLE_PREFERRED);
+            }
+        }
         Some(PRIORITY_MODEL_JSON)
     }
 
