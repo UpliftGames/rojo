@@ -7,8 +7,8 @@ use memofs::{IoResultExt, Vfs};
 use crate::{
     lua_ast::{Expression, Statement},
     snapshot::{
-        FsSnapshot, InstanceContext, InstanceMetadata, InstanceSnapshot, SnapshotMiddleware,
-        SyncbackArgs, SyncbackNode,
+        FsSnapshot, InstanceContext, InstanceMetadata, InstanceSnapshot, OptOldTuple,
+        SnapshotMiddleware, SyncbackArgs, SyncbackNode, PRIORITY_IF_ALREADY_USING,
     },
 };
 
@@ -77,7 +77,7 @@ impl SnapshotMiddleware for TomlMiddleware {
         _instance: &rbx_dom_weak::Instance,
         _consider_descendants: bool,
     ) -> Option<i32> {
-        None
+        Some(PRIORITY_IF_ALREADY_USING)
         // TODO: implement lua ast _reading_ so we can convert lua to toml
     }
 
@@ -87,11 +87,39 @@ impl SnapshotMiddleware for TomlMiddleware {
         _name: &str,
         _new_inst: &rbx_dom_weak::Instance,
     ) -> anyhow::Result<std::path::PathBuf> {
-        todo!()
+        Err(anyhow::anyhow!(
+            "Syncback for new toml files not implemented"
+        ))
     }
 
-    fn syncback(&self, _sync: &SyncbackArgs<'_, '_>) -> anyhow::Result<SyncbackNode> {
-        todo!()
+    fn syncback(&self, sync: &SyncbackArgs<'_, '_>) -> anyhow::Result<SyncbackNode> {
+        log::error!(
+            "Syncback for toml files not implemented; skipping syncback for {}",
+            sync.path.display()
+        );
+
+        Ok(SyncbackNode::new(
+            (sync.old.opt_id(), sync.ref_for_save()),
+            sync.path,
+            InstanceSnapshot::from_tree_copy(sync.new.0, sync.new.1, false)
+                .metadata(
+                    sync.metadata
+                        .clone()
+                        .instigating_source(sync.path.to_path_buf())
+                        .relevant_paths(vec![
+                            sync.path.to_path_buf(),
+                            sync.path.with_extension("meta.json"),
+                        ])
+                        .middleware_id(self.middleware_id())
+                        .fs_snapshot(
+                            FsSnapshot::new()
+                                .with_file(sync.path)
+                                .with_file(sync.path.with_extension("meta.json")),
+                            // data-less files are kept un-modified if they exist
+                        ),
+                )
+                .preferred_ref(sync.ref_for_save()),
+        ))
     }
 }
 
