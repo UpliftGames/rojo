@@ -12,10 +12,11 @@ use rbx_dom_weak::{types::Ref, Instance, WeakDom};
 use crate::{
     snapshot::{
         get_best_syncback_middleware, get_best_syncback_middleware_must_not_serialize_children,
-        FsSnapshot, InstanceContext, InstanceMetadata, InstanceSnapshot, InstigatingSource,
-        MiddlewareContextAny, NewTuple, OldTuple, OptOldTuple, RojoTree, SnapshotMiddleware,
-        SnapshotOverrideTrait, SyncbackArgs, SyncbackNode, SyncbackPlanner,
-        PRIORITY_DIRECTORY_CHECK_FALLBACK, PRIORITY_MANY_READABLE, PRIORITY_MODEL_DIRECTORY,
+        is_filename_legal_everywhere, FsSnapshot, InstanceContext, InstanceMetadata,
+        InstanceSnapshot, InstigatingSource, MiddlewareContextAny, NewTuple, OldTuple, OptOldTuple,
+        RojoTree, SnapshotMiddleware, SnapshotOverrideTrait, SyncbackArgs, SyncbackNode,
+        SyncbackPlanner, PRIORITY_DIRECTORY_CHECK_FALLBACK, PRIORITY_MANY_READABLE,
+        PRIORITY_MODEL_DIRECTORY,
     },
     snapshot_middleware::{get_middleware, get_middleware_inits},
 };
@@ -85,7 +86,14 @@ impl SnapshotMiddleware for DirectoryMiddleware {
         // child with the same name
         let mut names = HashSet::new();
         for child_ref in instance.children() {
-            if !names.insert(dom.get_by_ref(*child_ref).unwrap().name.as_str()) {
+            let inst = dom.get_by_ref(*child_ref).unwrap();
+            let name = inst.name.as_str();
+            if !names.insert(name) {
+                log::info!("Cannot save {} as a directory because it contains 2+ children with the same name: {}", instance.name, name);
+                return None;
+            }
+            if !is_filename_legal_everywhere(name) {
+                log::info!("Cannot save {} as a directory because it contains a child with an invalid name: {}", instance.name, name);
                 return None;
             }
         }

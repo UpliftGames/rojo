@@ -11,6 +11,33 @@ use serde::{Deserialize, Serialize};
 
 use super::InstanceWithMeta;
 
+pub fn disallowed_filenames() -> &'static BTreeSet<&'static str> {
+    static VALUE: OnceLock<BTreeSet<&'static str>> = OnceLock::new();
+
+    VALUE.get_or_init(|| {
+        BTreeSet::from([
+            // Special Windows filenames
+            "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7",
+            "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+        ])
+    })
+}
+
+pub fn filename_allowed_special_chars() -> &'static BTreeSet<char> {
+    static VALUE: OnceLock<BTreeSet<char>> = OnceLock::new();
+
+    VALUE.get_or_init(|| "!@#$%^&()_+-=[]{};',.`~ ".chars().collect())
+}
+
+pub fn is_filename_legal_everywhere(filename: &str) -> bool {
+    filename
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || filename_allowed_special_chars().contains(&c))
+        && !disallowed_filenames().contains(filename)
+        && !filename.ends_with('.')
+        && !filename.ends_with(' ')
+}
+
 pub fn default_filters_diff() -> &'static BTreeMap<String, PropertyFilter> {
     static VALUE: OnceLock<BTreeMap<String, PropertyFilter>> = OnceLock::new();
 
