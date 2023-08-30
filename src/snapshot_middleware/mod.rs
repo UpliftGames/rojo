@@ -57,10 +57,9 @@ pub fn get_middlewares_ordered() -> &'static Vec<Arc<dyn SnapshotMiddleware>> {
 }
 
 pub fn get_middlewares() -> &'static HashMap<&'static str, Arc<dyn SnapshotMiddleware>> {
-    static MIDDLEWARES: OnceLock<HashMap<&'static str, Arc<dyn SnapshotMiddleware>>> =
-        OnceLock::new();
+    static VALUE: OnceLock<HashMap<&'static str, Arc<dyn SnapshotMiddleware>>> = OnceLock::new();
 
-    MIDDLEWARES.get_or_init(|| {
+    VALUE.get_or_init(|| {
         get_middlewares_ordered()
             .iter()
             .map(|m| (m.middleware_id(), m.clone()))
@@ -72,10 +71,25 @@ pub fn get_middleware(middleware_id: &str) -> Arc<dyn SnapshotMiddleware> {
     get_middlewares()[middleware_id].clone()
 }
 
-pub fn get_middleware_inits() -> &'static HashMap<&'static str, &'static str> {
-    static MIDDLEWARES_INIT: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
+pub fn get_middlewares_prefixed() -> &'static HashMap<String, Arc<dyn SnapshotMiddleware>> {
+    static VALUE: OnceLock<HashMap<String, Arc<dyn SnapshotMiddleware>>> = OnceLock::new();
 
-    MIDDLEWARES_INIT.get_or_init(|| {
+    VALUE.get_or_init(|| {
+        get_middlewares()
+            .iter()
+            .map(|(id, m)| (format!("rojo/{}", id), m.clone()))
+            .collect()
+    })
+}
+
+pub fn get_middleware_prefixed(middleware_id: &str) -> Arc<dyn SnapshotMiddleware> {
+    get_middlewares_prefixed()[middleware_id].clone()
+}
+
+pub fn get_middleware_inits() -> &'static HashMap<&'static str, &'static str> {
+    static VALUE: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
+
+    VALUE.get_or_init(|| {
         get_middlewares()
             .iter()
             .flat_map(|(&provider_id, middleware)| {
@@ -89,9 +103,9 @@ pub fn get_middleware_inits() -> &'static HashMap<&'static str, &'static str> {
 }
 
 pub fn get_middleware_globs() -> &'static Vec<(&'static str, GlobSet, GlobSet)> {
-    static MIDDLEWARES_GLOBS: OnceLock<Vec<(&'static str, GlobSet, GlobSet)>> = OnceLock::new();
+    static VALUE: OnceLock<Vec<(&'static str, GlobSet, GlobSet)>> = OnceLock::new();
 
-    MIDDLEWARES_GLOBS.get_or_init(|| {
+    VALUE.get_or_init(|| {
         get_middlewares_ordered()
             .iter()
             .map(|middleware| {
@@ -128,6 +142,19 @@ pub fn snapshot_from_vfs(
         None => return Ok(None),
     };
 
+    for rule in context.snapshot_rules.as_ref() {
+        if rule.applies_to(path) {
+            let provider_id = rule.inner.middleware_name.as_str();
+            if get_middleware_prefixed(provider_id).match_only_directories() {
+                if vfs.metadata(path)?.is_file() {
+                    continue;
+                }
+            }
+
+            return get_middleware_prefixed(provider_id).snapshot(context, vfs, path);
+        }
+    }
+
     for (provider_id, include_glob, exclude_glob) in get_middleware_globs() {
         // trace!(
         //     "Checking if {:?} matches {:?}: {} {}",
@@ -153,6 +180,5 @@ pub fn snapshot_from_vfs(
 
     Ok(None)
 
-    // TODO: handle transformer settings
     // TODO: make sure globs handle directories properly
 }

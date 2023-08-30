@@ -1,8 +1,9 @@
 use std::{
     borrow::Cow,
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap},
     path::Path,
     str,
+    sync::OnceLock,
 };
 
 use anyhow::Context;
@@ -24,6 +25,23 @@ use crate::{
 };
 
 use super::util::PathExt;
+
+pub fn preferred_classes() -> &'static BTreeSet<&'static str> {
+    static VALUE: OnceLock<BTreeSet<&'static str>> = OnceLock::new();
+    VALUE.get_or_init(|| {
+        BTreeSet::from([
+            "Sound",
+            "SoundGroup",
+            "Sky",
+            "Atmosphere",
+            "BloomEffect",
+            "BlurEffect",
+            "ColorCorrectionEffect",
+            "DepthOfFieldEffect",
+            "SunRaysEffect",
+        ])
+    })
+}
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct JsonModelMiddleware;
@@ -115,7 +133,10 @@ impl SnapshotMiddleware for JsonModelMiddleware {
             if any_values {
                 return Some(PRIORITY_MANY_READABLE_PREFERRED);
             }
+        } else if preferred_classes().contains(instance.class.as_str()) {
+            return Some(PRIORITY_MANY_READABLE_PREFERRED);
         }
+
         Some(PRIORITY_MODEL_JSON)
     }
 

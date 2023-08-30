@@ -2,7 +2,7 @@ use std::{
     borrow::Cow,
     collections::{BTreeSet, HashMap, HashSet},
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, OnceLock},
 };
 
 use anyhow::{bail, Context};
@@ -24,6 +24,30 @@ use crate::{
 use super::{
     get_middlewares, meta_file::MetadataFile, snapshot_from_vfs, util::reconcile_meta_file,
 };
+
+fn preferred_classes() -> &'static BTreeSet<&'static str> {
+    static VALUE: OnceLock<BTreeSet<&'static str>> = OnceLock::new();
+    VALUE.get_or_init(|| {
+        BTreeSet::from([
+            "Folder",
+            "Configuration",
+            "Workspace",
+            "Lighting",
+            "ServerStorage",
+            "ServerScriptService",
+            "ReplicatedStorage",
+            "ReplicatedFirst",
+            "StarterGui",
+            "StarterPack",
+            "StarterPlayer",
+            "Teams",
+            "SoundService",
+            "TextChatService",
+            "LocalizationService",
+            "MaterialService",
+        ])
+    })
+}
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct DirectoryMiddlewareContext {
@@ -98,7 +122,7 @@ impl SnapshotMiddleware for DirectoryMiddleware {
             }
         }
 
-        if instance.class == "Folder" || instance.class == "Configuration" {
+        if preferred_classes().contains(instance.class.as_str()) {
             if consider_descendants {
                 Some(PRIORITY_MANY_READABLE)
             } else {

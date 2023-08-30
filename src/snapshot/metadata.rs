@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     glob::Glob, path_serializer, project::ProjectNode, snapshot_middleware::PathExt,
-    ProjectSyncback, ProjectSyncbackPropertyMode,
+    ProjectSnapshotRule, ProjectSyncback, ProjectSyncbackPropertyMode,
 };
 
 use super::{
@@ -170,7 +170,7 @@ pub struct InstanceContext {
     pub path_ignore_rules: Arc<Vec<PathIgnoreRule>>,
 
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub transformer_rules: Arc<Vec<TransformerRule>>,
+    pub snapshot_rules: Arc<Vec<SnapshotRule>>,
 
     pub syncback: Arc<SyncbackContext>,
 }
@@ -278,9 +278,9 @@ impl InstanceContext {
     }
 
     /// Extend the list of type override rules in the context with the given new rules.
-    pub fn add_transformer_rules<I>(&mut self, new_rules: I)
+    pub fn add_snapshot_rules<I>(&mut self, new_rules: I)
     where
-        I: IntoIterator<Item = TransformerRule>,
+        I: IntoIterator<Item = SnapshotRule>,
         I::IntoIter: ExactSizeIterator,
     {
         let new_rules = new_rules.into_iter();
@@ -291,7 +291,7 @@ impl InstanceContext {
             return;
         }
 
-        let rules = Arc::make_mut(&mut self.transformer_rules);
+        let rules = Arc::make_mut(&mut self.snapshot_rules);
         rules.extend(new_rules);
     }
 
@@ -303,16 +303,6 @@ impl InstanceContext {
             .map(|glob| glob.is_match(path))
             .any(|is_match| is_match)
     }
-
-    pub fn get_transformer_override(&self, path: &Path) -> Option<Transformer> {
-        for rule in self.transformer_rules.iter() {
-            if rule.applies_to(path) {
-                return Some(Transformer::from_str(&rule.transformer_name));
-            }
-        }
-
-        None
-    }
 }
 
 impl Default for InstanceContext {
@@ -320,7 +310,7 @@ impl Default for InstanceContext {
         InstanceContext {
             path_ignore_rules: Arc::new(Vec::new()),
             syncback: Arc::new(SyncbackContext::default()),
-            transformer_rules: Arc::new(Vec::new()),
+            snapshot_rules: Arc::new(Vec::new()),
         }
     }
 }
@@ -373,68 +363,26 @@ impl PathIgnoreRule {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum Transformer {
-    Plain,
-    LuauModule,
-    LuauServer,
-    LuauClient,
-    Json,
-    Toml,
-    Csv,
+pub struct SnapshotRule {
+    pub inner: ProjectSnapshotRule,
 
-    Project,
-    Rbxm,
-    Rbxmx,
-    JsonModel,
-
-    Ignore,
-    Other(String),
-}
-
-impl Transformer {
-    pub fn from_str(s: &str) -> Self {
-        match s {
-            "rojo/plaintext" => Self::Plain,
-            "rojo/luau" => Self::LuauModule,
-            "rojo/luauserver" => Self::LuauServer,
-            "rojo/luauclient" => Self::LuauClient,
-            "rojo/json" => Self::Json,
-            "rojo/toml" => Self::Toml,
-            "rojo/csv" => Self::Csv,
-
-            "rojo/project" => Self::Project,
-            "rojo/rbxm" => Self::Rbxm,
-            "rojo/rbxmx" => Self::Rbxmx,
-            "rojo/jsonmodel" => Self::JsonModel,
-
-            "rojo/ignore" => Self::Ignore,
-
-            _ => Self::Other(s.to_owned()),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct TransformerRule {
-    /// The glob to match files against for this type override
-    pub pattern: Glob,
-
-    /// The type of file this match should be treated as
-    pub transformer_name: String,
-
-    /// The path that this glob is relative to. Since ignore globs are defined
+    /// The path that this glob is relative to. Since globs are defined
     /// in project files, this will generally be the folder containing the
     /// project file that defined this glob.
     #[serde(serialize_with = "path_serializer::serialize_absolute")]
     pub base_path: PathBuf,
 }
 
-impl TransformerRule {
+impl SnapshotRule {
     pub fn applies_to<P: AsRef<Path>>(&self, path: P) -> bool {
         let path = path.as_ref();
 
         match path.strip_prefix(&self.base_path) {
-            Ok(suffix) => self.pattern.is_match(suffix),
+            Ok(suffix) => {
+                self.inner.include.is_match(suffix)
+                    && (self.inner.exclude.is_none()
+                        || !self.inner.exclude.as_ref().unwrap().is_match(suffix))
+            }
             Err(_) => false,
         }
     }

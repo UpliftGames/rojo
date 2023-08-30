@@ -78,7 +78,7 @@ pub struct Project {
 
     /// A list of globs and the file types they should be treated as.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub transformer_rules: Vec<ProjectTransformerRule>,
+    pub middleware_rules: Vec<ProjectSnapshotRule>,
 
     /// Syncback behavior settings.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -230,13 +230,15 @@ impl ProjectSyncbackPropertyMode {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct ProjectTransformerRule {
+pub struct ProjectSnapshotRule {
     /// The glob pattern to match files against for this type override
-    pub pattern: Glob,
+    pub include: Glob,
+    /// The glob pattern that should be excluded from this type override
+    pub exclude: Option<Glob>,
 
     /// The type of file this match should be treated as
     #[serde(rename = "use")]
-    pub transformer_name: String,
+    pub middleware_name: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]

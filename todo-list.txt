@@ -1,35 +1,35 @@
 test:
 - make sure instances that are newly referred to by a property are marked as changed (to ensure ref gets saved)
+- disallow bad filenames
+- prevent overwriting toml/json with lua
+- add "transformer" support (rename to middleware)
+  - req. pulling globs from state instead of static
+- better syncback inference
+  - configuration as folder w/ init meta
+  - configuration as model json
+  - sounds as model json
+  - lighting objects as model json
 
 wip:
 
 next up:
-- add "transformer" support (rename to middleware)
-  - req. pulling globs from state instead of static
 - fixing unique ids does not work for binary; need to generate a value instead of delete entirely (or is rbx_binary just outdated?)
 - figure out if internal diff is resulting in too many changes -> too many updates
 - support SharedString in json
 
-rojo:
+prod merge todo:
+- clean up between-tree cloning behavior (duplicates with upstream, minus ref-keeping changes)
+- rewrite refs instead of keeping refs
+
+todo:
 - json model preserve order
-- disallow project updates from deleting files if referred to by path
 - convert concerning traces to info/warn/error
 - convert "can't sync, skipping" traces to info/warn/error
 - delete extra traces
-- prevent overwriting toml/json with lua
-- ensure default properties are filtered out of meta files
-- explore storing refs so ref properties work between files
-- explore round-trip diff minim
-- explore ref-matching to minimize ref property-caused diffs
-- disallow bad filenames
 - workaround bad filenames with init.meta
 - better syncback inference
-  - configuration as folder w/ init meta
   - *value as model json (or folder w/ init meta)
-  - configuration as model json
   - attribute-informed middleware choice
-  - sounds as model json
-  - lighting objects as model json
   - for some model json objects, prefer directory w/ init.meta.json if they have children
 - standardize around "middleware" name (fix refs to snapshot, syncback, and provider)
 - ensure instancecontext is chosen and passed around correctly
@@ -39,6 +39,12 @@ adopt me:
 - figure out which folders should be synced in as models and which should be synced in as directories
 - explore git performance with 6k+ files
 
+maybe done:
+- disallow project updates from deleting files if referred to by path
+- ensure default properties are filtered out of meta files
+- explore storing refs so ref properties work between files
+- explore round-trip diff minim
+- explore ref-matching to minimize ref property-caused diffs
 
 done:
 - "--inspect-diff" argument that prints diff for specific path in tree, incl. properties

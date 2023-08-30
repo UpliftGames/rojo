@@ -16,6 +16,8 @@ use crate::snapshot_middleware::{get_middleware, get_middlewares};
 
 use super::{diff::DeepDiff, InstanceContext, InstanceMetadata, InstanceSnapshot, RojoTree};
 
+pub const PRIORITY_IF_ALREADY_USING: i32 = 10;
+
 pub const PRIORITY_MODEL_DIRECTORY: i32 = 80;
 pub const PRIORITY_MODEL_JSON: i32 = 81;
 pub const PRIORITY_MODEL_XML: i32 = 82;

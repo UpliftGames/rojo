@@ -17,13 +17,13 @@ use crate::{
     snapshot::{
         get_best_syncback_middleware, FsSnapshot, InstanceContext, InstanceMetadata,
         InstanceSnapshot, InstigatingSource, MiddlewareContextAny, PathIgnoreRule,
-        PropertiesFiltered, SnapshotMiddleware, SnapshotOverride, SyncbackArgs, SyncbackNode,
-        SyncbackPlanner, SyncbackPlannerWrapped, TransformerRule,
+        PropertiesFiltered, SnapshotMiddleware, SnapshotOverride, SnapshotRule, SyncbackArgs,
+        SyncbackNode, SyncbackPlanner, SyncbackPlannerWrapped,
     },
     snapshot_middleware::util::PathExt,
 };
 
-use super::snapshot_from_vfs;
+use super::{get_middlewares_prefixed, snapshot_from_vfs};
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ProjectMiddlewareContext {
@@ -69,16 +69,27 @@ impl SnapshotMiddleware for ProjectMiddleware {
             context.add_syncback_options(syncback_options)?;
         }
 
-        let transformer_rules = project
-            .transformer_rules
-            .iter()
-            .map(|rule| TransformerRule {
-                pattern: rule.pattern.clone(),
-                transformer_name: rule.transformer_name.clone(),
+        let mut snapshot_rules = Vec::new();
+        for rule in project.middleware_rules.clone() {
+            if !get_middlewares_prefixed().contains_key(rule.middleware_name.as_str()) {
+                bail!(
+                    "Unknown middleware: {}\nKnown middlewares: {}",
+                    rule.middleware_name,
+                    get_middlewares_prefixed()
+                        .keys()
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
+            }
+
+            snapshot_rules.push(SnapshotRule {
+                inner: rule.clone(),
                 base_path: project.folder_location().to_path_buf(),
             });
+        }
 
-        context.add_transformer_rules(transformer_rules);
+        context.add_snapshot_rules(snapshot_rules);
 
         match snapshot_project_node(&context, path, &project.name, &project.tree, vfs, None)? {
             Some(found_snapshot) => {
