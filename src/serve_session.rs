@@ -46,8 +46,8 @@ pub struct ServeSession {
     /// RecvError, causing the main thread to panic on drop.
     ///
     /// Allowed to be unused because it has side effects when dropped.
-    // #[allow(unused)]
-    // change_processor: ChangeProcessor,
+    #[allow(unused)]
+    change_processor: ChangeProcessor,
 
     /// When the serve session was started. Used only for user-facing
     /// diagnostics.
@@ -153,7 +153,7 @@ impl ServeSession {
         );
 
         Ok(Self {
-            // change_processor,
+            change_processor,
             start_time,
             session_id,
             root_project,
