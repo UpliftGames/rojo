@@ -5,7 +5,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::{serve_session::ServeSession, snapshot::RojoTree};
+use crate::{
+    snapshot::{apply_patch_set, compute_patch_set, InstanceContext, InstanceSnapshot, RojoTree},
+    snapshot_middleware::snapshot_from_vfs,
+};
 use anyhow::{bail, Context};
 use clap::Parser;
 use fs_err::File;
@@ -15,6 +18,27 @@ use super::resolve_path;
 
 const UNKNOWN_INPUT_KIND_ERR: &str = "Could not detect what kind of file to sync from. \
                                        Expected output file to end in .rbxl, .rbxlx, .rbxm, or .rbxmx.";
+
+fn get_tree_at_location(vfs: &Vfs, path: &Path) -> Result<RojoTree, anyhow::Error> {
+    let mut tree = RojoTree::new(InstanceSnapshot::new());
+
+    let root_id = tree.get_root_id();
+
+    let instance_context = InstanceContext::default();
+
+    log::trace!("Generating snapshot of instances from VFS");
+    let snapshot = snapshot_from_vfs(&instance_context, vfs, path)?;
+
+    log::trace!("Computing initial patch set");
+    let patch_set = compute_patch_set(snapshot, &tree, root_id);
+
+    log::trace!("Applying initial patch set");
+    apply_patch_set(&mut tree, patch_set);
+
+    log::trace!("Opened tree; returning dom");
+
+    Ok(tree)
+}
 
 /// Syncs changes back to the filesystem from a model or place file.
 #[derive(Debug, Parser)]
@@ -41,20 +65,27 @@ impl SyncbackCommand {
         let output_kind = detect_input_kind(&self.input).context(UNKNOWN_INPUT_KIND_ERR)?;
 
         log::trace!("Constructing in-memory filesystem");
+
         let vfs = Vfs::new_default();
+        let mut tree = get_tree_at_location(&vfs, &project_path)?;
 
-        let session = ServeSession::new(vfs, project_path)?;
+        let result = syncback(
+            &vfs,
+            &mut tree,
+            &self.input,
+            output_kind,
+            self.non_interactive,
+        );
 
-        let result = syncback(&session, &self.input, output_kind, self.non_interactive);
         log::trace!("syncback out");
         if let Err(e) = result {
             log::trace!("{:#?}", e);
             bail!(e);
         }
 
-        // Avoid dropping ServeSession: it's potentially VERY expensive to drop
+        // Avoid dropping tree: it's potentially VERY expensive to drop
         // and we're about to exit anyways.
-        forget(session);
+        forget(tree);
 
         Ok(())
     }
@@ -94,14 +125,12 @@ fn xml_encode_config() -> rbx_xml::DecodeOptions {
 
 #[profiling::function]
 fn syncback(
-    session: &ServeSession,
+    vfs: &Vfs,
+    tree: &mut RojoTree,
     output: &Path,
     output_kind: InputKind,
     skip_prompt: bool,
 ) -> anyhow::Result<()> {
-    println!("Syncback project '{}'", session.project_name());
-
-    let mut tree = session.tree();
     let tree = tree.borrow_mut();
     let root_id = tree.get_root_id();
 
@@ -124,12 +153,11 @@ fn syncback(
 
     // diff.show_diff(&old_tree, &new_tree, &path_parts.unwrap_or(vec![]));
 
-    let diff = tree.syncback_start(session.vfs(), root_id, &mut new_dom, new_root);
+    let diff = tree.syncback_start(vfs, root_id, &mut new_dom, new_root);
 
     if !skip_prompt {
         println!("The following is a diff of the changes to be synced back to the filesystem:");
-        let old_tree: &RojoTree = &session.tree();
-        diff.show_diff(old_tree.inner(), &new_dom, &Vec::new());
+        diff.show_diff(tree.inner(), &new_dom, &Vec::new());
         println!("\nDo you want to continue and apply these changes? [Y/n]");
         std::io::stdout().flush()?;
 
@@ -141,7 +169,7 @@ fn syncback(
         }
     }
 
-    tree.syncback_process(session.vfs(), &diff, root_id, &new_dom)?;
+    tree.syncback_process(vfs, &diff, root_id, &new_dom)?;
 
     tree.warn_for_broken_refs();
 
@@ -171,20 +199,21 @@ fn test_syncback() -> Result<(), anyhow::Error> {
     let input_kind = detect_input_kind(&input).context(UNKNOWN_INPUT_KIND_ERR)?;
 
     log::trace!("Constructing in-memory filesystem");
+
     let vfs = Vfs::new_default();
+    let mut tree = get_tree_at_location(&vfs, &project_path)?;
 
-    let session = ServeSession::new(vfs, &project_path)?;
+    let result = syncback(&vfs, &mut tree, &input, input_kind, false);
 
-    let result = syncback(&session, &input, input_kind, false);
     log::trace!("syncback out");
     if let Err(e) = result {
         log::trace!("{:#?}", e);
         bail!(e);
     }
 
-    // Avoid dropping ServeSession: it's potentially VERY expensive to drop
+    // Avoid dropping tree: it's potentially VERY expensive to drop
     // and we're about to exit anyways.
-    forget(session);
+    forget(tree);
 
     Ok(())
 }
