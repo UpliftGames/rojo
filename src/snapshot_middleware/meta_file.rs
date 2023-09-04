@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     resolution::UnresolvedValue,
     snapshot::{
-        filter, InstanceSnapshot, PropertiesFiltered, PropertyFilter, ToVariantBinaryString,
+        filter, InstanceSnapshot, PropertyFilter, ToVariantBinaryString,
     },
 };
 
@@ -80,11 +80,7 @@ impl MetadataFile {
             properties: IndexMap::from_iter(
                 match existing {
                     Some(existing) => Box::new(existing.properties.keys().filter_map(|k| {
-                        if let Some(v) = instance.properties.get(k) {
-                            Some((k.as_str(), v))
-                        } else {
-                            None
-                        }
+                        instance.properties.get(k).map(|v| (k.as_str(), v))
                     }))
                         as Box<dyn Iterator<Item = (&str, &Variant)>>,
                     None => Box::new(std::iter::empty::<(&str, &Variant)>())
@@ -125,16 +121,12 @@ impl MetadataFile {
                 }),
             ),
             attributes: instance.properties.get("Attributes").map_or_else(
-                || IndexMap::new(),
+                IndexMap::new,
                 |attributes| {
                     match attributes {
                         Variant::Attributes(attributes) => match existing {
                             Some(existing) => Box::new(existing.attributes.keys().filter_map(|k| {
-                                if let Some(v) = attributes.get(k.as_str()) {
-                                    Some((k.as_str(), v))
-                                } else {
-                                    None
-                                }
+                                attributes.get(k.as_str()).map(|v| (k.as_str(), v))
                             }))
                                 as Box<dyn Iterator<Item = (&str, &Variant)>>,
                             None => Box::new(std::iter::empty::<(&str, &Variant)>())
@@ -161,7 +153,7 @@ impl MetadataFile {
         Self { path, ..self }
     }
 
-    pub fn minimize_diff(&mut self, prev_meta_file: &Self, base_class: Option<&str>) -> () {
+    pub fn minimize_diff(&mut self, prev_meta_file: &Self, base_class: Option<&str>) {
         self.properties
             .iter()
             .filter_map(|(key, value)| {
@@ -198,21 +190,19 @@ impl MetadataFile {
     }
 
     pub fn resolve_property(&self, key: &str, base_class: Option<&str>) -> Option<Variant> {
-        let class_name = self.class_name.as_ref().map(|v| v.as_str()).or(base_class);
+        let class_name = self.class_name.as_deref().or(base_class);
         self.properties
             .get(key)
-            .map(|unresolved_value| match class_name {
+            .and_then(|unresolved_value| match class_name {
                 Some(class_name) => unresolved_value.clone().resolve(class_name, key).ok(),
                 None => unresolved_value.clone().resolve_unambiguous().ok(),
             })
-            .flatten()
     }
 
     pub fn resolve_attribute(&self, key: &str) -> Option<Variant> {
         self.attributes
             .get(key)
-            .map(|unresolved_value| unresolved_value.clone().resolve_unambiguous().ok())
-            .flatten()
+            .and_then(|unresolved_value| unresolved_value.clone().resolve_unambiguous().ok())
     }
 
     pub fn is_empty(&self) -> bool {

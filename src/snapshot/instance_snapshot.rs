@@ -2,7 +2,7 @@
 
 use std::{borrow::Cow, collections::HashMap};
 
-use notify::Op;
+
 use rbx_dom_weak::{
     types::{Ref, Variant},
     Instance, WeakDom,

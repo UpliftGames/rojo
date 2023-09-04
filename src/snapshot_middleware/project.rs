@@ -15,10 +15,10 @@ use crate::{
     project::{PathNode, Project, ProjectNode},
     resolution::UnresolvedValue,
     snapshot::{
-        get_best_syncback_middleware, FsSnapshot, InstanceContext, InstanceMetadata,
-        InstanceSnapshot, InstigatingSource, MiddlewareContextAny, PathIgnoreRule,
-        PropertiesFiltered, SnapshotMiddleware, SnapshotOverride, SnapshotRule, SyncbackArgs,
-        SyncbackNode, SyncbackPlanner, SyncbackPlannerWrapped,
+        get_best_syncback_middleware, InstanceContext, InstanceMetadata, InstanceSnapshot,
+        InstigatingSource, MiddlewareContextAny, PathIgnoreRule, PropertiesFiltered,
+        SnapshotMiddleware, SnapshotRule, SyncbackArgs, SyncbackNode, SyncbackPlanner,
+        SyncbackPlannerWrapped,
     },
     snapshot_middleware::util::PathExt,
 };
@@ -33,6 +33,12 @@ pub struct ProjectMiddlewareContext {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct ProjectMiddleware;
+
+pub type OldRefPack<'a> = (
+    &'a crate::snapshot::RojoTree,
+    rbx_dom_weak::types::Ref,
+    Option<Arc<dyn MiddlewareContextAny>>,
+);
 
 impl SnapshotMiddleware for ProjectMiddleware {
     fn middleware_id(&self) -> &'static str {
@@ -148,11 +154,7 @@ impl SnapshotMiddleware for ProjectMiddleware {
         let vfs = sync.vfs;
         let diff = sync.diff;
         let project_path = sync.path;
-        let old: &Option<(
-            &crate::snapshot::RojoTree,
-            rbx_dom_weak::types::Ref,
-            Option<Arc<dyn MiddlewareContextAny>>,
-        )> = &sync.old;
+        let old: &Option<OldRefPack> = &sync.old;
         let new = sync.new;
         let metadata = sync.metadata;
         let _overrides = &sync.overrides;
@@ -185,9 +187,7 @@ impl SnapshotMiddleware for ProjectMiddleware {
         // We use node paths here instead of nodes to get around mutable borrow
         // issues caused by borrowing nodes to stick them in the list.
         let mut processing = vec![(Vec::<String>::new(), *old_root_ref)];
-        while !processing.is_empty() {
-            let (project_node_path, node_ref) = processing.pop().unwrap();
-
+        while let Some((project_node_path, node_ref)) = processing.pop() {
             let node = {
                 let mut node = &mut project.tree;
                 for path in project_node_path.iter() {
@@ -226,7 +226,7 @@ impl SnapshotMiddleware for ProjectMiddleware {
                         &child_inst.metadata().instigating_source
                     {
                         let matching_node = node.children.get_mut(child_inst.name());
-                        if let Some(_) = matching_node {
+                        if matching_node.is_some() {
                             let next_node_path = project_node_path
                                 .iter()
                                 .cloned()
@@ -256,7 +256,7 @@ impl SnapshotMiddleware for ProjectMiddleware {
                     .with_context(|| "missing ref (tree)")?;
 
                 let middleware_context = if node_ref == *old_root_ref {
-                    &root_middleware_context
+                    root_middleware_context
                 } else {
                     &node_inst.metadata().middleware_context
                 };
@@ -269,9 +269,9 @@ impl SnapshotMiddleware for ProjectMiddleware {
 
                 let project_context = project_context.as_ref();
 
-                let existing_middleware_id = project_context.map(|v| v.node_middleware).flatten();
+                let existing_middleware_id = project_context.and_then(|v| v.node_middleware);
                 let existing_middleware_context =
-                    project_context.map(|v| v.node_context.clone()).flatten();
+                    project_context.and_then(|v| v.node_context.clone());
 
                 let new_middleware_id =
                     get_best_syncback_middleware(new_dom, new_inst, true, existing_middleware_id);
@@ -326,26 +326,24 @@ impl SnapshotMiddleware for ProjectMiddleware {
                         project_path.display()
                     );
                 }
-            } else {
-                if diff.has_changed_properties(node_ref) {
-                    // All properties should be put in the node since it has no other source
+            } else if diff.has_changed_properties(node_ref) {
+                // All properties should be put in the node since it has no other source
 
-                    node.properties = node_inst
-                        .properties_filtered(&metadata.context.syncback.property_filters_save, true)
-                        .map(|(key, value)| {
-                            (
-                                key.to_string(),
-                                UnresolvedValue::from_variant_property(
-                                    node_inst.class_name(),
-                                    key,
-                                    value.clone(),
-                                ),
-                            )
-                        })
-                        .collect();
+                node.properties = node_inst
+                    .properties_filtered(&metadata.context.syncback.property_filters_save, true)
+                    .map(|(key, value)| {
+                        (
+                            key.to_string(),
+                            UnresolvedValue::from_variant_property(
+                                node_inst.class_name(),
+                                key,
+                                value.clone(),
+                            ),
+                        )
+                    })
+                    .collect();
 
-                    project_changed = true;
-                }
+                project_changed = true;
             }
         }
 
@@ -357,8 +355,7 @@ impl SnapshotMiddleware for ProjectMiddleware {
             if let Some(fs_snapshot) = &inst_sync.metadata.fs_snapshot {
                 violates_rules = fs_snapshot
                     .files
-                    .iter()
-                    .map(|(path, _)| path)
+                    .keys()
                     .chain(fs_snapshot.dirs.iter())
                     .any(|path| !inst_sync.metadata.context.should_syncback_path(path));
             }
@@ -453,9 +450,10 @@ pub fn snapshot_project_node(
     let name = Cow::Owned(instance_name.to_owned());
     let mut properties = HashMap::new();
     let mut children = Vec::new();
-    let mut metadata = InstanceMetadata::default();
-
-    metadata.middleware_id = Some("project");
+    let mut metadata = InstanceMetadata {
+        middleware_id: Some("project"),
+        ..Default::default()
+    };
 
     if let Some(path_node) = &node.path {
         let path = path_node.path();

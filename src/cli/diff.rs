@@ -1,20 +1,18 @@
 use std::{
-    borrow::BorrowMut,
     collections::BTreeMap,
     mem::forget,
     path::{Path, PathBuf},
 };
 
 use crate::{
-    serve_session::ServeSession,
     snapshot::{
         apply_patch_set, compute_patch_set, DeepDiff, InstanceContext, InstanceSnapshot, RojoTree,
     },
     snapshot_middleware::{snapshot_from_vfs, PathExt},
 };
-use anyhow::{bail, Context};
+use anyhow::{Context};
 use clap::Parser;
-use fs_err::File;
+
 use memofs::Vfs;
 use rbx_dom_weak::WeakDom;
 
@@ -32,14 +30,14 @@ pub struct DiffCommand {
 
 fn get_tree_at_location(vfs: &Vfs, path: &Path) -> Result<WeakDom, anyhow::Error> {
     if path.file_name_ends_with(".rbxl") || path.file_name_ends_with(".rbxm") {
-        return Ok(rbx_binary::from_reader(vfs.read(path)?.as_slice())
-            .with_context(|| format!("Malformed rbx binary file: {}", path.display()))?);
+        return rbx_binary::from_reader(vfs.read(path)?.as_slice())
+            .with_context(|| format!("Malformed rbx binary file: {}", path.display()));
     } else if path.file_name_ends_with(".rbxlx") || path.file_name_ends_with(".rbxmx") {
         let options = rbx_xml::DecodeOptions::new()
             .property_behavior(rbx_xml::DecodePropertyBehavior::ReadUnknown);
 
-        return Ok(rbx_xml::from_reader(vfs.read(path)?.as_slice(), options)
-            .with_context(|| format!("Malformed rbx xml file: {}", path.display()))?);
+        return rbx_xml::from_reader(vfs.read(path)?.as_slice(), options)
+            .with_context(|| format!("Malformed rbx xml file: {}", path.display()));
     }
 
     let mut tree = RojoTree::new(InstanceSnapshot::new());
@@ -49,7 +47,7 @@ fn get_tree_at_location(vfs: &Vfs, path: &Path) -> Result<WeakDom, anyhow::Error
     let instance_context = InstanceContext::default();
 
     log::trace!("Generating snapshot of instances from VFS");
-    let snapshot = snapshot_from_vfs(&instance_context, &vfs, &path)?;
+    let snapshot = snapshot_from_vfs(&instance_context, vfs, path)?;
 
     log::trace!("Computing initial patch set");
     let patch_set = compute_patch_set(snapshot, &tree, root_id);
@@ -83,7 +81,7 @@ impl DiffCommand {
 
         let path_parts: Option<Vec<String>> = self
             .path
-            .map(|v| v.split(".").map(str::to_string).collect());
+            .map(|v| v.split('.').map(str::to_string).collect());
 
         log::trace!("Created diff; about to show diff");
 

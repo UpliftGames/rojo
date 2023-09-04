@@ -150,7 +150,7 @@ impl InstanceMetadata {
 
                 let path = node.path.as_ref()?.path();
                 let project_dir = project_path.parent_or_cdir().ok()?;
-                let absolute_path = path.make_absolute(&project_dir).ok()?;
+                let absolute_path = path.make_absolute(project_dir).ok()?;
                 Some(Cow::Owned(absolute_path.to_path_buf()))
             }
             _ => None,

@@ -152,29 +152,29 @@ pub struct RefPair {
     pub new_ref: Ref,
 }
 
-impl Into<RefPair> for Ref {
-    fn into(self) -> RefPair {
+impl From<Ref> for RefPair {
+    fn from(val: Ref) -> Self {
         RefPair {
             old_ref: None,
-            new_ref: self,
+            new_ref: val,
         }
     }
 }
 
-impl Into<RefPair> for (Ref, Ref) {
-    fn into(self) -> RefPair {
+impl From<(Ref, Ref)> for RefPair {
+    fn from(val: (Ref, Ref)) -> Self {
         RefPair {
-            old_ref: Some(self.0),
-            new_ref: self.1,
+            old_ref: Some(val.0),
+            new_ref: val.1,
         }
     }
 }
 
-impl Into<RefPair> for (Option<Ref>, Ref) {
-    fn into(self) -> RefPair {
+impl From<(Option<Ref>, Ref)> for RefPair {
+    fn from(val: (Option<Ref>, Ref)) -> Self {
         RefPair {
-            old_ref: self.0,
-            new_ref: self.1,
+            old_ref: val.0,
+            new_ref: val.1,
         }
     }
 }
@@ -196,7 +196,7 @@ impl OptOldTuple for Option<(&RojoTree, Ref, Option<MiddlewareContextArc>)> {
         }
     }
     fn opt_middleware_context(&self) -> Option<MiddlewareContextArc> {
-        self.as_ref().map(|(_, _, v)| v.clone()).flatten()
+        self.as_ref().and_then(|(_, _, v)| v.clone())
     }
 }
 
@@ -205,7 +205,7 @@ impl OptOldTuple for (&RojoTree, Ref, Option<MiddlewareContextArc>) {
         Some(self.1)
     }
     fn opt_dom(&self) -> Option<&RojoTree> {
-        Some(&self.0)
+        Some(self.0)
     }
     fn opt_middleware_context(&self) -> Option<MiddlewareContextArc> {
         self.2.clone()
@@ -223,7 +223,7 @@ impl OldTuple for (&RojoTree, Ref, Option<MiddlewareContextArc>) {
         self.1
     }
     fn dom(&self) -> &RojoTree {
-        &self.0
+        self.0
     }
     fn middleware_context(&self) -> Option<MiddlewareContextArc> {
         self.2.clone()
@@ -240,7 +240,7 @@ impl NewTuple for (&WeakDom, Ref) {
         self.1
     }
     fn dom(&self) -> &WeakDom {
-        &self.0
+        self.0
     }
 }
 
@@ -343,18 +343,18 @@ impl<'old, 'new> SyncbackPlanner<'old, 'new> {
         };
 
         let mut result = get_middleware(self.middleware_id).syncback(&SyncbackArgs {
-            vfs: vfs,
-            diff: diff,
+            vfs,
+            diff,
             path: &self.path,
-            old: match &self.old {
-                Some((old_dom, old_ref, old_middleware_context)) => {
-                    Some((old_dom, *old_ref, old_middleware_context.clone()))
-                }
-                None => None,
-            },
+            old: self
+                .old
+                .as_ref()
+                .map(|(old_dom, old_ref, old_middleware_context)| {
+                    (*old_dom, *old_ref, old_middleware_context.clone())
+                }),
             new: self.new,
-            metadata: metadata,
-            overrides: overrides,
+            metadata,
+            overrides,
         });
         if let Some(delete_old) = self.delete_old {
             result = result.map(|mut v| {
@@ -403,7 +403,7 @@ impl<'old, 'new> SyncbackPlanner<'old, 'new> {
         if Some(middleware_id) == old_middleware_id {
             Ok(Some(SyncbackPlanner {
                 middleware_id,
-                path: path,
+                path,
                 old: Some((old_dom, old_ref, old_middleware_context)),
                 new: (new_dom, new_ref),
                 delete_old: None,
@@ -450,8 +450,8 @@ impl<'old, 'new> SyncbackPlanner<'old, 'new> {
 }
 
 pub trait MiddlewareContextAny: Any + Debug + DynEq + Sync + Send + 'static {
-    fn as_any_ref(self: &'_ Self) -> &'_ dyn Any;
-    fn as_any_mut(self: &'_ mut Self) -> &'_ mut dyn Any;
+    fn as_any_ref(&'_ self) -> &'_ dyn Any;
+    fn as_any_mut(&'_ mut self) -> &'_ mut dyn Any;
     fn as_any_box(self: Box<Self>) -> Box<dyn Any>;
 }
 dyn_eq::eq_trait_object!(MiddlewareContextAny);
@@ -460,12 +460,12 @@ pub type MiddlewareContextArc = Arc<dyn MiddlewareContextAny>;
 
 impl<T: Any + Debug + Eq + Send + Sync + 'static> MiddlewareContextAny for T {
     #[inline]
-    fn as_any_ref(self: &'_ Self) -> &'_ dyn Any {
+    fn as_any_ref(&'_ self) -> &'_ dyn Any {
         self
     }
 
     #[inline]
-    fn as_any_mut(self: &'_ mut Self) -> &'_ mut dyn Any {
+    fn as_any_mut(&'_ mut self) -> &'_ mut dyn Any {
         self
     }
 
@@ -477,12 +477,12 @@ impl<T: Any + Debug + Eq + Send + Sync + 'static> MiddlewareContextAny for T {
 
 impl dyn MiddlewareContextAny + 'static {
     #[inline]
-    pub fn downcast_ref<T: 'static>(self: &'_ Self) -> Option<&'_ T> {
+    pub fn downcast_ref<T: 'static>(&'_ self) -> Option<&'_ T> {
         self.as_any_ref().downcast_ref::<T>()
     }
 
     #[inline]
-    pub fn downcast_mut<T: 'static>(self: &'_ mut Self) -> Option<&'_ mut T> {
+    pub fn downcast_mut<T: 'static>(&'_ mut self) -> Option<&'_ mut T> {
         self.as_any_mut().downcast_mut::<T>()
     }
 }
@@ -528,8 +528,7 @@ pub fn get_best_syncback_middleware(
     previous_middleware: Option<&'static str>,
 ) -> Option<&'static str> {
     get_best_syncback_middleware_sorted(dom, instance, consider_descendants, previous_middleware)
-        .map(|mut iter| iter.next())
-        .flatten()
+        .and_then(|mut iter| iter.next())
 }
 
 pub fn get_best_syncback_middleware_must_not_serialize_children(
@@ -539,6 +538,5 @@ pub fn get_best_syncback_middleware_must_not_serialize_children(
     previous_middleware: Option<&'static str>,
 ) -> Option<&'static str> {
     get_best_syncback_middleware_sorted(dom, instance, consider_descendants, previous_middleware)
-        .map(|mut iter| iter.find(|&id| !get_middleware(id).syncback_serializes_children()))
-        .flatten()
+        .and_then(|mut iter| iter.find(|&id| !get_middleware(id).syncback_serializes_children()))
 }

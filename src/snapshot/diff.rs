@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     fmt::Display,
     iter::{Chain, FilterMap, Map},
     ops::AddAssign,
@@ -17,6 +17,9 @@ use super::{
     ToVariantBinaryString, WeakDomExtra,
 };
 
+// We've copied the exact return type from the iterator here so that we can
+// return it directly without collecting it or making it a trait object.
+#[allow(clippy::type_complexity)]
 pub fn diff_properties<'a>(
     old_instance: &'a Instance,
     new_instance: &'a Instance,
@@ -104,17 +107,17 @@ pub fn are_variants_similar(old_variant: &Variant, new_variant: &Variant) -> boo
         (Variant::OptionalCFrame(old_cframe), Variant::OptionalCFrame(new_cframe)) => {
             match (old_cframe, new_cframe) {
                 (Some(old_cframe), Some(new_cframe)) => are_variants_similar(
-                    &Variant::CFrame(old_cframe.clone()),
-                    &Variant::CFrame(new_cframe.clone()),
+                    &Variant::CFrame(*old_cframe),
+                    &Variant::CFrame(*new_cframe),
                 ),
                 _ => false,
             }
         }
         (Variant::Vector3(old_vector), Variant::Vector3(new_vector)) => {
-            are_vector3s_similar(&old_vector, &new_vector)
+            are_vector3s_similar(old_vector, new_vector)
         }
         (Variant::Vector2(old_vector), Variant::Vector2(new_vector)) => {
-            are_vector2s_similar(&old_vector, &new_vector)
+            are_vector2s_similar(old_vector, new_vector)
         }
         (Variant::Color3(old_color), Variant::Color3(new_color)) => {
             approx_eq!(f32, old_color.r, new_color.r)
@@ -129,7 +132,7 @@ pub fn are_variants_similar(old_variant: &Variant, new_variant: &Variant) -> boo
         }
         (Variant::Attributes(old_attrs), Variant::Attributes(new_attrs)) => {
             for (key, old_value) in old_attrs.iter() {
-                if !new_attrs.get(key.as_str()).is_some() {
+                if new_attrs.get(key.as_str()).is_none() {
                     return false;
                 } else {
                     let new_value = new_attrs.get(key.as_str()).unwrap();
@@ -148,7 +151,7 @@ pub fn are_variants_similar(old_variant: &Variant, new_variant: &Variant) -> boo
             }
 
             for (key, _) in new_attrs.iter() {
-                if !old_attrs.get(key.as_str()).is_some() {
+                if old_attrs.get(key.as_str()).is_none() {
                     return false;
                 }
             }
@@ -168,7 +171,7 @@ pub fn display_variant_short(value: &Variant) -> String {
         ),
         Variant::Bool(v) => format!("{}", v),
         Variant::BrickColor(v) => format!("BrickColor({})", v),
-        Variant::CFrame(v) => format!("CFrame"),
+        Variant::CFrame(_v) => "CFrame".to_string(),
         Variant::Color3(v) => format!("Color3({}, {}, {})", v.r, v.g, v.b),
         Variant::Color3uint8(v) => format!("Color3uint8({}, {}, {})", v.r, v.g, v.b),
         Variant::ColorSequence(v) => format!(
@@ -239,7 +242,7 @@ pub fn display_variant_short(value: &Variant) -> String {
         Variant::Vector3(v) => format!("Vector3({}, {}, {})", v.x, v.y, v.z),
         Variant::Vector3int16(v) => format!("Vector3int16({}, {}, {})", v.x, v.y, v.z),
         Variant::OptionalCFrame(v) => {
-            if let Some(cframe) = v {
+            if let Some(_cframe) = v {
                 "OptionalCFrame(CFrame)".to_owned()
             } else {
                 "OptionalCFrame(None)".to_owned()
@@ -332,6 +335,8 @@ impl<'a> Display for DeepDiffDisplay<'a> {
     }
 }
 
+pub type ChildrenLists = (HashSet<Ref>, HashSet<Ref>, HashSet<Ref>, HashSet<Ref>);
+
 impl DeepDiff {
     pub fn new<'a>(
         old_tree: &'a WeakDom,
@@ -354,9 +359,9 @@ impl DeepDiff {
         new_tree: &'a WeakDom,
     ) -> DeepDiffDisplay<'a> {
         DeepDiffDisplay {
-            diff: &self,
-            old_tree: &old_tree,
-            new_tree: &new_tree,
+            diff: self,
+            old_tree,
+            new_tree,
         }
     }
 
@@ -414,7 +419,7 @@ impl DeepDiff {
         old_tree: &WeakDom,
         new_tree: &WeakDom,
         old_ref: Ref,
-    ) -> Option<(HashSet<Ref>, HashSet<Ref>, HashSet<Ref>, HashSet<Ref>)> {
+    ) -> Option<ChildrenLists> {
         let new_ref = match self.get_matching_new_ref(old_ref) {
             Some(new_ref) => new_ref,
             None => return None,
@@ -448,16 +453,15 @@ impl DeepDiff {
         Some((added, removed, changed, unchanged))
     }
 
-    pub fn show_diff(&self, old_tree: &WeakDom, new_tree: &WeakDom, path: &Vec<String>) -> () {
+    pub fn show_diff(&self, old_tree: &WeakDom, new_tree: &WeakDom, path: &[String]) {
         let old_root_ref = 'old_ref: {
             let mut item = old_tree.root_ref();
             for name in path.iter() {
                 let next_item = old_tree
                     .get_by_ref(item)
-                    .expect(
-                        format!("Invalid ref {} when traversing tree (next: {})", item, name)
-                            .as_str(),
-                    )
+                    .unwrap_or_else(|| {
+                        panic!("Invalid ref {} when traversing tree (next: {})", item, name)
+                    })
                     .children()
                     .iter()
                     .find(|&child_ref| old_tree.get_by_ref(*child_ref).unwrap().name == *name);
@@ -475,10 +479,9 @@ impl DeepDiff {
             for name in path.iter() {
                 let next_item = new_tree
                     .get_by_ref(item)
-                    .expect(
-                        format!("Invalid ref {} when traversing tree (next: {})", item, name)
-                            .as_str(),
-                    )
+                    .unwrap_or_else(|| {
+                        panic!("Invalid ref {} when traversing tree (next: {})", item, name)
+                    })
                     .children()
                     .iter()
                     .find(|&child_ref| new_tree.get_by_ref(*child_ref).unwrap().name == *name);
@@ -607,7 +610,7 @@ impl DeepDiff {
         }
     }
 
-    fn prune_matching_ref_properties(&mut self, old_tree: &WeakDom, new_tree: &WeakDom) -> () {
+    fn prune_matching_ref_properties(&mut self, old_tree: &WeakDom, new_tree: &WeakDom) {
         let changed: Vec<(Ref, Ref)> = self.changed.iter().map(|(v1, v2)| (*v1, *v2)).collect();
         for (old_ref, new_ref) in changed.into_iter() {
             let old_inst = old_tree.get_by_ref(old_ref).unwrap();
@@ -636,7 +639,7 @@ impl DeepDiff {
         }
     }
 
-    fn move_ref(&mut self, new_dom_ref: Ref, replacement: Ref) -> () {
+    fn move_ref(&mut self, new_dom_ref: Ref, replacement: Ref) {
         if let Some(old_ref) = self.new_to_old.remove(&new_dom_ref) {
             self.new_to_old.insert(replacement, old_ref);
 
@@ -652,7 +655,7 @@ impl DeepDiff {
         }
     }
 
-    fn deduplicate_refs(&mut self, old_tree: &WeakDom, new_tree: &mut WeakDom) -> () {
+    fn deduplicate_refs(&mut self, old_tree: &WeakDom, new_tree: &mut WeakDom) {
         let mut ref_map = BTreeMap::new();
         {
             // Fix duplicate refs
@@ -705,7 +708,7 @@ impl DeepDiff {
         }
     }
 
-    fn find_ref_properties(&mut self, old_tree: &WeakDom, new_tree: &WeakDom) -> () {
+    fn find_ref_properties(&mut self, old_tree: &WeakDom, new_tree: &WeakDom) {
         for old_ref in old_tree.descendants() {
             for (property_name, v) in old_tree.get_by_ref(old_ref).unwrap().properties.iter() {
                 if let Variant::Ref(prop_ref) = v {
@@ -857,49 +860,39 @@ impl DeepDiff {
     fn mark_ancestors(&mut self, old_tree: &WeakDom, parent_ref: Ref) {
         // log::trace!("marking ancestors for {}", ancestor_ref);
         let mut ancestor_ref = parent_ref;
-        loop {
-            match old_tree.get_by_ref(ancestor_ref) {
-                Some(old_inst) => {
-                    if self.changed_children.contains_key(&ancestor_ref) {
-                        self.changed_children
-                            .entry(ancestor_ref)
-                            .and_modify(|v| *v += 1);
-                        break;
-                    }
-
-                    self.changed_children.insert(ancestor_ref, 1);
-
-                    if self.changed.contains_key(&ancestor_ref) {
-                        break;
-                    }
-                    ancestor_ref = old_inst.parent();
-                }
-                None => break,
+        while let Some(old_inst) = old_tree.get_by_ref(ancestor_ref) {
+            if self.changed_children.contains_key(&ancestor_ref) {
+                self.changed_children
+                    .entry(ancestor_ref)
+                    .and_modify(|v| *v += 1);
+                break;
             }
+
+            self.changed_children.insert(ancestor_ref, 1);
+
+            if self.changed.contains_key(&ancestor_ref) {
+                break;
+            }
+            ancestor_ref = old_inst.parent();
         }
     }
 
     fn unmark_ancestors(&mut self, old_tree: &WeakDom, parent_ref: Ref) {
         // log::trace!("unmarking ancestors for {}", ancestor_ref);
         let mut ancestor_ref = parent_ref;
-        loop {
-            match old_tree.get_by_ref(ancestor_ref) {
-                Some(old_inst) => {
-                    if !self.changed_children.contains_key(&ancestor_ref) {
-                        break;
-                    }
-
-                    let changed_children = self.changed_children[&ancestor_ref] - 1;
-                    if changed_children > 0 {
-                        self.changed_children.insert(ancestor_ref, changed_children);
-                        break;
-                    }
-
-                    self.changed_children.remove(&ancestor_ref);
-                    ancestor_ref = old_inst.parent();
-                }
-                None => break,
+        while let Some(old_inst) = old_tree.get_by_ref(ancestor_ref) {
+            if !self.changed_children.contains_key(&ancestor_ref) {
+                break;
             }
+
+            let changed_children = self.changed_children[&ancestor_ref] - 1;
+            if changed_children > 0 {
+                self.changed_children.insert(ancestor_ref, changed_children);
+                break;
+            }
+
+            self.changed_children.remove(&ancestor_ref);
+            ancestor_ref = old_inst.parent();
         }
     }
 
@@ -913,8 +906,7 @@ impl DeepDiff {
     ) {
         let mut process: Vec<(Ref, Ref)> = vec![(old_root, new_root)];
 
-        while !process.is_empty() {
-            let (old_ref, new_ref) = process.pop().unwrap();
+        while let Some((old_ref, new_ref)) = process.pop() {
             let old_inst = old_tree.get_by_ref(old_ref).unwrap();
             let new_inst = new_tree.get_by_ref(new_ref).unwrap();
 

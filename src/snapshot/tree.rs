@@ -52,8 +52,8 @@ pub struct RojoTree {
 
 impl RojoTree {
     pub fn new(snapshot: InstanceSnapshot) -> RojoTree {
-        let root_builder = InstanceBuilder::new(snapshot.class_name.to_owned())
-            .with_name(snapshot.name.to_owned())
+        let root_builder = InstanceBuilder::new(snapshot.class_name.into_owned())
+            .with_name(snapshot.name.into_owned())
             .with_properties(snapshot.properties);
 
         let mut tree = RojoTree {
@@ -96,8 +96,7 @@ impl RojoTree {
             let inst = inner.get_by_ref_mut(inst_ref).unwrap();
             let keys = inst
                 .properties
-                .keys()
-                .map(|k| k.clone())
+                .keys().cloned()
                 .collect::<Vec<_>>();
             for key in keys {
                 let is_conflicting_unique_id = {
@@ -273,7 +272,7 @@ impl RojoTree {
         let mut processing = vec![self.inner.root_ref()];
         while let Some(inst_ref) = processing.pop() {
             let inst = self.inner.get_by_ref_mut(inst_ref).unwrap();
-            inst.properties.iter_mut().for_each(|(k, v)| {
+            inst.properties.iter_mut().for_each(|(_k, v)| {
                 if let Variant::Ref(ref_id) = v {
                     if let Some(ref_id) = ref_map.get(ref_id) {
                         *v = Variant::Ref(*ref_id);
@@ -286,21 +285,21 @@ impl RojoTree {
 
     pub fn syncback_start(
         &mut self,
-        vfs: &Vfs,
+        _vfs: &Vfs,
         old_id: Ref,
         new_dom: &mut WeakDom,
         new_id: Ref,
     ) -> DeepDiff {
         let empty_map = BTreeMap::new();
 
-        let diff = DeepDiff::new(&self.inner, old_id, new_dom, new_id, |old_ref| {
+        
+
+        DeepDiff::new(&self.inner, old_id, new_dom, new_id, |old_ref| {
             match self.get_metadata(old_ref) {
                 Some(metadata) => &metadata.context.syncback.property_filters_diff,
                 None => &empty_map,
             }
-        });
-
-        diff
+        })
     }
 
     pub fn syncback_process(
@@ -355,12 +354,12 @@ impl RojoTree {
 
             let mut node = get_middleware(old_inst.metadata.middleware_id.unwrap()).syncback(
                 &SyncbackArgs {
-                    vfs: vfs,
-                    diff: diff,
+                    vfs,
+                    diff,
                     path: &old_path,
                     old: Some((self, old_id, old_inst.metadata.middleware_context.clone())),
                     new: (new_dom, new_id),
-                    metadata: &old_inst.metadata,
+                    metadata: old_inst.metadata,
                     overrides: None,
                 },
             )?;
@@ -374,9 +373,7 @@ impl RojoTree {
             let inst_snapshot = &item.instance_snapshot;
             if let Some(fs_snapshot) = &inst_snapshot.metadata.fs_snapshot {
                 let violates_rules = fs_snapshot
-                    .files
-                    .iter()
-                    .map(|(path, _)| path)
+                    .files.keys()
                     .chain(fs_snapshot.dirs.iter())
                     .any(|path| !inst_snapshot.metadata.context.should_syncback_path(path));
                 if violates_rules {
@@ -387,8 +384,7 @@ impl RojoTree {
 
             let old_fs_snapshot = item
                 .old_ref
-                .map(|v| self.get_instance(v).unwrap().metadata.fs_snapshot.as_ref())
-                .flatten();
+                .and_then(|v| self.get_instance(v).unwrap().metadata.fs_snapshot.as_ref());
 
             FsSnapshot::reconcile(
                 vfs,
@@ -443,7 +439,7 @@ impl RojoTree {
                         .as_ref()
                         .map(|old_id| (&*self, *old_id, middleware_context)),
                     new: (new_dom, item.new_ref),
-                    metadata: metadata,
+                    metadata,
                     overrides: None, // TODO
                 })?;
 
@@ -536,7 +532,7 @@ impl<'a> InstanceWithMeta<'a> {
     }
 
     pub fn metadata(&self) -> &'a InstanceMetadata {
-        &self.metadata
+        self.metadata
     }
 }
 
@@ -585,6 +581,6 @@ impl InstanceWithMetaMut<'_> {
     }
 
     pub fn metadata(&self) -> &InstanceMetadata {
-        &self.metadata
+        self.metadata
     }
 }

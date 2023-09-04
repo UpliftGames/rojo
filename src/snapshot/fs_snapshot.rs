@@ -118,9 +118,7 @@ impl FsSnapshot {
     pub fn lose_data(&self) -> Self {
         Self {
             files: self
-                .files
-                .iter()
-                .map(|(path, _)| (path.clone(), None))
+                .files.keys().map(|path| (path.clone(), None))
                 .collect(),
             dirs: self.dirs.clone(),
         }

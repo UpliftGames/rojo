@@ -134,8 +134,8 @@ impl SnapshotMiddleware for CsvMiddleware {
                         .middleware_id(self.middleware_id())
                         .fs_snapshot(
                             FsSnapshot::new()
-                                .with_file_contents_owned(&path, get_instance_contents(instance)?)
-                                .with_file_contents_opt(&path.with_extension("meta.json"), meta),
+                                .with_file_contents_owned(path, get_instance_contents(instance)?)
+                                .with_file_contents_opt(path.with_extension("meta.json"), meta),
                         ),
                 )
                 .preferred_ref(sync.ref_for_save()),
@@ -248,8 +248,8 @@ fn get_instance_contents(instance: &Instance) -> anyhow::Result<Vec<u8>> {
 fn get_raw_contents(instance: &Instance) -> anyhow::Result<&str> {
     Ok(match instance.properties.get("Contents") {
         Some(Variant::String(contents)) => contents.as_str(),
-        Some(Variant::BinaryString(contents)) => core::str::from_utf8(&contents.as_ref())?,
-        Some(Variant::SharedString(contents)) => core::str::from_utf8(&contents.data())?,
+        Some(Variant::BinaryString(contents)) => core::str::from_utf8(contents.as_ref())?,
+        Some(Variant::SharedString(contents)) => core::str::from_utf8(contents.data())?,
         _ => bail!("LocalizationTable.Contents was not a string or was missing"),
     })
 }
@@ -264,7 +264,7 @@ fn read_table_to_csv(contents: &str) -> anyhow::Result<Vec<u8>> {
 
     let mut extra_headers = HashMap::new();
     for entry in &contents {
-        for (key, _) in &entry.values {
+        for key in entry.values.keys() {
             if !extra_headers.contains_key(key.as_str()) {
                 extra_headers.insert(key.as_str(), headers.len());
                 headers.push(key);
@@ -272,7 +272,7 @@ fn read_table_to_csv(contents: &str) -> anyhow::Result<Vec<u8>> {
         }
     }
 
-    let extra_headers_iter = headers.iter().skip(4).map(|v| *v);
+    let extra_headers_iter = headers.iter().skip(4).copied();
 
     writer.write_record(&headers)?;
     for entry in &contents {

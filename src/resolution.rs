@@ -47,7 +47,7 @@ impl UnresolvedValue {
         match variant {
             Variant::Bool(v) => UnresolvedValue::Ambiguous(AmbiguousValue::Bool(v)),
             Variant::Float32(v) => UnresolvedValue::Ambiguous(AmbiguousValue::Number(v as f64)),
-            Variant::Float64(v) => UnresolvedValue::Ambiguous(AmbiguousValue::Number(v as f64)),
+            Variant::Float64(v) => UnresolvedValue::Ambiguous(AmbiguousValue::Number(v)),
             Variant::Int32(v) => UnresolvedValue::Ambiguous(AmbiguousValue::Number(v as f64)),
             Variant::Int64(v) => UnresolvedValue::Ambiguous(AmbiguousValue::Number(v as f64)),
             Variant::String(v) => UnresolvedValue::Ambiguous(AmbiguousValue::String(v)),

@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap},
     sync::OnceLock,
 };
 
@@ -161,8 +161,7 @@ pub fn get_default_property(class: &str, property: &str) -> Option<&'static Vari
     rbx_reflection_database::get()
         .classes
         .get(class)
-        .map(|class_def| class_def.default_properties.get(property))
-        .flatten()
+        .and_then(|class_def| class_def.default_properties.get(property))
 }
 
 pub fn filter<'a>(
@@ -175,8 +174,7 @@ pub fn filter<'a>(
             let default = rbx_reflection_database::get()
                 .classes
                 .get(class)
-                .map(|class_def| class_def.default_properties.get(*k))
-                .flatten();
+                .and_then(|class_def| class_def.default_properties.get(*k));
             if default == Some(v) {
                 return false;
             }
@@ -305,8 +303,7 @@ pub trait InstanceExtra {
 
 impl InstanceExtra for Instance {
     fn get_attributes(&mut self) -> &Attributes {
-        let attributes = self
-            .properties
+        self.properties
             .entry("Attributes".to_string())
             .and_modify(|attributes| {
                 match attributes {
@@ -346,8 +343,8 @@ pub trait WeakDomExtra {
 
     fn deduplicate_refs(&mut self, other: &Self) -> BTreeMap<Ref, Ref>;
 
-    fn mark_external_refs(&mut self, ancestor: Ref, global_prop_refs: &HashMap<Ref, bool>) -> ();
-    fn apply_marked_external_refs(&mut self, ancestor: Ref) -> ();
+    fn mark_external_refs(&mut self, ancestor: Ref, global_prop_refs: &HashMap<Ref, bool>);
+    fn apply_marked_external_refs(&mut self, ancestor: Ref);
 }
 
 impl WeakDomExtra for WeakDom {
@@ -402,7 +399,7 @@ impl WeakDomExtra for WeakDom {
         ref_map
     }
 
-    fn mark_external_refs(&mut self, ancestor: Ref, global_prop_refs: &HashMap<Ref, bool>) -> () {
+    fn mark_external_refs(&mut self, ancestor: Ref, global_prop_refs: &HashMap<Ref, bool>) {
         let refs: BTreeSet<Ref> = self.descendants_of(ancestor).collect();
         let mut my_prop_refs: BTreeSet<Ref> = BTreeSet::new();
         for referent in refs.iter() {
@@ -448,7 +445,7 @@ impl WeakDomExtra for WeakDom {
         }
     }
 
-    fn apply_marked_external_refs(&mut self, ancestor: Ref) -> () {
+    fn apply_marked_external_refs(&mut self, ancestor: Ref) {
         let refs: BTreeSet<Ref> = self.descendants_of(ancestor).collect();
         for referent in refs.iter() {
             let name;
@@ -459,12 +456,10 @@ impl WeakDomExtra for WeakDom {
                 (
                     attributes
                         .remove("RojoExternalRef")
-                        .map(|v| v.to_variant_binary_string())
-                        .flatten(),
+                        .and_then(|v| v.to_variant_binary_string()),
                     attributes
                         .remove("RojoExternalRefProps")
-                        .map(|v| v.to_variant_binary_string())
-                        .flatten(),
+                        .and_then(|v| v.to_variant_binary_string()),
                 )
             };
 

@@ -145,10 +145,8 @@ pub fn snapshot_from_vfs(
     for rule in context.snapshot_rules.as_ref() {
         if rule.applies_to(path) {
             let provider_id = rule.inner.middleware_name.as_str();
-            if get_middleware_prefixed(provider_id).match_only_directories() {
-                if vfs.metadata(path)?.is_file() {
-                    continue;
-                }
+            if get_middleware_prefixed(provider_id).match_only_directories() && vfs.metadata(path)?.is_file() {
+                continue;
             }
 
             return get_middleware_prefixed(provider_id).snapshot(context, vfs, path);
@@ -168,10 +166,8 @@ pub fn snapshot_from_vfs(
         //     }
         // );
         if include_glob.is_match(path) && !exclude_glob.is_match(path) {
-            if get_middlewares()[provider_id].match_only_directories() {
-                if vfs.metadata(path)?.is_file() {
-                    continue;
-                }
+            if get_middlewares()[provider_id].match_only_directories() && vfs.metadata(path)?.is_file() {
+                continue;
             }
 
             return get_middlewares()[provider_id].snapshot(context, vfs, path);

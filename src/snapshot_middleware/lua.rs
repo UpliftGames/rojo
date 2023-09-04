@@ -179,7 +179,7 @@ impl SnapshotMiddleware for LuaMiddleware {
                                     get_instance_contents(instance)?,
                                 )
                                 .with_file_contents_opt(
-                                    &path.with_file_name(format!("{}.meta.json", name)),
+                                    path.with_file_name(format!("{}.meta.json", name)),
                                     meta,
                                 ),
                         ),
@@ -192,8 +192,8 @@ impl SnapshotMiddleware for LuaMiddleware {
 fn get_instance_contents(instance: &Instance) -> anyhow::Result<&str> {
     Ok(match instance.properties.get("Source") {
         Some(Variant::String(contents)) => contents.as_str(),
-        Some(Variant::BinaryString(contents)) => str::from_utf8(&contents.as_ref())?,
-        Some(Variant::SharedString(contents)) => str::from_utf8(&contents.data())?,
+        Some(Variant::BinaryString(contents)) => str::from_utf8(contents.as_ref())?,
+        Some(Variant::SharedString(contents)) => str::from_utf8(contents.data())?,
         _ => bail!("Script.Source was not a string or was missing"),
     })
 }
@@ -210,7 +210,7 @@ pub enum ScriptType {
 
 fn get_script_type_and_name(path: &Path) -> (Option<ScriptType>, String) {
     let file_name = path.file_name().unwrap().to_string_lossy();
-    let file_name_parts: Vec<&str> = file_name.split(".").collect();
+    let file_name_parts: Vec<&str> = file_name.split('.').collect();
 
     if file_name_parts.len() >= 3 {
         let ext_prefix = file_name_parts[file_name_parts.len() - 2].to_lowercase();

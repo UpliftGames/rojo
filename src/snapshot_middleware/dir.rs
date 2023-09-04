@@ -7,22 +7,22 @@ use std::{
 
 use anyhow::{bail, Context};
 use memofs::{DirEntry, IoResultExt, Vfs};
-use rbx_dom_weak::{types::Ref, Instance, WeakDom};
+use rbx_dom_weak::{Instance, WeakDom};
 
 use crate::{
     snapshot::{
         get_best_syncback_middleware, get_best_syncback_middleware_must_not_serialize_children,
         is_filename_legal_everywhere, FsSnapshot, InstanceContext, InstanceMetadata,
         InstanceSnapshot, InstigatingSource, MiddlewareContextAny, NewTuple, OldTuple, OptOldTuple,
-        RojoTree, SnapshotMiddleware, SnapshotOverrideTrait, SyncbackArgs, SyncbackNode,
-        SyncbackPlanner, PRIORITY_DIRECTORY_CHECK_FALLBACK, PRIORITY_MANY_READABLE,
-        PRIORITY_MODEL_DIRECTORY,
+        SnapshotMiddleware, SnapshotOverrideTrait, SyncbackArgs, SyncbackNode, SyncbackPlanner,
+        PRIORITY_DIRECTORY_CHECK_FALLBACK, PRIORITY_MANY_READABLE, PRIORITY_MODEL_DIRECTORY,
     },
     snapshot_middleware::{get_middleware, get_middleware_inits},
 };
 
 use super::{
-    get_middlewares, meta_file::MetadataFile, snapshot_from_vfs, util::reconcile_meta_file,
+    get_middlewares, meta_file::MetadataFile, project::OldRefPack, snapshot_from_vfs,
+    util::reconcile_meta_file,
 };
 
 fn preferred_classes() -> &'static BTreeSet<&'static str> {
@@ -192,11 +192,7 @@ fn syncback_update(sync: &SyncbackArgs<'_, '_>) -> anyhow::Result<SyncbackNode> 
     let init_middleware;
 
     {
-        let mut init_old: Option<(
-            &RojoTree,
-            Ref,
-            Option<Arc<(dyn MiddlewareContextAny + 'static)>>,
-        )> = None;
+        let mut init_old: Option<OldRefPack> = None;
         let mut init_path: Option<Cow<Path>> = None;
 
         let old_init_middleware_pack = match dir_context {
@@ -219,7 +215,7 @@ fn syncback_update(sync: &SyncbackArgs<'_, '_>) -> anyhow::Result<SyncbackNode> 
 
                 if let Some(_init_middleware) = init_middleware {
                     init_old = Some((*old_dom, *old_ref, old_init_context));
-                    init_path = Some(Cow::Borrowed(&old_init_path));
+                    init_path = Some(Cow::Borrowed(old_init_path));
                 }
             }
             (Some(_init_middleware), None, _) => {
@@ -256,7 +252,7 @@ fn syncback_update(sync: &SyncbackArgs<'_, '_>) -> anyhow::Result<SyncbackNode> 
                 .with_context(|| "failed to create instance on filesystem")?;
 
             metadata.middleware_context = Some(Arc::new(DirectoryMiddlewareContext {
-                init_middleware: init_node.instance_snapshot.metadata.middleware_id.clone(),
+                init_middleware: init_node.instance_snapshot.metadata.middleware_id,
                 init_context: init_node
                     .instance_snapshot
                     .metadata
@@ -285,7 +281,7 @@ fn syncback_update(sync: &SyncbackArgs<'_, '_>) -> anyhow::Result<SyncbackNode> 
                 &metadata.context.syncback.property_filters_save,
             )?;
 
-            fs_snapshot = fs_snapshot.with_file_contents_opt(&path.join("init.meta.json"), meta);
+            fs_snapshot = fs_snapshot.with_file_contents_opt(path.join("init.meta.json"), meta);
         }
     }
 
@@ -408,18 +404,18 @@ fn syncback_new(sync: &SyncbackArgs<'_, '_>) -> anyhow::Result<SyncbackNode> {
                 .with_context(|| "failed to create instance on filesystem")?;
 
             if let Some(fs_snapshot) = &init_node.instance_snapshot.metadata.fs_snapshot {
-                let violates_rules = fs_snapshot
-                    .files
-                    .iter()
-                    .map(|(path, _)| path)
-                    .chain(fs_snapshot.dirs.iter())
-                    .any(|path| {
-                        !init_node
-                            .instance_snapshot
-                            .metadata
-                            .context
-                            .should_syncback_path(path)
-                    });
+                let violates_rules =
+                    fs_snapshot
+                        .files
+                        .keys()
+                        .chain(fs_snapshot.dirs.iter())
+                        .any(|path| {
+                            !init_node
+                                .instance_snapshot
+                                .metadata
+                                .context
+                                .should_syncback_path(path)
+                        });
                 if violates_rules {
                     log::info!(
                         "Skipping syncback of {} because it is excluded by syncback ignore path rules. (at directory level; still syncing in directory children, only skipping directory init)",
@@ -430,7 +426,7 @@ fn syncback_new(sync: &SyncbackArgs<'_, '_>) -> anyhow::Result<SyncbackNode> {
             }
 
             metadata.middleware_context = Some(Arc::new(DirectoryMiddlewareContext {
-                init_middleware: init_node.instance_snapshot.metadata.middleware_id.clone(),
+                init_middleware: init_node.instance_snapshot.metadata.middleware_id,
                 init_context: init_node
                     .instance_snapshot
                     .metadata
@@ -462,7 +458,7 @@ fn syncback_new(sync: &SyncbackArgs<'_, '_>) -> anyhow::Result<SyncbackNode> {
                 &metadata.context.syncback.property_filters_save,
             )?;
 
-            fs_snapshot = fs_snapshot.with_file_contents_opt(&path.join("init.meta.json"), meta);
+            fs_snapshot = fs_snapshot.with_file_contents_opt(path.join("init.meta.json"), meta);
         }
     }
 
@@ -625,7 +621,7 @@ pub fn snapshot_dir_no_meta(
 
     let mut relevant_paths = vec![path.to_path_buf(), meta_path.clone()];
 
-    for (_, middleware) in middlewares {
+    for middleware in middlewares.values() {
         for &name in middleware.init_names() {
             relevant_paths.push(path.join(name));
         }
@@ -665,7 +661,7 @@ pub fn snapshot_dir_no_meta(
                         .instigating_source(path)
                         .relevant_paths(relevant_paths)
                         .middleware_context(syncback_context)
-                        .context(&context),
+                        .context(context),
                 )
         }
     };

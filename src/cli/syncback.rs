@@ -43,7 +43,7 @@ impl SyncbackCommand {
         log::trace!("Constructing in-memory filesystem");
         let vfs = Vfs::new_default();
 
-        let session = ServeSession::new(vfs, &project_path)?;
+        let session = ServeSession::new(vfs, project_path)?;
 
         let result = syncback(&session, &self.input, output_kind, self.non_interactive);
         log::trace!("syncback out");
@@ -110,7 +110,7 @@ fn syncback(
     tree.warn_for_broken_refs();
 
     log::trace!("Opening input file");
-    let mut file = File::open(&output)?;
+    let mut file = File::open(output)?;
 
     let mut new_dom = match output_kind {
         InputKind::Rbxmx | InputKind::Rbxlx => {
@@ -118,7 +118,7 @@ fn syncback(
         }
         InputKind::Rbxm | InputKind::Rbxl => rbx_binary::from_reader(&mut file)?,
     };
-    let new_root = new_dom.root_ref().clone();
+    let new_root = new_dom.root_ref();
 
     log::trace!("Diffing and applying changes");
 
@@ -128,8 +128,8 @@ fn syncback(
 
     if !skip_prompt {
         println!("The following is a diff of the changes to be synced back to the filesystem:");
-        let old_tree: &RojoTree = &*session.tree();
-        diff.show_diff(old_tree.inner(), &new_dom, &vec![]);
+        let old_tree: &RojoTree = &session.tree();
+        diff.show_diff(old_tree.inner(), &new_dom, &Vec::new());
         println!("\nDo you want to continue and apply these changes? [Y/n]");
         std::io::stdout().flush()?;
 
@@ -141,7 +141,7 @@ fn syncback(
         }
     }
 
-    tree.syncback_process(session.vfs(), &diff, root_id, &mut new_dom)?;
+    tree.syncback_process(session.vfs(), &diff, root_id, &new_dom)?;
 
     tree.warn_for_broken_refs();
 

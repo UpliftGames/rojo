@@ -1702,7 +1702,7 @@ dependencies = [
 
 [[package]]
 name = "rbx_binary"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "log",
  "lz4",
@@ -1715,7 +1715,7 @@ dependencies = [
 
 [[package]]
 name = "rbx_dom_weak"
-version = "2.4.0"
+version = "2.5.0"
 dependencies = [
  "rbx_types",
  "serde",
@@ -1723,7 +1723,7 @@ dependencies = [
 
 [[package]]
 name = "rbx_reflection"
-version = "4.2.0"
+version = "4.3.0"
 dependencies = [
  "rbx_types",
  "serde",
@@ -1732,7 +1732,7 @@ dependencies = [
 
 [[package]]
 name = "rbx_reflection_database"
-version = "0.2.6+roblox-572"
+version = "0.2.7+roblox-588"
 dependencies = [
  "lazy_static",
  "rbx_reflection",
@@ -1742,7 +1742,7 @@ dependencies = [
 
 [[package]]
 name = "rbx_types"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "base64",
  "bitflags",
@@ -1755,7 +1755,7 @@ dependencies = [
 
 [[package]]
 name = "rbx_xml"
-version = "0.13.0"
+version = "0.13.1"
 dependencies = [
  "base64",
  "log",
@@ -1900,9 +1900,9 @@ dependencies = [
 
 [[package]]
 name = "rmp-serde"
-version = "0.14.4"
+version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4ce7d70c926fe472aed493b902010bccc17fa9f7284145cb8772fd22fdb052d8"
+checksum = "bffea85eea980d8a74453e5d02a8d93028f3c34725de143085a844ebe953258a"
 dependencies = [
  "byteorder",
  "rmp",

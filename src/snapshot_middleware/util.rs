@@ -1,6 +1,6 @@
 use std::{
     borrow::Cow,
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, HashSet},
     path::Path,
 };
 
@@ -129,7 +129,7 @@ pub fn match_trailing<'a>(input: &'a str, suffix: &str) -> Option<&'a str> {
 pub trait PathExt {
     fn file_name_ends_with(&self, suffix: &str) -> bool;
     fn file_name_trim_end<'a>(&'a self, suffix: &str) -> anyhow::Result<&'a str>;
-    fn file_name_trim_extension<'a>(&'a self) -> anyhow::Result<String>;
+    fn file_name_trim_extension(&self) -> anyhow::Result<String>;
     fn file_name_trim_end_any<'a>(&'a self, suffixes: &[&str]) -> anyhow::Result<&'a str>;
 
     fn parent_or_cdir(&self) -> anyhow::Result<&Path>;
@@ -155,7 +155,7 @@ where
             .and_then(|name| name.to_str())
             .with_context(|| format!("Path did not have a file name: {}", path.display()))?;
 
-        match_trailing(&file_name, suffix)
+        match_trailing(file_name, suffix)
             .with_context(|| format!("Path did not end in {}: {}", suffix, path.display()))
     }
 
@@ -175,7 +175,7 @@ where
             .with_context(|| format!("Path did not have a file name: {}", path.display()))?;
 
         for suffix in suffixes {
-            if let Some(trimmed) = match_trailing(&file_name, suffix) {
+            if let Some(trimmed) = match_trailing(file_name, suffix) {
                 return Ok(trimmed);
             }
         }

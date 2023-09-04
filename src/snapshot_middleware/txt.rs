@@ -131,10 +131,10 @@ impl SnapshotMiddleware for TxtMiddleware {
                         .fs_snapshot(
                             FsSnapshot::new()
                                 .with_file_contents_borrowed(
-                                    &path,
+                                    path,
                                     get_instance_contents(instance)?,
                                 )
-                                .with_file_contents_opt(&path.with_extension("meta.json"), meta),
+                                .with_file_contents_opt(path.with_extension("meta.json"), meta),
                         ),
                 )
                 .preferred_ref(sync.ref_for_save()),
@@ -145,8 +145,8 @@ impl SnapshotMiddleware for TxtMiddleware {
 fn get_instance_contents(instance: &Instance) -> anyhow::Result<&str> {
     Ok(match instance.properties.get("Value") {
         Some(Variant::String(contents)) => contents.as_str(),
-        Some(Variant::BinaryString(contents)) => str::from_utf8(&contents.as_ref())?,
-        Some(Variant::SharedString(contents)) => str::from_utf8(&contents.data())?,
+        Some(Variant::BinaryString(contents)) => str::from_utf8(contents.as_ref())?,
+        Some(Variant::SharedString(contents)) => str::from_utf8(contents.data())?,
         _ => bail!("StringValue.Value was not a string or was missing"),
     })
 }
