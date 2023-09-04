@@ -144,13 +144,13 @@ impl ServeSession {
 
         let (tree_mutation_sender, tree_mutation_receiver) = crossbeam_channel::unbounded();
 
-        // log::trace!("Starting ChangeProcessor");
-        // let change_processor = ChangeProcessor::start(
-        //     Arc::clone(&tree),
-        //     Arc::clone(&vfs),
-        //     Arc::clone(&message_queue),
-        //     tree_mutation_receiver,
-        // );
+        log::trace!("Starting ChangeProcessor");
+        let change_processor = ChangeProcessor::start(
+            Arc::clone(&tree),
+            Arc::clone(&vfs),
+            Arc::clone(&message_queue),
+            tree_mutation_receiver,
+        );
 
         Ok(Self {
             // change_processor,
