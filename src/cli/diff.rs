@@ -1,14 +1,8 @@
-use std::{
-    collections::BTreeMap,
-    mem::forget,
-    path::{PathBuf},
-};
+use std::{collections::BTreeMap, mem::forget, path::PathBuf};
 
 use crate::{
     open_tree::{open_tree_at_location, InputTree},
-    snapshot::{
-        default_filters_diff, DeepDiff,
-    },
+    snapshot::{default_filters_diff, DeepDiff},
 };
 
 use clap::Parser;
