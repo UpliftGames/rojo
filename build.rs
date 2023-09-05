@@ -41,6 +41,11 @@ fn update_plugin_version(plugin_root: &Path) -> Result<(), anyhow::Error> {
     let plugin_wally = fs::read_to_string(&plugin_root.join("wally.toml"))?;
     let mut plugin_wally: toml_edit::Document = plugin_wally.parse()?;
 
+    // Avoid cyclic build-change triggering
+    if plugin_wally["package"]["version"].as_str() == Some(env!("CARGO_PKG_VERSION")) {
+        return Ok(());
+    }
+
     plugin_wally["package"]["version"] = toml_edit::value(env!("CARGO_PKG_VERSION"));
 
     fs::write(&plugin_root.join("wally.toml"), plugin_wally.to_string())?;
@@ -67,8 +72,8 @@ fn main() -> Result<(), anyhow::Error> {
     let root_dir = env::var_os("CARGO_MANIFEST_DIR").unwrap();
     let plugin_root = PathBuf::from(root_dir).join("plugin");
 
-    // update_plugin_version(&plugin_root)?;
-    // update_readme_version()?;
+    update_plugin_version(&plugin_root)?;
+    update_readme_version()?;
 
     let snapshot = VfsSnapshot::dir(hashmap! {
         "default.project.json" => snapshot_from_fs_path(&plugin_root.join("default.project.json"))?,
