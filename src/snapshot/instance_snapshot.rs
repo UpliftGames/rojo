@@ -2,14 +2,13 @@
 
 use std::{borrow::Cow, collections::HashMap};
 
-
 use rbx_dom_weak::{
     types::{Ref, Variant},
     Instance, WeakDom,
 };
 use serde::{Deserialize, Serialize};
 
-use super::InstanceMetadata;
+use super::{InstanceContext, InstanceMetadata};
 
 /// A lightweight description of what an instance should look like.
 ///
@@ -116,12 +115,16 @@ impl InstanceSnapshot {
     }
 
     #[profiling::function]
-    pub fn from_tree(tree: WeakDom, id: Ref) -> Self {
+    pub fn from_tree(tree: WeakDom, id: Ref, context: &InstanceContext) -> Self {
         let (_, mut raw_tree) = tree.into_raw();
-        Self::from_raw_tree(&mut raw_tree, id)
+        Self::from_raw_tree(&mut raw_tree, id, context)
     }
 
-    fn from_raw_tree(raw_tree: &mut HashMap<Ref, Instance>, id: Ref) -> Self {
+    fn from_raw_tree(
+        raw_tree: &mut HashMap<Ref, Instance>,
+        id: Ref,
+        context: &InstanceContext,
+    ) -> Self {
         let instance = raw_tree
             .remove(&id)
             .expect("instance did not exist in tree");
@@ -129,12 +132,15 @@ impl InstanceSnapshot {
         let children = instance
             .children()
             .iter()
-            .map(|&id| Self::from_raw_tree(raw_tree, id))
+            .map(|&id| Self::from_raw_tree(raw_tree, id, context))
             .collect();
 
         Self {
             snapshot_id: Some(id),
-            metadata: InstanceMetadata::default(),
+            metadata: InstanceMetadata {
+                context: context.clone(),
+                ..InstanceMetadata::default()
+            },
             name: Cow::Owned(instance.name),
             class_name: Cow::Owned(instance.class),
             preferred_ref: Some(id),

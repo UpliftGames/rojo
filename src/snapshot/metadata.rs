@@ -204,20 +204,25 @@ impl InstanceContext {
 
         for (key, new_value) in &new_options.properties {
             // TODO: deduplicate these
-            if syncback.property_filters_diff.contains_key(key) {
-                let old_value = syncback.property_filters_diff.get_mut(key).unwrap();
-                if let ProjectSyncbackPropertyMode::WhenNotEqual(new_eq_values) = &new_value.diff {
-                    if let PropertyFilter::IgnoreWhenEq(old_eq_values) = old_value {
-                        for eq_value in new_eq_values.iter().cloned() {
-                            let eq_value = eq_value.resolve_unambiguous().with_context(|| format!("Excluded syncback property {} could not be resolved to a proper value.", key))?;
-                            old_eq_values.push(eq_value);
+            'diff: {
+                if syncback.property_filters_diff.contains_key(key) {
+                    let old_value = syncback.property_filters_diff.get_mut(key).unwrap();
+                    if let ProjectSyncbackPropertyMode::WhenNotEqual(new_eq_values) =
+                        &new_value.diff
+                    {
+                        if let PropertyFilter::IgnoreWhenEq(old_eq_values) = old_value {
+                            for eq_value in new_eq_values.iter().cloned() {
+                                let eq_value = eq_value.resolve_unambiguous().with_context(|| format!("Excluded syncback property {} could not be resolved to a proper value.", key))?;
+                                old_eq_values.push(eq_value);
+                                break 'diff;
+                            }
                         }
                     }
                 }
 
                 match &new_value.diff {
                     ProjectSyncbackPropertyMode::Always => {
-                        continue;
+                        break 'diff;
                     }
                     ProjectSyncbackPropertyMode::Never => {
                         syncback
@@ -233,25 +238,31 @@ impl InstanceContext {
 
                         syncback.property_filters_diff.insert(
                             key.clone(),
-                            PropertyFilter::IgnoreWhenEq(resolved_eq_values.clone()),
+                            PropertyFilter::IgnoreWhenEq(resolved_eq_values),
                         );
                     }
                 }
             }
-            if syncback.property_filters_save.contains_key(key) {
-                let old_value = syncback.property_filters_save.get_mut(key).unwrap();
-                if let ProjectSyncbackPropertyMode::WhenNotEqual(new_eq_values) = &new_value.save {
-                    if let PropertyFilter::IgnoreWhenEq(old_eq_values) = old_value {
-                        for eq_value in new_eq_values.iter().cloned() {
-                            let eq_value = eq_value.resolve_unambiguous().with_context(|| format!("Excluded syncback property {} could not be resolved to a proper value.", key))?;
-                            old_eq_values.push(eq_value);
+
+            'save: {
+                if syncback.property_filters_save.contains_key(key) {
+                    let old_value = syncback.property_filters_save.get_mut(key).unwrap();
+                    if let ProjectSyncbackPropertyMode::WhenNotEqual(new_eq_values) =
+                        &new_value.save
+                    {
+                        if let PropertyFilter::IgnoreWhenEq(old_eq_values) = old_value {
+                            for eq_value in new_eq_values.iter().cloned() {
+                                let eq_value = eq_value.resolve_unambiguous().with_context(|| format!("Excluded syncback property {} could not be resolved to a proper value.", key))?;
+                                old_eq_values.push(eq_value);
+                                break 'save;
+                            }
                         }
                     }
                 }
 
                 match &new_value.save {
                     ProjectSyncbackPropertyMode::Always => {
-                        continue;
+                        break 'save;
                     }
                     ProjectSyncbackPropertyMode::Never => {
                         syncback
@@ -267,7 +278,7 @@ impl InstanceContext {
 
                         syncback.property_filters_save.insert(
                             key.clone(),
-                            PropertyFilter::IgnoreWhenEq(resolved_eq_values.clone()),
+                            PropertyFilter::IgnoreWhenEq(resolved_eq_values),
                         );
                     }
                 }

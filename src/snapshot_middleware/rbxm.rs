@@ -45,7 +45,7 @@ impl SnapshotMiddleware for RbxmMiddleware {
 
         if children.len() == 1 {
             let child = children[0];
-            let snapshot = InstanceSnapshot::from_tree(temp_tree, child)
+            let snapshot = InstanceSnapshot::from_tree(temp_tree, child, context)
                 .name(name)
                 .metadata(
                     InstanceMetadata::new()

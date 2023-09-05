@@ -92,6 +92,12 @@ pub trait SnapshotMiddleware: Debug + DynEq + Sync + Send {
         consider_descendants: bool,
     ) -> Option<i32>;
 
+    /// Whether to always preserve this middleware even if it would not be
+    /// allowed via syncback_priority.
+    fn syncback_always_preserve_middleware(&self) -> bool {
+        false
+    }
+
     fn syncback_new_path(
         &self,
         parent_path: &Path,
@@ -496,6 +502,16 @@ pub fn get_best_syncback_middleware_sorted(
     if Some("project") == previous_middleware {
         return previous_middleware
             .map(|v| Box::new(std::iter::once(v)) as Box<dyn Iterator<Item = &'static str>>);
+    }
+
+    if let Some(previous_middleware_id) = previous_middleware {
+        if get_middleware(previous_middleware_id)
+            .as_ref()
+            .syncback_always_preserve_middleware()
+        {
+            return Some(Box::new(std::iter::once(previous_middleware_id))
+                as Box<dyn Iterator<Item = &'static str>>);
+        }
     }
 
     let mut middleware_candidates: Vec<(i32, &str)> = Vec::new();

@@ -79,6 +79,27 @@ pub fn default_filters_diff() -> &'static BTreeMap<String, PropertyFilter> {
                         Variant::BinaryString(BinaryString::new()),
                     ]),
                 ),
+                (
+                    "DefinesCapabilities",
+                    PropertyFilter::IgnoreWhenEq(vec![Variant::Bool(false)]),
+                ),
+                (
+                    "AeroMeshData",
+                    PropertyFilter::IgnoreWhenEq(vec![Variant::SharedString(SharedString::new(
+                        Vec::new(),
+                    ))]),
+                ),
+                (
+                    "Interactable",
+                    PropertyFilter::IgnoreWhenEq(vec![Variant::Bool(true)]),
+                ),
+                (
+                    "MaxDistance",
+                    PropertyFilter::IgnoreWhenEq(vec![
+                        Variant::Float32(0.0),
+                        Variant::Float64(0.0),
+                    ]),
+                ),
             ]
             .into_iter()
             .map(|(k, v)| (k.to_string(), v)),
@@ -120,6 +141,27 @@ pub fn default_filters_save() -> &'static BTreeMap<String, PropertyFilter> {
                     PropertyFilter::IgnoreWhenEq(vec![
                         Variant::SharedString(SharedString::new(vec![])),
                         Variant::BinaryString(BinaryString::new()),
+                    ]),
+                ),
+                (
+                    "DefinesCapabilities",
+                    PropertyFilter::IgnoreWhenEq(vec![Variant::Bool(false)]),
+                ),
+                (
+                    "AeroMeshData",
+                    PropertyFilter::IgnoreWhenEq(vec![Variant::SharedString(SharedString::new(
+                        Vec::new(),
+                    ))]),
+                ),
+                (
+                    "Interactable",
+                    PropertyFilter::IgnoreWhenEq(vec![Variant::Bool(true)]),
+                ),
+                (
+                    "MaxDistance",
+                    PropertyFilter::IgnoreWhenEq(vec![
+                        Variant::Float32(0.0),
+                        Variant::Float64(0.0),
                     ]),
                 ),
             ]
@@ -170,6 +212,9 @@ pub fn filter<'a>(
     filter_defaults: bool,
 ) -> impl FnMut(&(&str, &Variant)) -> bool + 'a {
     move |(k, v)| {
+        if Variant::Ref(Ref::none()) == **v {
+            return false;
+        }
         if filter_defaults {
             let default = rbx_reflection_database::get()
                 .classes
@@ -184,7 +229,7 @@ pub fn filter<'a>(
                 PropertyFilter::Ignore => return false,
                 PropertyFilter::IgnoreWhenEq(values) => {
                     for filter_value in values {
-                        if v == &filter_value {
+                        if *v == filter_value {
                             return false;
                         }
                     }

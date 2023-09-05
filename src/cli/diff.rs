@@ -6,11 +6,12 @@ use std::{
 
 use crate::{
     snapshot::{
-        apply_patch_set, compute_patch_set, DeepDiff, InstanceContext, InstanceSnapshot, RojoTree,
+        apply_patch_set, compute_patch_set, default_filters_diff, DeepDiff, InstanceContext,
+        InstanceSnapshot, RojoTree,
     },
     snapshot_middleware::{snapshot_from_vfs, PathExt},
 };
-use anyhow::{Context};
+use anyhow::Context;
 use clap::Parser;
 
 use memofs::Vfs;
@@ -77,6 +78,7 @@ impl DiffCommand {
             &mut new_tree,
             new_root_ref,
             |_| &empty_filters,
+            |_| false,
         );
 
         let path_parts: Option<Vec<String>> = self
@@ -85,7 +87,13 @@ impl DiffCommand {
 
         log::trace!("Created diff; about to show diff");
 
-        diff.show_diff(&old_tree, &new_tree, &path_parts.unwrap_or(vec![]));
+        diff.show_diff(
+            &old_tree,
+            &new_tree,
+            &path_parts.unwrap_or(vec![]),
+            |_| default_filters_diff(),
+            |_| false,
+        );
 
         // Leak objects that would cause a delay while running destructors.
         // We're about to close, and the destructors do nothing important.

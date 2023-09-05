@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, HashSet},
     fs, io,
     net::IpAddr,
     path::{Path, PathBuf},
@@ -78,7 +78,7 @@ pub struct Project {
 
     /// A list of globs and the file types they should be treated as.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub middleware_rules: Vec<ProjectSnapshotRule>,
+    pub snapshot_rules: Vec<ProjectSnapshotRule>,
 
     /// Syncback behavior settings.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -202,11 +202,17 @@ pub struct ProjectSyncback {
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct ProjectSyncbackProperty {
     /// How diffing this property should be handled (default: always diff)
-    #[serde(skip_serializing_if = "ProjectSyncbackPropertyMode::is_default")]
+    #[serde(
+        skip_serializing_if = "ProjectSyncbackPropertyMode::is_default",
+        default
+    )]
     pub diff: ProjectSyncbackPropertyMode,
 
     /// How saving this property should be handled (default: always save)
-    #[serde(skip_serializing_if = "ProjectSyncbackPropertyMode::is_default")]
+    #[serde(
+        skip_serializing_if = "ProjectSyncbackPropertyMode::is_default",
+        default
+    )]
     pub save: ProjectSyncbackPropertyMode,
 }
 
@@ -233,7 +239,9 @@ impl ProjectSyncbackPropertyMode {
 pub struct ProjectSnapshotRule {
     /// The glob pattern to match files against for this type override
     pub include: Glob,
+
     /// The glob pattern that should be excluded from this type override
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub exclude: Option<Glob>,
 
     /// The type of file this match should be treated as

@@ -76,10 +76,10 @@ impl SnapshotMiddleware for ProjectMiddleware {
         }
 
         let mut snapshot_rules = Vec::new();
-        for rule in project.middleware_rules.clone() {
+        for rule in project.snapshot_rules.clone() {
             if !get_middlewares_prefixed().contains_key(rule.middleware_name.as_str()) {
                 bail!(
-                    "Unknown middleware: {}\nKnown middlewares: {}",
+                    "Unknown middleware: {}; Known middlewares: {}",
                     rule.middleware_name,
                     get_middlewares_prefixed()
                         .keys()

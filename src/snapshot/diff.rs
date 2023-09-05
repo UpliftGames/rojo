@@ -1,8 +1,8 @@
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{hash_map::DefaultHasher, BTreeMap, HashMap, HashSet},
     fmt::Display,
+    hash::{Hash, Hasher},
     iter::{Chain, FilterMap, Map},
-    ops::AddAssign,
 };
 
 use float_cmp::approx_eq;
@@ -110,6 +110,7 @@ pub fn are_variants_similar(old_variant: &Variant, new_variant: &Variant) -> boo
                     &Variant::CFrame(*old_cframe),
                     &Variant::CFrame(*new_cframe),
                 ),
+                (None, None) => true,
                 _ => false,
             }
         }
@@ -225,13 +226,13 @@ pub fn display_variant_short(value: &Variant) -> String {
             v.min.x, v.min.y, v.min.z, v.max.x, v.max.y, v.max.z
         ),
         Variant::SharedString(v) => format!("SharedString(length = {})", v.data().len()),
-        Variant::String(v) => {
-            if v.len() < 80 {
-                format!("\"{}\"", v)
-            } else {
-                format!("\"{}...\"", &v[0..77])
-            }
+        Variant::String(v) => if v.len() < 50 {
+            format!("\"{}\"", v)
+        } else {
+            format!("\"{}...\"", &v[0..47])
         }
+        .replace("\n", "\\n")
+        .replace("\t", "\\t"),
         Variant::UDim(v) => format!("UDim({}, {})", v.scale, v.offset),
         Variant::UDim2(v) => format!(
             "UDim2({}, {}, {}, {})",
@@ -343,14 +344,50 @@ impl DeepDiff {
         old_root: Ref,
         new_tree: &mut WeakDom,
         new_root: Ref,
-        get_filters: impl Fn(Ref) -> &'a BTreeMap<String, PropertyFilter>,
+        get_property_filters: impl Fn(Ref) -> &'a BTreeMap<String, PropertyFilter>,
+        should_skip: impl Fn(Ref) -> bool,
     ) -> Self {
         let mut diff = Self::default();
-        diff.deep_diff(old_tree, old_root, new_tree, new_root, get_filters);
-        diff.deduplicate_refs(old_tree, new_tree);
+
+        log::info!("Beginning first diff pass");
+        diff.deep_diff(
+            old_tree,
+            old_root,
+            new_tree,
+            new_root,
+            &get_property_filters,
+            &should_skip,
+        );
+        let ref_map = diff.deduplicate_refs(old_tree, new_tree);
+
+        // rescan after fixing properties as it allows us to re-evaluate ref
+        // properties with correct values. this is slow so we should probably
+        // find a faster solution someday.
+        let new_root = *ref_map.get(&new_root).unwrap_or(&new_root);
+        diff.clear();
+        log::info!("Beginning second diff pass");
+        diff.deep_diff(
+            old_tree,
+            old_root,
+            new_tree,
+            new_root,
+            &get_property_filters,
+            &should_skip,
+        );
+
         diff.prune_matching_ref_properties(old_tree, new_tree);
         diff.find_ref_properties(old_tree, new_tree);
         diff
+    }
+
+    pub fn clear(&mut self) {
+        self.changed_children.clear();
+        self.removed.clear();
+        self.added.clear();
+        self.changed.clear();
+        self.unchanged.clear();
+        self.new_to_old.clear();
+        self.property_refs.clear();
     }
 
     pub fn display<'a>(
@@ -453,7 +490,14 @@ impl DeepDiff {
         Some((added, removed, changed, unchanged))
     }
 
-    pub fn show_diff(&self, old_tree: &WeakDom, new_tree: &WeakDom, path: &[String]) {
+    pub fn show_diff<'a>(
+        &self,
+        old_tree: &WeakDom,
+        new_tree: &WeakDom,
+        path: &[String],
+        get_filters: impl Fn(Ref) -> &'a BTreeMap<String, PropertyFilter>,
+        should_skip: impl Fn(Ref) -> bool,
+    ) {
         let old_root_ref = 'old_ref: {
             let mut item = old_tree.root_ref();
             for name in path.iter() {
@@ -525,20 +569,51 @@ impl DeepDiff {
                             println!("{}- {}", "  ".repeat(tabs), get_name_old(old_ref));
                         }
                         Some(new_ref) => {
-                            if self.has_changed_properties(old_ref) {
-                                println!("{}~ {}", "  ".repeat(tabs), get_name_old(old_ref));
-                            } else if self.has_changed_descendants(old_ref) {
-                                println!(
-                                    "{}  {}  (~{} children)",
-                                    "  ".repeat(tabs),
-                                    get_name_old(old_ref),
-                                    self.changed_children[&old_ref]
-                                );
-                            }
-                            if self.has_changed_properties(old_ref) {
-                                let old_inst = old_tree.get_by_ref(old_ref).unwrap();
-                                let new_inst = new_tree.get_by_ref(new_ref).unwrap();
+                            let old_inst = old_tree.get_by_ref(old_ref).unwrap();
+                            let new_inst = new_tree.get_by_ref(new_ref).unwrap();
 
+                            if should_skip(old_ref) {
+                                continue;
+                            }
+
+                            let filters = get_filters(old_ref);
+
+                            let should_print = (self.has_changed_properties(old_ref)
+                                && diff_properties(old_inst, new_inst, filters).any(|_| true))
+                                || self.has_changed_descendants(old_ref);
+
+                            if !should_print {
+                                continue;
+                            }
+
+                            let mut prefix = "  ";
+                            let mut postfix = "".to_string();
+
+                            if self.has_changed_properties(old_ref) {
+                                prefix = "~ ";
+                            }
+                            if self.has_changed_descendants(old_ref) {
+                                postfix =
+                                    format!("  (~{} children)", self.changed_children[&old_ref]);
+                            }
+
+                            let (diff_score, same_score) =
+                                SimilarityScorer::new(old_tree, new_tree, default_filters_diff())
+                                    .similarity_score(old_inst, new_inst);
+                            let percent_same_score = (same_score * 100) / (diff_score + same_score);
+
+                            println!(
+                                "{}{}{}  ({}%  {},{}){}",
+                                "  ".repeat(tabs),
+                                prefix,
+                                get_name_old(old_ref),
+                                percent_same_score,
+                                same_score,
+                                diff_score,
+                                postfix
+                            );
+
+                            if self.has_changed_properties(old_ref) {
                                 if let Some(true) = self.property_refs.get(&old_ref) {
                                     println!(
                                         "{}~ referred to by a changed property",
@@ -655,8 +730,12 @@ impl DeepDiff {
         }
     }
 
-    fn deduplicate_refs(&mut self, old_tree: &WeakDom, new_tree: &mut WeakDom) {
-        let mut ref_map = BTreeMap::new();
+    fn deduplicate_refs(
+        &mut self,
+        old_tree: &WeakDom,
+        new_tree: &mut WeakDom,
+    ) -> BTreeMap<Ref, Ref> {
+        let mut ref_map: BTreeMap<Ref, Ref> = BTreeMap::new();
         {
             // Fix duplicate refs
             for referent in new_tree.descendants().collect::<Vec<_>>() {
@@ -692,7 +771,7 @@ impl DeepDiff {
         {
             // Fix properties
             for referent in new_tree.descendants().collect::<Vec<_>>() {
-                for (_k, v) in new_tree
+                for (_property_name, v) in new_tree
                     .get_by_ref_mut(referent)
                     .unwrap()
                     .properties
@@ -706,22 +785,32 @@ impl DeepDiff {
                 }
             }
         }
+        ref_map
     }
 
     fn find_ref_properties(&mut self, old_tree: &WeakDom, new_tree: &WeakDom) {
         for old_ref in old_tree.descendants() {
             for (property_name, v) in old_tree.get_by_ref(old_ref).unwrap().properties.iter() {
                 if let Variant::Ref(prop_ref) = v {
-                    self.property_refs.insert(
-                        *prop_ref,
-                        self.is_property_changed(
+                    if prop_ref.is_some() {
+                        let is_changed = self.is_property_changed(
                             old_tree,
                             new_tree,
                             old_ref,
                             property_name,
                             &BTreeMap::new(),
-                        ),
-                    );
+                        );
+
+                        if is_changed {
+                            log::info!(
+                                "marking {} as used in a changed property {} (old tree)",
+                                prop_ref,
+                                property_name
+                            );
+                        }
+
+                        self.property_refs.insert(*prop_ref, is_changed);
+                    }
                 }
             }
         }
@@ -738,8 +827,16 @@ impl DeepDiff {
                             &BTreeMap::new(),
                         )
                     } else {
-                        true
+                        false
                     };
+
+                    if is_changed {
+                        log::info!(
+                            "marking {} as used in a changed property {} (new tree)",
+                            prop_ref,
+                            property_name
+                        );
+                    }
 
                     self.property_refs.insert(*prop_ref, is_changed);
                 }
@@ -749,13 +846,14 @@ impl DeepDiff {
         // Mark all instances that are referred to by a changed property as
         // changed instances as well, to ensure that they're re-serialized with
         // a persistent ref id if they weren't already.
-        for old_ref in self
+        let changed_refs_list = self
             .property_refs
             .iter()
             .filter(|(_prop_ref, &is_changed)| is_changed)
             .map(|(&prop_ref, _)| prop_ref)
-            .collect_vec()
-        {
+            .collect_vec();
+
+        for old_ref in changed_refs_list {
             if let Some(old_inst) = old_tree.get_by_ref(old_ref) {
                 if self.unchanged.contains_key(&old_ref) {
                     if let Some(new_ref) = self.get_matching_new_ref(old_ref) {
@@ -791,56 +889,67 @@ impl DeepDiff {
             by_name.entry(&child.name).or_default().1.insert(*child_ref);
         }
 
-        let mut scorer = SimilarityScorer {
-            old_tree,
-            new_tree,
-            filters,
-            prop_cache_old: HashMap::new(),
-            prop_cache_new: HashMap::new(),
-        };
+        let mut scorer = SimilarityScorer::new(old_tree, new_tree, filters);
 
-        for (_name, (old_children, mut new_children)) in by_name.into_iter() {
-            for old_child_ref in old_children {
+        for (_name, (mut old_children, mut new_children)) in by_name.into_iter() {
+            let mut iters = 0;
+            while !old_children.is_empty() {
                 if new_children.is_empty() {
-                    self.removed.insert(old_child_ref);
-                    any_changes = true;
-                    continue;
+                    for old_child_ref in old_children {
+                        self.removed.insert(old_child_ref);
+                        any_changes = true;
+                    }
+                    break;
                 }
 
-                if new_children.contains(&old_child_ref) {
-                    matches.insert(old_child_ref, old_child_ref);
-                    new_children.remove(&old_child_ref);
-                    continue;
+                let mut similarity_score_map: BTreeMap<Ref, (Ref, i32)> = BTreeMap::new();
+
+                for &old_child_ref in old_children.iter() {
+                    let old_child = old_tree.get_by_ref(old_child_ref).unwrap();
+
+                    let best_match_iter = new_children.iter().map(|new_child_ref| {
+                        let new_child = new_tree.get_by_ref(*new_child_ref).unwrap();
+                        let (diff_score, same_score) =
+                            scorer.similarity_score(old_child, new_child);
+
+                        let percent_same_score = (same_score * 100) / (diff_score + same_score);
+
+                        (*new_child_ref, percent_same_score)
+                    });
+
+                    let mut best_match: Option<(Ref, i32)> = None;
+                    for (new_child_ref, percent_same_score) in best_match_iter {
+                        if best_match.is_none() || percent_same_score > best_match.unwrap().1 {
+                            best_match = Some((new_child_ref, percent_same_score));
+                            if percent_same_score == 100 {
+                                break;
+                            }
+                        }
+                    }
+
+                    similarity_score_map.insert(old_child_ref, best_match.unwrap());
                 }
 
-                // this is thorough but slow. we should set up a fast, not-thorough
-                // solution for big trees.
-                let old_child = old_tree.get_by_ref(old_child_ref).unwrap();
-                let best_match_iter = new_children.iter().map(|new_child_ref| {
-                    let new_child = new_tree.get_by_ref(*new_child_ref).unwrap();
-                    let (diff_score, same_score) = scorer.similarity_score(old_child, new_child);
-
-                    let percent_same_score = (same_score * 100) / (diff_score + same_score);
-
-                    (*new_child_ref, percent_same_score)
+                let mut top_similarity_scores: Vec<_> = similarity_score_map
+                    .into_iter()
+                    .map(|(k, (v1, v2))| (k, v1, v2))
+                    .collect();
+                top_similarity_scores.sort_by(|(_, _, score_a), (_, _, score_b)| {
+                    score_b.partial_cmp(score_a).unwrap()
                 });
 
-                let mut best_match = None;
-                for (new_child_ref, percent_same_score) in best_match_iter {
-                    if percent_same_score == 100 {
-                        best_match = Some((new_child_ref, percent_same_score));
-                        break;
-                    } else if percent_same_score > best_match.map_or(-1, |x| x.1) {
-                        best_match = Some((new_child_ref, percent_same_score));
+                for (old_child_ref, new_child_ref, _score) in top_similarity_scores {
+                    if new_children.contains(&new_child_ref) {
+                        matches.insert(old_child_ref, new_child_ref);
+                        new_children.remove(&new_child_ref);
+                        old_children.remove(&old_child_ref);
                     }
                 }
-
-                if let Some((new_child_ref, _percent_same_score)) = best_match {
-                    matches.insert(old_child_ref, new_child_ref);
-                    new_children.remove(&new_child_ref);
-                } else {
-                    self.removed.insert(old_child_ref);
-                    any_changes = true;
+                iters += 1;
+                if iters >= 100 {
+                    println!("help i am trapped in a loop");
+                    println!("remaining new: {}", new_children.len());
+                    println!("remaining old: {}", old_children.len());
                 }
             }
 
@@ -902,11 +1011,16 @@ impl DeepDiff {
         old_root: Ref,
         new_tree: &WeakDom,
         new_root: Ref,
-        get_filters: impl Fn(Ref) -> &'a BTreeMap<String, PropertyFilter>,
+        get_filters: &impl Fn(Ref) -> &'a BTreeMap<String, PropertyFilter>,
+        should_skip: &impl Fn(Ref) -> bool,
     ) {
         let mut process: Vec<(Ref, Ref)> = vec![(old_root, new_root)];
 
         while let Some((old_ref, new_ref)) = process.pop() {
+            if should_skip(old_ref) {
+                continue;
+            }
+
             let old_inst = old_tree.get_by_ref(old_ref).unwrap();
             let new_inst = new_tree.get_by_ref(new_ref).unwrap();
 
@@ -938,6 +1052,20 @@ pub struct SimilarityScorer<'a> {
 }
 
 impl<'a> SimilarityScorer<'a> {
+    pub fn new(
+        old_tree: &'a WeakDom,
+        new_tree: &'a WeakDom,
+        filters: &'a BTreeMap<String, PropertyFilter>,
+    ) -> Self {
+        Self {
+            old_tree,
+            new_tree,
+            filters,
+            prop_cache_old: HashMap::new(),
+            prop_cache_new: HashMap::new(),
+        }
+    }
+
     pub fn similarity_score(
         &mut self,
         old_instance: &'a Instance,
@@ -986,21 +1114,54 @@ impl<'a> SimilarityScorer<'a> {
         for child_ref in old_instance.children() {
             let child = self.old_tree.get_by_ref(*child_ref).unwrap();
             diff_score += 1;
-            children_by_name
-                .entry(&child.name)
-                .or_default()
-                .add_assign(1);
+            *children_by_name.entry(&child.name).or_default() += 1;
         }
         for child_ref in new_instance.children() {
             let child = self.new_tree.get_by_ref(*child_ref).unwrap();
             diff_score += 1;
             children_by_name.entry(&child.name).and_modify(|v| {
-                if v > &mut 0 {
+                if *v > 0 {
                     same_score += 1;
                     diff_score -= 2; // subtract diff added by both loops
                     *v -= 1;
                 }
             });
+        }
+
+        let mut children_props: BTreeMap<u64, i32> = BTreeMap::new();
+        for child_ref in old_instance.children() {
+            let child = self.old_tree.get_by_ref(*child_ref).unwrap();
+
+            for (property_name, value) in child.properties.iter() {
+                let mut hasher = DefaultHasher::new();
+                child.name.hash(&mut hasher);
+                property_name.hash(&mut hasher);
+                value.hash(&mut hasher);
+                let hash = hasher.finish();
+
+                diff_score += 1;
+                *children_props.entry(hash).or_default() += 1;
+            }
+        }
+        for child_ref in new_instance.children() {
+            let child = self.new_tree.get_by_ref(*child_ref).unwrap();
+
+            for (property_name, value) in child.properties.iter() {
+                let mut hasher = DefaultHasher::new();
+                child.name.hash(&mut hasher);
+                property_name.hash(&mut hasher);
+                value.hash(&mut hasher);
+                let hash = hasher.finish();
+
+                diff_score += 1;
+                children_props.entry(hash).and_modify(|v| {
+                    if *v > 0 {
+                        same_score += 1;
+                        diff_score -= 2; // subtract diff added by both loops
+                        *v -= 1;
+                    }
+                });
+            }
         }
 
         (diff_score, same_score)

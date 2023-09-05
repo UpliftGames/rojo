@@ -112,12 +112,12 @@ impl SnapshotMiddleware for DirectoryMiddleware {
         for child_ref in instance.children() {
             let inst = dom.get_by_ref(*child_ref).unwrap();
             let name = inst.name.as_str();
-            if !names.insert(name) {
-                log::info!("Cannot save {} as a directory because it contains 2+ children with the same name: {}", instance.name, name);
+            if !names.insert(name.to_lowercase()) {
+                log::info!("Cannot save {} as a directory because it contains 2+ children with the same name: {}  (it will be saved as something else instead, like an rbxm)", instance.name, name);
                 return None;
             }
             if !is_filename_legal_everywhere(name) {
-                log::info!("Cannot save {} as a directory because it contains a child with an invalid name: {}", instance.name, name);
+                log::info!("Cannot save {} as a directory because it contains a child with an invalid name: {}  (it will be saved as something else instead, like an rbxm)", instance.name, name);
                 return None;
             }
         }

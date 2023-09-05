@@ -1,9 +1,0 @@
-{
-  "name": "syncback test",
-  "tree": {
-    "$className": "DataModel",
-    "Workspace": {
-      "$path": "Workspace"
-    }
-  }
-}

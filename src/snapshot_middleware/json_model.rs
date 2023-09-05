@@ -19,7 +19,8 @@ use crate::{
     resolution::UnresolvedValue,
     snapshot::{
         FsSnapshot, InstanceContext, InstanceSnapshot, OptOldTuple, PropertiesFiltered,
-        PropertyFilter, SnapshotMiddleware, SyncbackArgs, SyncbackNode, ToVariantBinaryString, PRIORITY_MANY_READABLE_PREFERRED, PRIORITY_MODEL_JSON,
+        PropertyFilter, SnapshotMiddleware, SyncbackArgs, SyncbackNode, ToVariantBinaryString,
+        PRIORITY_MANY_READABLE_PREFERRED, PRIORITY_MODEL_JSON,
     },
 };
 
@@ -297,7 +298,7 @@ impl JsonModel {
                     }
                 })
                 .collect(),
-            attributes: instance.properties.get("attributes").map_or_else(
+            attributes: instance.properties.get("Attributes").map_or_else(
                 IndexMap::new,
                 |attributes| match attributes {
                     Variant::Attributes(attributes) => attributes

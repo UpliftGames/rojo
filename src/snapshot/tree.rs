@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, HashMap, HashSet, VecDeque},
     path::{Path, PathBuf},
+    sync::OnceLock,
 };
 
 use anyhow::{bail, Context};
@@ -13,13 +14,9 @@ use rbx_dom_weak::{
 use crate::{multimap::MultiMap, snapshot::InstigatingSource, snapshot_middleware::get_middleware};
 
 use super::{
-    diff::DeepDiff, FsSnapshot, InstanceMetadata, InstanceSnapshot, SyncbackArgs, SyncbackNode,
+    diff::DeepDiff, FsSnapshot, InstanceMetadata, InstanceSnapshot, PropertyFilter, SyncbackArgs,
+    SyncbackNode,
 };
-
-pub enum SyncbackTarget {
-    Replace(Ref),
-    NewParentedTo(Ref),
-}
 
 /// An expanded variant of rbx_dom_weak's `WeakDom` that tracks additional
 /// metadata per instance that's Rojo-specific.
@@ -94,10 +91,7 @@ impl RojoTree {
 
         while let Some(inst_ref) = processing.pop() {
             let inst = inner.get_by_ref_mut(inst_ref).unwrap();
-            let keys = inst
-                .properties
-                .keys().cloned()
-                .collect::<Vec<_>>();
+            let keys = inst.properties.keys().cloned().collect::<Vec<_>>();
             for key in keys {
                 let is_conflicting_unique_id = {
                     if let Variant::UniqueId(id) = inst.properties.get(&key).unwrap() {
@@ -283,6 +277,31 @@ impl RojoTree {
         }
     }
 
+    pub fn syncback_get_filters(&self, old_ref: Ref) -> &BTreeMap<String, PropertyFilter> {
+        static EMPTY_MAP: OnceLock<BTreeMap<String, PropertyFilter>> = OnceLock::new();
+
+        match self.get_metadata(old_ref) {
+            Some(metadata) => &metadata.context.syncback.property_filters_diff,
+            None => EMPTY_MAP.get_or_init(|| BTreeMap::new()),
+        }
+    }
+
+    pub fn syncback_should_skip(&self, old_ref: Ref) -> bool {
+        if let Some(metadata) = self.get_metadata(old_ref) {
+            if let Some(source_path) = metadata.snapshot_source_path(true) {
+                return metadata
+                    .context
+                    .syncback
+                    .as_ref()
+                    .exclude_globs
+                    .iter()
+                    .any(|glob| glob.is_match(&source_path));
+            }
+        }
+
+        false
+    }
+
     pub fn syncback_start(
         &mut self,
         _vfs: &Vfs,
@@ -290,16 +309,14 @@ impl RojoTree {
         new_dom: &mut WeakDom,
         new_id: Ref,
     ) -> DeepDiff {
-        let empty_map = BTreeMap::new();
-
-        
-
-        DeepDiff::new(&self.inner, old_id, new_dom, new_id, |old_ref| {
-            match self.get_metadata(old_ref) {
-                Some(metadata) => &metadata.context.syncback.property_filters_diff,
-                None => &empty_map,
-            }
-        })
+        DeepDiff::new(
+            &self.inner,
+            old_id,
+            new_dom,
+            new_id,
+            |old_ref| self.syncback_get_filters(old_ref),
+            |old_ref| self.syncback_should_skip(old_ref),
+        )
     }
 
     pub fn syncback_process(
@@ -373,7 +390,8 @@ impl RojoTree {
             let inst_snapshot = &item.instance_snapshot;
             if let Some(fs_snapshot) = &inst_snapshot.metadata.fs_snapshot {
                 let violates_rules = fs_snapshot
-                    .files.keys()
+                    .files
+                    .keys()
                     .chain(fs_snapshot.dirs.iter())
                     .any(|path| !inst_snapshot.metadata.context.should_syncback_path(path));
                 if violates_rules {

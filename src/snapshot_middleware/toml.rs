@@ -8,7 +8,7 @@ use crate::{
     lua_ast::{Expression, Statement},
     snapshot::{
         FsSnapshot, InstanceContext, InstanceMetadata, InstanceSnapshot, OptOldTuple,
-        SnapshotMiddleware, SyncbackArgs, SyncbackNode, PRIORITY_IF_ALREADY_USING,
+        SnapshotMiddleware, SyncbackArgs, SyncbackNode,
     },
 };
 
@@ -77,19 +77,21 @@ impl SnapshotMiddleware for TomlMiddleware {
         _instance: &rbx_dom_weak::Instance,
         _consider_descendants: bool,
     ) -> Option<i32> {
-        Some(PRIORITY_IF_ALREADY_USING)
+        None
         // TODO: implement lua ast _reading_ so we can convert lua to toml
+    }
+
+    fn syncback_always_preserve_middleware(&self) -> bool {
+        true
     }
 
     fn syncback_new_path(
         &self,
-        _parent_path: &Path,
-        _name: &str,
+        parent_path: &Path,
+        name: &str,
         _new_inst: &rbx_dom_weak::Instance,
     ) -> anyhow::Result<std::path::PathBuf> {
-        Err(anyhow::anyhow!(
-            "Syncback for new toml files not implemented"
-        ))
+        Ok(parent_path.join(format!("{}.toml", name)))
     }
 
     fn syncback(&self, sync: &SyncbackArgs<'_, '_>) -> anyhow::Result<SyncbackNode> {

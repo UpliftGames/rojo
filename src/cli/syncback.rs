@@ -157,7 +157,13 @@ fn syncback(
 
     if !skip_prompt {
         println!("The following is a diff of the changes to be synced back to the filesystem:");
-        diff.show_diff(tree.inner(), &new_dom, &Vec::new());
+        diff.show_diff(
+            tree.inner(),
+            &new_dom,
+            &Vec::new(),
+            |old_ref| tree.syncback_get_filters(old_ref),
+            |old_ref| tree.syncback_should_skip(old_ref),
+        );
         println!("\nDo you want to continue and apply these changes? [Y/n]");
         std::io::stdout().flush()?;
 
