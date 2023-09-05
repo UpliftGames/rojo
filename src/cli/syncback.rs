@@ -7,12 +7,11 @@ use std::{
 
 use crate::{
     open_tree::{open_tree_at_location, InputTree},
-    snapshot::{apply_patch_set, compute_patch_set, InstanceContext, InstanceSnapshot, RojoTree},
-    snapshot_middleware::snapshot_from_vfs,
+    snapshot::{RojoTree},
 };
-use anyhow::{bail, Context};
+use anyhow::{bail};
 use clap::Parser;
-use fs_err::File;
+
 use memofs::Vfs;
 use rbx_dom_weak::WeakDom;
 
@@ -89,7 +88,7 @@ fn syncback(vfs: &Vfs, tree: &mut RojoTree, input: &Path, skip_prompt: bool) -> 
     log::info!("Opening syncback input file...");
     let timer = std::time::Instant::now();
 
-    let mut new_dom: WeakDom = open_tree_at_location(vfs, &input)?.into();
+    let mut new_dom: WeakDom = open_tree_at_location(vfs, input)?.into();
     let new_root = new_dom.root_ref();
 
     log::info!(
@@ -109,7 +108,7 @@ fn syncback(vfs: &Vfs, tree: &mut RojoTree, input: &Path, skip_prompt: bool) -> 
 
     if !skip_prompt {
         println!("The following is a diff of the changes to be synced back to the filesystem:");
-        let any_changes = diff.show_diff(
+        let _any_changes = diff.show_diff(
             tree.inner(),
             &new_dom,
             &Vec::new(),

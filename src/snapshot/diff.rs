@@ -265,8 +265,8 @@ pub fn display_variant_short(value: &Variant) -> String {
         } else {
             format!("\"{}...\"", &v[0..47])
         }
-        .replace("\n", "\\n")
-        .replace("\t", "\\t"),
+        .replace('\n', "\\n")
+        .replace('\t', "\\t"),
         Variant::UDim(v) => format!("UDim({}, {})", v.scale, v.offset),
         Variant::UDim2(v) => format!(
             "UDim2({}, {}, {}, {})",

@@ -1,18 +1,16 @@
 use std::{
     collections::BTreeMap,
     mem::forget,
-    path::{Path, PathBuf},
+    path::{PathBuf},
 };
 
 use crate::{
     open_tree::{open_tree_at_location, InputTree},
     snapshot::{
-        apply_patch_set, compute_patch_set, default_filters_diff, DeepDiff, InstanceContext,
-        InstanceSnapshot, RojoTree,
+        default_filters_diff, DeepDiff,
     },
-    snapshot_middleware::{snapshot_from_vfs, PathExt},
 };
-use anyhow::Context;
+
 use clap::Parser;
 
 use memofs::Vfs;
@@ -55,7 +53,7 @@ impl DiffCommand {
 
         let empty_filters = BTreeMap::new();
         let diff = DeepDiff::new(
-            &old_dom,
+            old_dom,
             old_dom.root_ref(),
             &mut new_dom,
             new_root_ref,
@@ -70,7 +68,7 @@ impl DiffCommand {
         log::info!("  diffed trees in {:.3}s", timer.elapsed().as_secs_f64());
 
         diff.show_diff(
-            &old_dom,
+            old_dom,
             &new_dom,
             &path_parts.unwrap_or(vec![]),
             |old_ref| match &old_tree {

@@ -15,9 +15,9 @@ pub enum InputTree {
     WeakDom(WeakDom),
 }
 
-impl Into<WeakDom> for InputTree {
-    fn into(self) -> WeakDom {
-        match self {
+impl From<InputTree> for WeakDom {
+    fn from(val: InputTree) -> Self {
+        match val {
             InputTree::RojoTree(tree) => tree.into_weakdom(),
             InputTree::WeakDom(tree) => tree,
         }

@@ -282,7 +282,7 @@ impl RojoTree {
 
         match self.get_metadata(old_ref) {
             Some(metadata) => &metadata.context.syncback.property_filters_diff,
-            None => EMPTY_MAP.get_or_init(|| BTreeMap::new()),
+            None => EMPTY_MAP.get_or_init(BTreeMap::new),
         }
     }
 
