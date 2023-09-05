@@ -2,6 +2,13 @@
 
 ## Unreleased Changes
 
+## [7.3.0-uplift.12.pre.1+syncback.experimental.1] - 2023-09-05
+
+* Adds syncback and diff commands
+* New project file fields for syncback
+* Numerous internal changes, rewrites, and refactors
+* Minor behavior changes, such as support for more `init` file types
+
 ## [7.3.0-uplift.11] - 2023-05-25
 
 * Updates rbx-dom to fix issues with UniqueId

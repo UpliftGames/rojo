@@ -9,6 +9,83 @@ Changes from upstream Rojo:
 * MeshPart support
 * UniqueId support
 
+## Syncback Experimental Branch
+
+This branch additionally contains experimental `syncback` and `diff` commands, implementing **file-based two-way sync** and tree diffing.
+
+Known issues:
+- The code is messy! This was hacked away at constantly with little cleanup.
+- Diffing can take a while on large projects
+- The diff display displays some changes which are intentionally never
+  committed. For example, it displays all extra services in the place file.
+- Localization files nearly always show up in diffs. Their contents are actually
+  just a json string, and they'll be "different" even if the json decodes to the
+  same. Additionally, Roblox's json output is not deterministic.
+- Other things I'm almost certainly forgetting!
+
+How to:
+1. Prepare your project for assets by adding folders and project file entries for common asset locations like Workspace and ReplicatedStorage
+2. Save your place file somewhere accessible
+3. Syncback: `rojo syncback --input path/to/your/place.rbxl path/to/your/project.default.json`
+4. Confirm that the diff looks right and it will write the assets to the filesystem
+
+Exciting features list:
+- Can turn any instance into an item on the filesystem
+- Chooses filesystem representation intelligently based on instance class,
+  properties, etc.
+- Prefers to keep existing filesystem representation if possible
+- Only syncs changed instances to minimize git diffs
+- Built-in filters for problematic properties, plus the ability to define your own
+- Blob exclusion lists for places that shouldn't be sync back into (e.g. code directories)
+- Ability to sync from a project to another project
+
+New `project.json` fields:
+
+```jsonc
+{
+    "syncback": { // optional
+        "excludeGlobs": ["glob/paths/here"], // optional
+        "properties": {                      // optional
+            "PropertyNameSample1": {
+                "diff": "always", // optional, default
+                "save": "always", // optional, default
+                // diff controls whether a property can trigger a change.
+                // save controls whether a property appears in json models and meta files.
+            },
+            "PropertyNameSample2": {
+                "diff": "never", // never [diff/save] this property
+                "save": {
+                    "whenNotEqual": [ // skip this property if it equals any of these values
+                        { "Float32": 0.0 }, // exact comparison is done, so typically for
+                        { "Float64": 0.0 }, // numbers you should define all numerical types
+                        { "Int32": 0 },
+                        { "Int64": 0 }, // see https://rojo.space/docs/v7/properties for more fully qualified property samples
+                    ]
+                }
+            },
+        }
+    }
+}
+```
+
+```jsonc
+{
+    "snapshotRules": [ // optional
+        // custom glob rules for what type of instance files should be turn into.
+        {
+            "use": "rojo/txt",      // required
+            "include": ["*.txt"],   // required
+            "exclude": ["docs/**"], // optional
+        }
+        // full list of types:
+        //  "rojo/lua", "rojo/txt", "rojo/csv", "rojo/json", "rojo/toml",
+        //  "rojo/json_model", "rojo/rbxm", "rojo/rbxmx",
+        //  "rojo/project", "rojo/directory",
+        // (project and directory are not really intended for external use, but they may work fine)
+    ]
+}
+```
+
 <details><summary>Release Instructions</summary>
 
 New Uplift Games-specific releases should:
