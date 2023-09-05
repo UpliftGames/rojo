@@ -1,5 +1,6 @@
 use std::{
-    collections::{hash_map::DefaultHasher, BTreeMap, HashMap, HashSet},
+    borrow::Cow,
+    collections::{hash_map::DefaultHasher, BTreeMap, BTreeSet, HashMap, HashSet},
     fmt::Display,
     hash::{Hash, Hasher},
     iter::{Chain, FilterMap, Map},
@@ -8,14 +9,16 @@ use std::{
 use float_cmp::approx_eq;
 use itertools::{Itertools, Unique};
 use rbx_dom_weak::{
-    types::{Ref, Variant, Vector2, Vector3},
+    types::{Attributes, BinaryString, Color3, Ref, Variant, Vector2, Vector3},
     Instance, WeakDom,
 };
 
 use super::{
-    default_filters_diff, filter, get_default_property, PropertiesFiltered, PropertyFilter,
-    ToVariantBinaryString, WeakDomExtra,
+    default_filters_diff, filter, get_default_property, InstanceExtra, PropertiesFiltered,
+    PropertyFilter, ToVariantBinaryString, WeakDomExtra,
 };
+
+const ROJO_DEDUP_KEY: &str = "__RojoDeduplicate";
 
 // We've copied the exact return type from the iterator here so that we can
 // return it directly without collecting it or making it a trait object.
@@ -163,6 +166,37 @@ pub fn are_variants_similar(old_variant: &Variant, new_variant: &Variant) -> boo
     }
 }
 
+fn round_places_f64(v: f64, places: i32) -> f64 {
+    (v * 10f64.powi(places)).round() / 10f64.powi(places)
+}
+
+fn round_places_f32(v: f32, places: i32) -> f32 {
+    (v * 10f32.powi(places)).round() / 10f32.powi(places)
+}
+
+pub fn round_variant_floats_for_hash(v: &Variant) -> Cow<Variant> {
+    // limited coverage for now, will expand if it's an issue!
+    match v {
+        Variant::Float32(v) => Cow::Owned(Variant::Float32(round_places_f32(*v, 3))),
+        Variant::Float64(v) => Cow::Owned(Variant::Float64(round_places_f64(*v, 3))),
+        Variant::Vector2(v) => Cow::Owned(Variant::Vector2(Vector2 {
+            x: round_places_f32(v.x, 3),
+            y: round_places_f32(v.y, 3),
+        })),
+        Variant::Vector3(v) => Cow::Owned(Variant::Vector3(Vector3 {
+            x: round_places_f32(v.x, 3),
+            y: round_places_f32(v.y, 3),
+            z: round_places_f32(v.z, 3),
+        })),
+        Variant::Color3(v) => Cow::Owned(Variant::Color3(Color3 {
+            r: round_places_f32(v.r, 3),
+            g: round_places_f32(v.g, 3),
+            b: round_places_f32(v.b, 3),
+        })),
+        _ => Cow::Borrowed(v),
+    }
+}
+
 pub fn display_variant_short(value: &Variant) -> String {
     match value {
         Variant::Axes(v) => format!("{:?}", v),
@@ -194,10 +228,10 @@ pub fn display_variant_short(value: &Variant) -> String {
         ),
         Variant::Enum(v) => format!("Enum({})", v.to_u32()),
         Variant::Faces(v) => format!("{:?}", v),
-        Variant::Float32(v) => format!("{}", v),
-        Variant::Float64(v) => format!("{}", v),
-        Variant::Int32(v) => format!("{}", v),
-        Variant::Int64(v) => format!("{}", v),
+        Variant::Float32(v) => format!("{} (f32)", v),
+        Variant::Float64(v) => format!("{} (f64)", v),
+        Variant::Int32(v) => format!("{} (i32)", v),
+        Variant::Int64(v) => format!("{} (i64)", v),
         Variant::NumberRange(v) => format!("NumberRange({}, {})", v.min, v.max),
         Variant::NumberSequence(v) => format!(
             "NumberSequence[{}]",
@@ -349,7 +383,8 @@ impl DeepDiff {
     ) -> Self {
         let mut diff = Self::default();
 
-        log::info!("Beginning first diff pass");
+        diff.update_rojo_dedup_ids(new_tree);
+
         diff.deep_diff(
             old_tree,
             old_root,
@@ -358,22 +393,22 @@ impl DeepDiff {
             &get_property_filters,
             &should_skip,
         );
-        let ref_map = diff.deduplicate_refs(old_tree, new_tree);
+        let _ref_map = diff.deduplicate_refs(old_tree, new_tree);
 
         // rescan after fixing properties as it allows us to re-evaluate ref
         // properties with correct values. this is slow so we should probably
         // find a faster solution someday.
-        let new_root = *ref_map.get(&new_root).unwrap_or(&new_root);
-        diff.clear();
-        log::info!("Beginning second diff pass");
-        diff.deep_diff(
-            old_tree,
-            old_root,
-            new_tree,
-            new_root,
-            &get_property_filters,
-            &should_skip,
-        );
+        // let new_root = *ref_map.get(&new_root).unwrap_or(&new_root);
+        // diff.clear();
+        // log::info!("Beginning second diff pass");
+        // diff.deep_diff(
+        //     old_tree,
+        //     old_root,
+        //     new_tree,
+        //     new_root,
+        //     &get_property_filters,
+        //     &should_skip,
+        // );
 
         diff.prune_matching_ref_properties(old_tree, new_tree);
         diff.find_ref_properties(old_tree, new_tree);
@@ -497,7 +532,7 @@ impl DeepDiff {
         path: &[String],
         get_filters: impl Fn(Ref) -> &'a BTreeMap<String, PropertyFilter>,
         should_skip: impl Fn(Ref) -> bool,
-    ) {
+    ) -> bool {
         let old_root_ref = 'old_ref: {
             let mut item = old_tree.root_ref();
             for name in path.iter() {
@@ -550,15 +585,18 @@ impl DeepDiff {
                 .map_or("[invalid ref]", |v| v.name.as_str())
         };
 
+        let mut any_changes = false;
         match (old_root_ref, new_root_ref) {
             (None, None) => {
                 println!("Could not find {} in the old or new tree", path.join("."));
             }
             (Some(old_ref), None) => {
                 println!("- {}", get_name_old(old_ref));
+                any_changes = true;
             }
             (None, Some(new_ref)) => {
                 println!("+ {}", get_name_new(new_ref));
+                any_changes = true;
             }
             (Some(old_root_ref), Some(_)) => {
                 let mut processing = vec![(old_root_ref, 0)];
@@ -567,6 +605,7 @@ impl DeepDiff {
                     match new_ref {
                         None => {
                             println!("{}- {}", "  ".repeat(tabs), get_name_old(old_ref));
+                            any_changes = true;
                         }
                         Some(new_ref) => {
                             let old_inst = old_tree.get_by_ref(old_ref).unwrap();
@@ -612,6 +651,7 @@ impl DeepDiff {
                                 diff_score,
                                 postfix
                             );
+                            any_changes = true;
 
                             if self.has_changed_properties(old_ref) {
                                 if let Some(true) = self.property_refs.get(&old_ref) {
@@ -623,6 +663,9 @@ impl DeepDiff {
 
                                 let changed_properties =
                                     diff_properties(old_inst, new_inst, default_filters_diff());
+                                let mut changed_properties = changed_properties.collect_vec();
+                                changed_properties.sort();
+
                                 for property_name in changed_properties {
                                     let old_value = old_inst.properties.get(&property_name);
                                     let new_value = new_inst.properties.get(&property_name);
@@ -659,21 +702,25 @@ impl DeepDiff {
                             if self.has_changed_descendants(old_ref) {
                                 let changes = self.get_children(old_tree, new_tree, old_ref);
                                 if let Some((added, removed, changed, _unchanged)) = changes {
-                                    for removed_ref in removed {
-                                        println!(
-                                            "{}- {}",
-                                            "  ".repeat(tabs + 1),
-                                            get_name_old(removed_ref)
-                                        );
+                                    let mut added =
+                                        added.into_iter().map(get_name_new).collect_vec();
+                                    added.sort();
+                                    let mut removed =
+                                        removed.into_iter().map(get_name_old).collect_vec();
+                                    removed.sort();
+                                    let mut changed = changed
+                                        .into_iter()
+                                        .map(|v| (get_name_old(v), v))
+                                        .collect_vec();
+                                    changed.sort_by(|(a, _), (b, _)| a.cmp(b));
+
+                                    for removed_name in removed {
+                                        println!("{}- {}", "  ".repeat(tabs + 1), removed_name);
                                     }
-                                    for added_ref in added {
-                                        println!(
-                                            "{}+ {}",
-                                            "  ".repeat(tabs + 1),
-                                            get_name_new(added_ref)
-                                        );
+                                    for added_name in added {
+                                        println!("{}+ {}", "  ".repeat(tabs + 1), added_name);
                                     }
-                                    for changed_ref in changed {
+                                    for (_, changed_ref) in changed {
                                         processing.push((changed_ref, tabs + 1));
                                     }
                                 }
@@ -683,6 +730,12 @@ impl DeepDiff {
                 }
             }
         }
+
+        if !any_changes {
+            println!("No changes");
+        }
+
+        any_changes
     }
 
     fn prune_matching_ref_properties(&mut self, old_tree: &WeakDom, new_tree: &WeakDom) {
@@ -802,7 +855,7 @@ impl DeepDiff {
                         );
 
                         if is_changed {
-                            log::info!(
+                            log::trace!(
                                 "marking {} as used in a changed property {} (old tree)",
                                 prop_ref,
                                 property_name
@@ -831,7 +884,7 @@ impl DeepDiff {
                     };
 
                     if is_changed {
-                        log::info!(
+                        log::trace!(
                             "marking {} as used in a changed property {} (new tree)",
                             prop_ref,
                             property_name
@@ -892,7 +945,6 @@ impl DeepDiff {
         let mut scorer = SimilarityScorer::new(old_tree, new_tree, filters);
 
         for (_name, (mut old_children, mut new_children)) in by_name.into_iter() {
-            let mut iters = 0;
             while !old_children.is_empty() {
                 if new_children.is_empty() {
                     for old_child_ref in old_children {
@@ -944,12 +996,6 @@ impl DeepDiff {
                         new_children.remove(&new_child_ref);
                         old_children.remove(&old_child_ref);
                     }
-                }
-                iters += 1;
-                if iters >= 100 {
-                    println!("help i am trapped in a loop");
-                    println!("remaining new: {}", new_children.len());
-                    println!("remaining old: {}", old_children.len());
                 }
             }
 
@@ -1041,6 +1087,195 @@ impl DeepDiff {
             }
         }
     }
+
+    fn update_rojo_dedup_ids(&mut self, new_tree: &mut WeakDom) {
+        let mut processing: Vec<Ref> = vec![new_tree.root_ref()];
+
+        while let Some(new_ref) = processing.pop() {
+            let new_inst = new_tree.get_by_ref(new_ref).unwrap();
+            let mut children_by_properties_hashed: BTreeMap<(&str, &str, u64), Vec<Ref>> =
+                BTreeMap::new();
+
+            for child_ref in new_inst.children() {
+                let child = new_tree.get_by_ref(*child_ref).unwrap();
+                let mut properties = child
+                    .properties_filtered(default_filters_diff(), true)
+                    .collect_vec();
+                properties.sort_by(|a, b| a.0.cmp(b.0));
+
+                let properties_hashed = properties
+                    .into_iter()
+                    .fold(DefaultHasher::new(), |mut hasher, (key, value)| {
+                        let value = round_variant_floats_for_hash(value);
+                        match value.as_ref() {
+                            // Types are whitelisted so that new problematic
+                            // types don't interfere.
+                            Variant::Axes(_)
+                            | Variant::Bool(_)
+                            | Variant::BrickColor(_)
+                            | Variant::CFrame(_)
+                            | Variant::Color3(_)
+                            | Variant::ColorSequence(_)
+                            | Variant::Content(_)
+                            | Variant::Enum(_)
+                            | Variant::Faces(_)
+                            | Variant::NumberRange(_)
+                            | Variant::NumberSequence(_)
+                            | Variant::PhysicalProperties(_)
+                            | Variant::Ray(_)
+                            | Variant::Rect(_)
+                            | Variant::UDim(_)
+                            | Variant::UDim2(_)
+                            | Variant::OptionalCFrame(_)
+                            | Variant::Tags(_)
+                            | Variant::Font(_)
+                            | Variant::MaterialColors(_)
+                            | Variant::Region3(_)
+                            | Variant::Vector3(_)
+                            | Variant::Vector2(_)
+                            | Variant::Float64(_) => value.hash(&mut hasher),
+                            // Handle "look-alikes"
+                            Variant::Color3uint8(v) => {
+                                Variant::Color3((*v).into()).hash(&mut hasher)
+                            }
+                            Variant::Region3int16(v) => {
+                                Variant::Region3((*v).into()).hash(&mut hasher)
+                            }
+                            Variant::Vector3int16(v) => {
+                                Variant::Vector3((*v).into()).hash(&mut hasher)
+                            }
+                            Variant::Vector2int16(v) => {
+                                Variant::Vector2((*v).into()).hash(&mut hasher)
+                            }
+                            Variant::Float32(v) => Variant::Float64(*v as f64).hash(&mut hasher),
+                            Variant::Int32(v) => Variant::Float64(*v as f64).hash(&mut hasher),
+                            Variant::Int64(v) => Variant::Float64(*v as f64).hash(&mut hasher),
+                            // Handle strings; this is not equivalent to hashing
+                            // the variant itself, as we're skipping hashing the
+                            // variant type.
+                            Variant::String(v) => v.as_bytes().hash(&mut hasher),
+                            Variant::SharedString(v) => v.as_ref().hash(&mut hasher),
+                            Variant::BinaryString(v) => {
+                                <BinaryString as AsRef<[u8]>>::as_ref(v).hash(&mut hasher)
+                            }
+                            // Handle attributes; make sure to remove special
+                            // Rojo-only attributes.
+                            Variant::Attributes(value) => {
+                                if value.get(ROJO_DEDUP_KEY).is_some() {
+                                    let mut new_attributes = value.clone();
+                                    new_attributes.remove(ROJO_DEDUP_KEY);
+
+                                    // skip empty
+                                    if !new_attributes.iter().any(|_| true) {
+                                        return hasher;
+                                    }
+
+                                    new_attributes.hash(&mut hasher)
+                                } else {
+                                    // skip empty
+                                    if !value.iter().any(|_| true) {
+                                        return hasher;
+                                    }
+
+                                    value.hash(&mut hasher)
+                                }
+                            }
+                            // Skip variants that are not going to be consistent
+                            // between instances.
+                            Variant::UniqueId(_) | Variant::Ref(_) | _ => return hasher,
+                        }
+
+                        key.hash(&mut hasher);
+
+                        hasher
+                    })
+                    .finish();
+
+                children_by_properties_hashed
+                    .entry((child.class.as_str(), child.name.as_str(), properties_hashed))
+                    .or_default()
+                    .push(*child_ref);
+            }
+
+            // get rid of borrowed names and classes
+            let children_by_properties_hashed =
+                children_by_properties_hashed.into_values().collect_vec();
+
+            for children in children_by_properties_hashed {
+                if children.len() == 1 {
+                    let child_ref = children[0];
+                    let child = new_tree.get_by_ref_mut(child_ref).unwrap();
+                    let attributes = child.properties.get_mut("Attributes");
+                    if let Some(Variant::Attributes(attributes)) = attributes {
+                        attributes.remove(ROJO_DEDUP_KEY);
+                    }
+                } else {
+                    let mut used_unique_ids = BTreeSet::new();
+                    let mut needs_new_unique_id = Vec::new();
+                    for child_ref in children {
+                        let child = new_tree.get_by_ref(child_ref).unwrap();
+                        let attributes = child.get_attributes_opt();
+                        if let Some(attributes) = attributes {
+                            let unique_id = attributes.get(ROJO_DEDUP_KEY);
+                            if let Some(unique_id) = unique_id {
+                                let unique_id: Option<&[u8]> = match unique_id {
+                                    Variant::String(s) => Some(s.as_ref()),
+                                    Variant::BinaryString(s) => Some(s.as_ref()),
+                                    Variant::SharedString(s) => Some(s.as_ref()),
+                                    _ => {
+                                        log::warn!(
+                                            "Bad dedup id {:?} for {}",
+                                            unique_id,
+                                            child.name
+                                        );
+                                        None
+                                    }
+                                };
+                                if let Some(unique_id) = unique_id {
+                                    if used_unique_ids.insert(unique_id) {
+                                        continue;
+                                    }
+                                    log::debug!(
+                                        "Duplicated dedup id {} for {}",
+                                        std::string::String::from_utf8_lossy(unique_id),
+                                        child.name
+                                    );
+                                }
+                            }
+                        }
+                        log::debug!("Missing dedup id for {}", child.name);
+                        needs_new_unique_id.push(child_ref);
+                    }
+
+                    for child_ref in needs_new_unique_id {
+                        let child = new_tree.get_by_ref_mut(child_ref).unwrap();
+                        let attributes = if let Some(Variant::Attributes(attributes)) =
+                            child.properties.get_mut("Attributes")
+                        {
+                            attributes
+                        } else {
+                            child.properties.insert(
+                                "Attributes".to_string(),
+                                Variant::Attributes(Attributes::default()),
+                            );
+                            match child.properties.get_mut("Attributes").unwrap() {
+                                Variant::Attributes(attributes) => attributes,
+                                _ => unreachable!(),
+                            }
+                        };
+
+                        let next_id = uuid::Uuid::new_v4().as_simple().to_string();
+
+                        attributes.insert(ROJO_DEDUP_KEY.to_string(), Variant::String(next_id));
+                    }
+                }
+            }
+
+            // avoid a long-lived borrow by grabbing the instance again.
+            let new_inst = new_tree.get_by_ref(new_ref).unwrap();
+            processing.extend(new_inst.children());
+        }
+    }
 }
 
 pub struct SimilarityScorer<'a> {
@@ -1098,6 +1333,21 @@ impl<'a> SimilarityScorer<'a> {
             }
         }
 
+        let old_attributes = old_instance.get_attributes_opt();
+        let new_attributes = new_instance.get_attributes_opt();
+
+        if let (Some(old_attributes), Some(new_attributes)) = (old_attributes, new_attributes) {
+            let old_dedup_id = old_attributes.get(ROJO_DEDUP_KEY);
+            let new_dedup_id = new_attributes.get(ROJO_DEDUP_KEY);
+            if let (Some(old_dedup_id), Some(new_dedup_id)) = (old_dedup_id, new_dedup_id) {
+                if old_dedup_id != new_dedup_id {
+                    diff_score += 10;
+                } else {
+                    same_score += 10;
+                }
+            }
+        }
+
         if old_instance.class == new_instance.class {
             same_score += 1;
         } else {
@@ -1110,59 +1360,59 @@ impl<'a> SimilarityScorer<'a> {
             diff_score += 1;
         }
 
-        let mut children_by_name: HashMap<&str, i32> = HashMap::new();
-        for child_ref in old_instance.children() {
-            let child = self.old_tree.get_by_ref(*child_ref).unwrap();
-            diff_score += 1;
-            *children_by_name.entry(&child.name).or_default() += 1;
-        }
-        for child_ref in new_instance.children() {
-            let child = self.new_tree.get_by_ref(*child_ref).unwrap();
-            diff_score += 1;
-            children_by_name.entry(&child.name).and_modify(|v| {
-                if *v > 0 {
-                    same_score += 1;
-                    diff_score -= 2; // subtract diff added by both loops
-                    *v -= 1;
-                }
-            });
-        }
+        // let mut children_by_name: HashMap<&str, i32> = HashMap::new();
+        // for child_ref in old_instance.children() {
+        //     let child = self.old_tree.get_by_ref(*child_ref).unwrap();
+        //     diff_score += 1;
+        //     *children_by_name.entry(&child.name).or_default() += 1;
+        // }
+        // for child_ref in new_instance.children() {
+        //     let child = self.new_tree.get_by_ref(*child_ref).unwrap();
+        //     diff_score += 1;
+        //     children_by_name.entry(&child.name).and_modify(|v| {
+        //         if *v > 0 {
+        //             same_score += 1;
+        //             diff_score -= 2; // subtract diff added by both loops
+        //             *v -= 1;
+        //         }
+        //     });
+        // }
 
-        let mut children_props: BTreeMap<u64, i32> = BTreeMap::new();
-        for child_ref in old_instance.children() {
-            let child = self.old_tree.get_by_ref(*child_ref).unwrap();
+        // let mut children_props: BTreeMap<u64, i32> = BTreeMap::new();
+        // for child_ref in old_instance.children() {
+        //     let child = self.old_tree.get_by_ref(*child_ref).unwrap();
 
-            for (property_name, value) in child.properties.iter() {
-                let mut hasher = DefaultHasher::new();
-                child.name.hash(&mut hasher);
-                property_name.hash(&mut hasher);
-                value.hash(&mut hasher);
-                let hash = hasher.finish();
+        //     for (property_name, value) in child.properties.iter() {
+        //         let mut hasher = DefaultHasher::new();
+        //         child.name.hash(&mut hasher);
+        //         property_name.hash(&mut hasher);
+        //         value.hash(&mut hasher);
+        //         let hash = hasher.finish();
 
-                diff_score += 1;
-                *children_props.entry(hash).or_default() += 1;
-            }
-        }
-        for child_ref in new_instance.children() {
-            let child = self.new_tree.get_by_ref(*child_ref).unwrap();
+        //         diff_score += 1;
+        //         *children_props.entry(hash).or_default() += 1;
+        //     }
+        // }
+        // for child_ref in new_instance.children() {
+        //     let child = self.new_tree.get_by_ref(*child_ref).unwrap();
 
-            for (property_name, value) in child.properties.iter() {
-                let mut hasher = DefaultHasher::new();
-                child.name.hash(&mut hasher);
-                property_name.hash(&mut hasher);
-                value.hash(&mut hasher);
-                let hash = hasher.finish();
+        //     for (property_name, value) in child.properties.iter() {
+        //         let mut hasher = DefaultHasher::new();
+        //         child.name.hash(&mut hasher);
+        //         property_name.hash(&mut hasher);
+        //         value.hash(&mut hasher);
+        //         let hash = hasher.finish();
 
-                diff_score += 1;
-                children_props.entry(hash).and_modify(|v| {
-                    if *v > 0 {
-                        same_score += 1;
-                        diff_score -= 2; // subtract diff added by both loops
-                        *v -= 1;
-                    }
-                });
-            }
-        }
+        //         diff_score += 1;
+        //         children_props.entry(hash).and_modify(|v| {
+        //             if *v > 0 {
+        //                 same_score += 1;
+        //                 diff_score -= 2; // subtract diff added by both loops
+        //                 *v -= 1;
+        //             }
+        //         });
+        //     }
+        // }
 
         (diff_score, same_score)
     }

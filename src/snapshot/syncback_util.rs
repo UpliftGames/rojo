@@ -344,6 +344,7 @@ impl ToVariantUnicodeString for Variant {
 pub trait InstanceExtra {
     fn get_attributes(&mut self) -> &Attributes;
     fn get_attributes_mut(&mut self) -> &mut Attributes;
+    fn get_attributes_opt(&self) -> Option<&Attributes>;
 }
 
 impl InstanceExtra for Instance {
@@ -378,6 +379,12 @@ impl InstanceExtra for Instance {
         match attributes {
             Variant::Attributes(attributes) => attributes,
             _ => unreachable!(),
+        }
+    }
+    fn get_attributes_opt(&self) -> Option<&Attributes> {
+        match self.properties.get("Attributes") {
+            Some(Variant::Attributes(attributes)) => Some(attributes),
+            _ => None,
         }
     }
 }

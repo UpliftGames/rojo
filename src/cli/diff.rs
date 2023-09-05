@@ -5,6 +5,7 @@ use std::{
 };
 
 use crate::{
+    open_tree::{open_tree_at_location, InputTree},
     snapshot::{
         apply_patch_set, compute_patch_set, default_filters_diff, DeepDiff, InstanceContext,
         InstanceSnapshot, RojoTree,
@@ -29,53 +30,34 @@ pub struct DiffCommand {
     pub path: Option<String>,
 }
 
-fn get_tree_at_location(vfs: &Vfs, path: &Path) -> Result<WeakDom, anyhow::Error> {
-    if path.file_name_ends_with(".rbxl") || path.file_name_ends_with(".rbxm") {
-        return rbx_binary::from_reader(vfs.read(path)?.as_slice())
-            .with_context(|| format!("Malformed rbx binary file: {}", path.display()));
-    } else if path.file_name_ends_with(".rbxlx") || path.file_name_ends_with(".rbxmx") {
-        let options = rbx_xml::DecodeOptions::new()
-            .property_behavior(rbx_xml::DecodePropertyBehavior::ReadUnknown);
-
-        return rbx_xml::from_reader(vfs.read(path)?.as_slice(), options)
-            .with_context(|| format!("Malformed rbx xml file: {}", path.display()));
-    }
-
-    let mut tree = RojoTree::new(InstanceSnapshot::new());
-
-    let root_id = tree.get_root_id();
-
-    let instance_context = InstanceContext::default();
-
-    log::trace!("Generating snapshot of instances from VFS");
-    let snapshot = snapshot_from_vfs(&instance_context, vfs, path)?;
-
-    log::trace!("Computing initial patch set");
-    let patch_set = compute_patch_set(snapshot, &tree, root_id);
-
-    log::trace!("Applying initial patch set");
-    apply_patch_set(&mut tree, patch_set);
-
-    log::trace!("Opened tree; returning dom");
-
-    Ok(tree.into_weakdom())
-}
-
 impl DiffCommand {
     pub fn run(self) -> anyhow::Result<()> {
         let vfs = Vfs::new_default();
 
-        let old_tree = get_tree_at_location(&vfs, &self.old)?;
-        let mut new_tree = get_tree_at_location(&vfs, &self.new)?;
-        let new_root_ref = new_tree.root_ref();
+        log::info!("Opening old tree...");
+        let timer = std::time::Instant::now();
 
-        log::trace!("Opened both trees; about to create diff");
+        let old_tree = open_tree_at_location(&vfs, &self.old)?;
+        let old_dom = old_tree.as_ref();
+
+        log::info!("  opened old tree in {:.3}s", timer.elapsed().as_secs_f64());
+
+        log::info!("Opening new tree...");
+        let timer = std::time::Instant::now();
+
+        let mut new_dom: WeakDom = open_tree_at_location(&vfs, &self.new)?.into();
+        let new_root_ref = new_dom.root_ref();
+
+        log::info!("  opened new tree in {:.3}s", timer.elapsed().as_secs_f64());
+
+        log::trace!("Diffing trees...");
+        let timer = std::time::Instant::now();
 
         let empty_filters = BTreeMap::new();
         let diff = DeepDiff::new(
-            &old_tree,
-            old_tree.root_ref(),
-            &mut new_tree,
+            &old_dom,
+            old_dom.root_ref(),
+            &mut new_dom,
             new_root_ref,
             |_| &empty_filters,
             |_| false,
@@ -85,48 +67,28 @@ impl DiffCommand {
             .path
             .map(|v| v.split('.').map(str::to_string).collect());
 
-        log::trace!("Created diff; about to show diff");
+        log::info!("  diffed trees in {:.3}s", timer.elapsed().as_secs_f64());
 
         diff.show_diff(
-            &old_tree,
-            &new_tree,
+            &old_dom,
+            &new_dom,
             &path_parts.unwrap_or(vec![]),
-            |_| default_filters_diff(),
-            |_| false,
+            |old_ref| match &old_tree {
+                InputTree::RojoTree(tree) => tree.syncback_get_filters(old_ref),
+                InputTree::WeakDom(_) => default_filters_diff(),
+            },
+            |old_ref| match &old_tree {
+                InputTree::RojoTree(tree) => tree.syncback_should_skip(old_ref),
+                InputTree::WeakDom(_) => false,
+            },
         );
 
         // Leak objects that would cause a delay while running destructors.
         // We're about to close, and the destructors do nothing important.
         forget(old_tree);
-        forget(new_tree);
+        forget(new_dom);
         forget(diff);
 
         Ok(())
     }
-}
-
-#[test]
-fn test_diff() -> Result<(), anyhow::Error> {
-    let log_env = env_logger::Env::default();
-
-    env_logger::Builder::from_env(log_env)
-        .format_module_path(false)
-        .format_timestamp(None)
-        // Indent following lines equal to the log level label, like `[ERROR] `
-        .format_indent(Some(8))
-        .init();
-
-    let old_path = PathBuf::from("C:/Projects/Uplift/adopt-me/default.project.json");
-    let new_path = PathBuf::from("C:/Projects/Uplift/adopt-me/game.rbxl");
-    // let old_path = PathBuf::from("C:/Projects/Uplift/rojo/syncback_test/default.project.json");
-    // let new_path = PathBuf::from("C:/Projects/Uplift/rojo/syncback_test/game.rbxl");
-
-    DiffCommand {
-        old: old_path,
-        new: new_path,
-        path: Some("Workspace".to_string()),
-    }
-    .run()?;
-
-    Ok(())
 }

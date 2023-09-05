@@ -13,6 +13,7 @@ mod glob;
 mod lua_ast;
 mod message_queue;
 mod multimap;
+mod open_tree;
 mod path_serializer;
 mod project;
 mod resolution;
