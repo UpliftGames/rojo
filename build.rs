@@ -67,8 +67,8 @@ fn main() -> Result<(), anyhow::Error> {
     let root_dir = env::var_os("CARGO_MANIFEST_DIR").unwrap();
     let plugin_root = PathBuf::from(root_dir).join("plugin");
 
-    update_plugin_version(&plugin_root)?;
-    update_readme_version()?;
+    // update_plugin_version(&plugin_root)?;
+    // update_readme_version()?;
 
     let snapshot = VfsSnapshot::dir(hashmap! {
         "default.project.json" => snapshot_from_fs_path(&plugin_root.join("default.project.json"))?,
