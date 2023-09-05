@@ -21,6 +21,7 @@ Known issues:
 - Localization files nearly always show up in diffs. Their contents are actually
   just a json string, and they'll be "different" even if the json decodes to the
   same. Additionally, Roblox's json output is not deterministic.
+- Absolutely zero tests for all of this new functionality
 - Other things I'm almost certainly forgetting!
 
 How to:
