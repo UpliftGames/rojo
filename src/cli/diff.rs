@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, mem::forget, path::PathBuf};
+use std::{mem::forget, path::PathBuf};
 
 use crate::{
     open_tree::{open_tree_at_location, InputTree},
@@ -45,14 +45,19 @@ impl DiffCommand {
         log::trace!("Diffing trees...");
         let timer = std::time::Instant::now();
 
-        let empty_filters = BTreeMap::new();
         let diff = DeepDiff::new(
             old_dom,
             old_dom.root_ref(),
             &mut new_dom,
             new_root_ref,
-            |_| &empty_filters,
-            |_| false,
+            |old_ref| match &old_tree {
+                InputTree::RojoTree(tree) => tree.syncback_get_filters(old_ref),
+                InputTree::WeakDom(_) => default_filters_diff(),
+            },
+            |old_ref| match &old_tree {
+                InputTree::RojoTree(tree) => tree.syncback_should_skip(old_ref),
+                InputTree::WeakDom(_) => false,
+            },
         );
 
         let path_parts: Option<Vec<String>> = self
