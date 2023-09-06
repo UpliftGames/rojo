@@ -2,6 +2,8 @@ if not plugin then
 	return
 end
 
+script.Parent.Name = "Rojo"
+
 local Rojo = script:FindFirstAncestor("Rojo")
 local Packages = Rojo.Packages
 
