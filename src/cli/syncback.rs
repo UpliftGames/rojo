@@ -7,18 +7,15 @@ use std::{
 
 use crate::{
     open_tree::{open_tree_at_location, InputTree},
-    snapshot::{RojoTree},
+    snapshot::RojoTree,
 };
-use anyhow::{bail};
+use anyhow::bail;
 use clap::Parser;
 
 use memofs::Vfs;
 use rbx_dom_weak::WeakDom;
 
 use super::resolve_path;
-
-const UNKNOWN_INPUT_KIND_ERR: &str = "Could not detect what kind of file to sync from. \
-                                       Expected output file to end in .rbxl, .rbxlx, .rbxm, or .rbxmx.";
 
 /// Syncs changes back to the filesystem from a model or place file.
 #[derive(Debug, Parser)]

@@ -106,6 +106,8 @@ impl SnapshotMiddleware for DirectoryMiddleware {
         instance: &Instance,
         consider_descendants: bool,
     ) -> Option<i32> {
+        let is_preferred_class = preferred_classes().contains(instance.class.as_str());
+
         // Directory representation is not an option if we have more than one
         // child with the same name
         let mut names = HashSet::new();
@@ -113,16 +115,24 @@ impl SnapshotMiddleware for DirectoryMiddleware {
             let inst = dom.get_by_ref(*child_ref).unwrap();
             let name = inst.name.as_str();
             if !names.insert(name.to_lowercase()) {
-                log::info!("Cannot save {} as a directory because it contains 2+ children with the same name: {}  (it will be saved as something else instead, like an rbxm)", instance.name, name);
+                if is_preferred_class && consider_descendants {
+                    log::info!("Cannot save {} as a directory because it contains 2+ children with the same name: {}  (it will be saved as something else instead, like an rbxm)", instance.name, name);
+                } else {
+                    log::debug!("Cannot save {} as a directory because it contains 2+ children with the same name: {}  (it will be saved as something else instead, like an rbxm)", instance.name, name);
+                }
                 return None;
             }
             if !is_filename_legal_everywhere(name) {
-                log::info!("Cannot save {} as a directory because it contains a child with an invalid name: {}  (it will be saved as something else instead, like an rbxm)", instance.name, name);
+                if is_preferred_class && consider_descendants {
+                    log::info!("Cannot save {} as a directory because it contains a child with an invalid name: {}  (it will be saved as something else instead, like an rbxm)", instance.name, name);
+                } else {
+                    log::debug!("Cannot save {} as a directory because it contains a child with an invalid name: {}  (it will be saved as something else instead, like an rbxm)", instance.name, name);
+                }
                 return None;
             }
         }
 
-        if preferred_classes().contains(instance.class.as_str()) {
+        if is_preferred_class {
             if consider_descendants {
                 Some(PRIORITY_MANY_READABLE)
             } else {
@@ -282,6 +292,29 @@ fn syncback_update(sync: &SyncbackArgs<'_, '_>) -> anyhow::Result<SyncbackNode> 
             )?;
 
             fs_snapshot = fs_snapshot.with_file_contents_opt(path.join("init.meta.json"), meta);
+        }
+    }
+
+    if new_inst.name == "Vehicles" {
+        println!(
+            "DEBUG VEHICLES:  {} {} {}",
+            new_inst.class == "Folder",
+            fs_snapshot.files.is_empty(),
+            new_inst.children().is_empty()
+        );
+        println!(
+            "DEBUG VEHICLES : {} {:?} {}",
+            new_inst.class,
+            fs_snapshot.files,
+            new_inst.children().len()
+        );
+    }
+
+    if new_inst.class == "Folder" {
+        if fs_snapshot.files.is_empty() && new_inst.children().is_empty() {
+            fs_snapshot
+                .files
+                .insert(path.join(".rojo-keep"), Some(Arc::new(Vec::new())));
         }
     }
 
@@ -459,6 +492,14 @@ fn syncback_new(sync: &SyncbackArgs<'_, '_>) -> anyhow::Result<SyncbackNode> {
             )?;
 
             fs_snapshot = fs_snapshot.with_file_contents_opt(path.join("init.meta.json"), meta);
+        }
+    }
+
+    if new_inst.class == "Folder" {
+        if fs_snapshot.files.is_empty() && new_inst.children().is_empty() {
+            fs_snapshot
+                .files
+                .insert(path.join(".rojo-keep"), Some(Arc::new(Vec::new())));
         }
     }
 
@@ -672,6 +713,10 @@ pub fn snapshot_dir_no_meta(
 
     let fs_snapshot = snapshot.metadata.fs_snapshot.as_mut().unwrap();
     fs_snapshot.dirs.insert(path.to_path_buf());
+
+    // ensure .rojo-keep is deleted if we syncback and it's not needed anymore.
+    // it does not matter if it was actually present in the first place.
+    fs_snapshot.files.insert(path.join(".rojo-keep"), None);
 
     Ok(Some(snapshot))
 }
