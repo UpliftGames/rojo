@@ -295,21 +295,6 @@ fn syncback_update(sync: &SyncbackArgs<'_, '_>) -> anyhow::Result<SyncbackNode> 
         }
     }
 
-    if new_inst.name == "Vehicles" {
-        println!(
-            "DEBUG VEHICLES:  {} {} {}",
-            new_inst.class == "Folder",
-            fs_snapshot.files.is_empty(),
-            new_inst.children().is_empty()
-        );
-        println!(
-            "DEBUG VEHICLES : {} {:?} {}",
-            new_inst.class,
-            fs_snapshot.files,
-            new_inst.children().len()
-        );
-    }
-
     if new_inst.class == "Folder" {
         if fs_snapshot.files.is_empty() && new_inst.children().is_empty() {
             fs_snapshot
