@@ -27,7 +27,7 @@ Known issues:
 How to:
 1. Prepare your project for assets by adding folders and project file entries for common asset locations like Workspace and ReplicatedStorage
 2. Save your place file somewhere accessible
-3. Syncback: `rojo syncback --input path/to/your/place.rbxl path/to/your/project.default.json`
+3. Syncback: `rojo syncback --input path/to/your/place.rbxl path/to/your/project_name.project.json`
 4. Confirm that the diff looks right and it will write the assets to the filesystem
 
 Exciting features list:
