@@ -653,16 +653,18 @@ pub fn snapshot_dir_no_meta(
                 }) as Arc<dyn MiddlewareContextAny>);
             }
 
+            let metadata = init_snapshot
+                .metadata
+                .clone()
+                .instigating_source(path)
+                .relevant_paths(relevant_paths)
+                .middleware_context(syncback_context)
+                .context(context);
+
             init_snapshot
                 .name(instance_name)
                 .children(snapshot_children)
-                .metadata(
-                    InstanceMetadata::new()
-                        .instigating_source(path)
-                        .relevant_paths(relevant_paths)
-                        .middleware_context(syncback_context)
-                        .context(context),
-                )
+                .metadata(metadata)
         }
     };
 
