@@ -4,14 +4,17 @@ use std::{
     fmt::Display,
     hash::{Hash, Hasher},
     iter::{Chain, FilterMap, Map},
+    sync::OnceLock,
 };
 
+use clap::Parser;
 use float_cmp::approx_eq;
 use itertools::{Itertools, Unique};
 use rbx_dom_weak::{
     types::{Attributes, BinaryString, Color3, Ref, Variant, Vector2, Vector3},
     Instance, WeakDom,
 };
+use serde::{Deserialize, Serialize};
 
 use super::{
     default_filters_diff, filter, get_default_property, InstanceExtra, PropertiesFiltered,
@@ -19,6 +22,64 @@ use super::{
 };
 
 const ROJO_DEDUP_KEY: &str = "__RojoDeduplicate";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiffOptions {
+    pub basic_comparison: bool,
+    pub deduplication_attributes: bool,
+    pub rescan_ref_fix: bool,
+    pub deep_comparison: bool,
+    pub deep_comparison_depth: usize,
+}
+
+/// Options for the diffing
+#[derive(Debug, Parser)]
+pub struct DiffOptionsCommand {
+    /// diff: Enable basic top-level property comparison
+    #[clap(takes_value = true, require_equals = true)]
+    pub diff_basic_comparison: Option<bool>,
+    /// diff: Enable deduplication attribute assignment and checking
+    #[clap(takes_value = true, require_equals = true)]
+    pub diff_deduplication_attributes: Option<bool>,
+    /// diff: Enable two diff passes in order to fix ref properties that were
+    /// matched incorrectly on the first pass
+    #[clap(takes_value = true, require_equals = true)]
+    pub diff_rescan_ref_fix: Option<bool>,
+    /// diff: Enable deeper property comparison
+    #[clap(takes_value = true, require_equals = true)]
+    pub diff_deep_comparison: Option<bool>,
+    /// diff: Set deeper property comparison depth [default: 2]
+    #[clap(takes_value = true, require_equals = true)]
+    pub diff_deep_comparison_depth: Option<usize>,
+}
+
+impl DiffOptions {
+    pub fn apply_command_args(mut self, from: DiffOptionsCommand) -> DiffOptions {
+        if let Some(basic_comparison) = from.diff_basic_comparison {
+            self.basic_comparison = basic_comparison;
+        }
+        if let Some(deduplication_attributes) = from.diff_deduplication_attributes {
+            self.deduplication_attributes = deduplication_attributes;
+        }
+        if let Some(rescan_ref_fix) = from.diff_rescan_ref_fix {
+            self.rescan_ref_fix = rescan_ref_fix;
+        }
+        if let Some(deep_comparison) = from.diff_deep_comparison {
+            self.deep_comparison = deep_comparison;
+        }
+        if let Some(deep_comparison_depth) = from.diff_deep_comparison_depth {
+            self.deep_comparison_depth = deep_comparison_depth;
+        }
+
+        self
+    }
+}
+
+fn empty_attributes() -> &'static Attributes {
+    static VALUE: OnceLock<Attributes> = OnceLock::new();
+
+    VALUE.get_or_init(|| Attributes::new())
+}
 
 // We've copied the exact return type from the iterator here so that we can
 // return it directly without collecting it or making it a trait object.
@@ -73,12 +134,19 @@ pub fn diff_individual_property<'a>(
     let old_value = old_instance
         .properties
         .get(key)
-        .filter(|v| filter(&old_instance.class, filters, true)(&(key, *v)));
+        .filter(|v| filter(&old_instance.class, filters, true)(&(key, *v)))
+        .or_else(|| get_default_property(&old_instance.class, key));
     let new_value = new_instance
         .properties
         .get(key)
-        .filter(|v| filter(&new_instance.class, filters, true)(&(key, *v)));
-    old_value != new_value
+        .filter(|v| filter(&new_instance.class, filters, true)(&(key, *v)))
+        .or_else(|| get_default_property(&new_instance.class, key));
+
+    if let (Some(old_value), Some(new_value)) = (old_value, new_value) {
+        !are_variants_similar(old_value, new_value)
+    } else {
+        true
+    }
 }
 
 pub fn are_properties_different(
@@ -136,6 +204,9 @@ pub fn are_variants_similar(old_variant: &Variant, new_variant: &Variant) -> boo
         }
         (Variant::Attributes(old_attrs), Variant::Attributes(new_attrs)) => {
             for (key, old_value) in old_attrs.iter() {
+                if key == ROJO_DEDUP_KEY {
+                    continue;
+                }
                 if new_attrs.get(key.as_str()).is_none() {
                     return false;
                 } else {
@@ -155,6 +226,9 @@ pub fn are_variants_similar(old_variant: &Variant, new_variant: &Variant) -> boo
             }
 
             for (key, _) in new_attrs.iter() {
+                if key == ROJO_DEDUP_KEY {
+                    continue;
+                }
                 if old_attrs.get(key.as_str()).is_none() {
                     return false;
                 }
@@ -378,37 +452,42 @@ impl DeepDiff {
         old_root: Ref,
         new_tree: &mut WeakDom,
         new_root: Ref,
+        diff_options: DiffOptions,
         get_property_filters: impl Fn(Ref) -> &'a BTreeMap<String, PropertyFilter>,
         should_skip: impl Fn(Ref) -> bool,
     ) -> Self {
         let mut diff = Self::default();
 
-        diff.update_rojo_dedup_ids(new_tree);
+        if diff_options.deduplication_attributes {
+            diff.update_rojo_dedup_ids(new_tree);
+        }
 
         diff.deep_diff(
             old_tree,
             old_root,
             new_tree,
             new_root,
+            diff_options.clone(),
             &get_property_filters,
             &should_skip,
         );
-        let _ref_map = diff.deduplicate_refs(old_tree, new_tree);
 
-        // rescan after fixing properties as it allows us to re-evaluate ref
-        // properties with correct values. this is slow so we should probably
-        // find a faster solution someday.
-        // let new_root = *ref_map.get(&new_root).unwrap_or(&new_root);
-        // diff.clear();
-        // log::info!("Beginning second diff pass");
-        // diff.deep_diff(
-        //     old_tree,
-        //     old_root,
-        //     new_tree,
-        //     new_root,
-        //     &get_property_filters,
-        //     &should_skip,
-        // );
+        let ref_map = diff.deduplicate_refs(old_tree, new_tree);
+
+        if diff_options.rescan_ref_fix {
+            let new_root = *ref_map.get(&new_root).unwrap_or(&new_root);
+            diff.clear();
+            log::info!("Beginning second diff pass (use_rescan_ref_fix enabled)");
+            diff.deep_diff(
+                old_tree,
+                old_root,
+                new_tree,
+                new_root,
+                diff_options.clone(),
+                &get_property_filters,
+                &should_skip,
+            );
+        }
 
         diff.prune_matching_ref_properties(old_tree, new_tree);
         diff.find_ref_properties(old_tree, new_tree);
@@ -530,6 +609,7 @@ impl DeepDiff {
         old_tree: &WeakDom,
         new_tree: &WeakDom,
         path: &[String],
+        diff_options: DiffOptions,
         get_filters: impl Fn(Ref) -> &'a BTreeMap<String, PropertyFilter>,
         should_skip: impl Fn(Ref) -> bool,
     ) -> bool {
@@ -636,9 +716,13 @@ impl DeepDiff {
                                     format!("  (~{} children)", self.changed_children[&old_ref]);
                             }
 
-                            let (diff_score, same_score) =
-                                SimilarityScorer::new(old_tree, new_tree, default_filters_diff())
-                                    .similarity_score(old_inst, new_inst);
+                            let (diff_score, same_score) = SimilarityScorer::new(
+                                old_tree,
+                                new_tree,
+                                diff_options.clone(),
+                                default_filters_diff(),
+                            )
+                            .similarity_score(old_inst, new_inst);
                             let percent_same_score = (same_score * 100) / (diff_score + same_score);
 
                             println!(
@@ -666,7 +750,50 @@ impl DeepDiff {
                                 let mut changed_properties = changed_properties.collect_vec();
                                 changed_properties.sort();
 
+                                let old_attributes = old_inst
+                                    .get_attributes_opt()
+                                    .unwrap_or_else(|| empty_attributes());
+                                let new_attributes = new_inst
+                                    .get_attributes_opt()
+                                    .unwrap_or_else(|| empty_attributes());
+
+                                let attribute_names: HashSet<&str> = new_attributes
+                                    .iter()
+                                    .map(|(k, _)| k.as_str())
+                                    .chain(old_attributes.iter().map(|(k, _)| k.as_str()))
+                                    .collect();
+                                let mut attribute_names: Vec<&str> =
+                                    attribute_names.into_iter().collect();
+                                attribute_names.sort();
+
+                                for attribute_name in attribute_names {
+                                    if attribute_name == ROJO_DEDUP_KEY {
+                                        continue;
+                                    }
+                                    let old_value = old_attributes.get(attribute_name);
+                                    let new_value = new_attributes.get(attribute_name);
+
+                                    let old_display = old_value
+                                        .map(|v| display_variant_short(v))
+                                        .unwrap_or_else(|| "None".to_string());
+                                    let new_display = new_value
+                                        .map(|v| display_variant_short(v))
+                                        .unwrap_or_else(|| "None".to_string());
+
+                                    println!(
+                                        "{}~ Attributes.{}: {} -> {}",
+                                        "  ".repeat(tabs + 2),
+                                        attribute_name,
+                                        old_display,
+                                        new_display
+                                    );
+                                }
+
                                 for property_name in changed_properties {
+                                    if property_name == "Attributes" {
+                                        continue;
+                                    }
+
                                     let old_value = old_inst.properties.get(&property_name);
                                     let new_value = new_inst.properties.get(&property_name);
                                     match (old_value, new_value) {
@@ -925,6 +1052,7 @@ impl DeepDiff {
         old_instance: &Instance,
         new_tree: &WeakDom,
         new_instance: &Instance,
+        diff_options: DiffOptions,
         filters: &BTreeMap<String, PropertyFilter>,
     ) -> HashMap<Ref, Ref> {
         let mut matches = HashMap::new();
@@ -942,7 +1070,7 @@ impl DeepDiff {
             by_name.entry(&child.name).or_default().1.insert(*child_ref);
         }
 
-        let mut scorer = SimilarityScorer::new(old_tree, new_tree, filters);
+        let mut scorer = SimilarityScorer::new(old_tree, new_tree, diff_options.clone(), filters);
 
         for (_name, (mut old_children, mut new_children)) in by_name.into_iter() {
             while !old_children.is_empty() {
@@ -1057,6 +1185,7 @@ impl DeepDiff {
         old_root: Ref,
         new_tree: &WeakDom,
         new_root: Ref,
+        diff_options: DiffOptions,
         get_filters: &impl Fn(Ref) -> &'a BTreeMap<String, PropertyFilter>,
         should_skip: &impl Fn(Ref) -> bool,
     ) {
@@ -1082,7 +1211,14 @@ impl DeepDiff {
             }
 
             if !old_inst.children().is_empty() || !new_inst.children().is_empty() {
-                let matches = self.match_children(old_tree, old_inst, new_tree, new_inst, filters);
+                let matches = self.match_children(
+                    old_tree,
+                    old_inst,
+                    new_tree,
+                    new_inst,
+                    diff_options.clone(),
+                    filters,
+                );
                 process.extend(matches.into_iter());
             }
         }
@@ -1281,6 +1417,7 @@ impl DeepDiff {
 pub struct SimilarityScorer<'a> {
     old_tree: &'a WeakDom,
     new_tree: &'a WeakDom,
+    diff_options: DiffOptions,
     filters: &'a BTreeMap<String, PropertyFilter>,
     prop_cache_old: HashMap<Ref, BTreeMap<&'a str, &'a Variant>>,
     prop_cache_new: HashMap<Ref, BTreeMap<&'a str, &'a Variant>>,
@@ -1290,11 +1427,13 @@ impl<'a> SimilarityScorer<'a> {
     pub fn new(
         old_tree: &'a WeakDom,
         new_tree: &'a WeakDom,
+        diff_options: DiffOptions,
         filters: &'a BTreeMap<String, PropertyFilter>,
     ) -> Self {
         Self {
             old_tree,
             new_tree,
+            diff_options,
             filters,
             prop_cache_old: HashMap::new(),
             prop_cache_new: HashMap::new(),
@@ -1309,110 +1448,168 @@ impl<'a> SimilarityScorer<'a> {
         let mut diff_score = 0;
         let mut same_score = 0;
 
-        let old_properties = self
-            .prop_cache_old
-            .entry(old_instance.referent())
-            .or_insert_with(|| old_instance.properties_filtered_map(self.filters, false));
-        let new_properties = self
-            .prop_cache_new
-            .entry(new_instance.referent())
-            .or_insert_with(|| new_instance.properties_filtered_map(self.filters, false));
+        let diff_options = &self.diff_options;
 
-        for (k, old_property) in old_properties.iter() {
-            if let Some(new_property) = new_properties.get(k) {
-                if are_variants_similar(old_property, new_property) {
-                    same_score += 1;
+        if diff_options.basic_comparison {
+            let old_properties = self
+                .prop_cache_old
+                .entry(old_instance.referent())
+                .or_insert_with(|| old_instance.properties_filtered_map(self.filters, false));
+            let new_properties = self
+                .prop_cache_new
+                .entry(new_instance.referent())
+                .or_insert_with(|| new_instance.properties_filtered_map(self.filters, false));
+
+            for (k, old_property) in old_properties.iter() {
+                if *k == "Attributes" {
                     continue;
                 }
+
+                if let Some(new_property) = new_properties.get(k) {
+                    if are_variants_similar(old_property, new_property) {
+                        same_score += 1;
+                        continue;
+                    }
+                }
+                diff_score += 1;
             }
-            diff_score += 1;
+            for (k, _v) in new_properties.iter() {
+                if *k == "Attributes" {
+                    continue;
+                }
+
+                if !old_properties.contains_key(k) {
+                    diff_score += 1;
+                }
+            }
         }
-        for (k, _v) in new_properties.iter() {
-            if !old_properties.contains_key(k) {
+
+        let old_attributes = old_instance
+            .get_attributes_opt()
+            .unwrap_or_else(|| empty_attributes());
+        let new_attributes = new_instance
+            .get_attributes_opt()
+            .unwrap_or_else(|| empty_attributes());
+
+        if diff_options.deduplication_attributes {
+            if old_attributes.get(ROJO_DEDUP_KEY) == new_attributes.get(ROJO_DEDUP_KEY) {
+                same_score += 10;
+            } else {
+                diff_score += 10;
+            }
+        }
+
+        if diff_options.basic_comparison {
+            for (k, old_attribute) in old_attributes.iter() {
+                if diff_options.deduplication_attributes && k == ROJO_DEDUP_KEY {
+                    continue;
+                }
+
+                if let Some(new_attribute) = new_attributes.get(k.as_str()) {
+                    if are_variants_similar(old_attribute, new_attribute) {
+                        same_score += 1;
+                        continue;
+                    }
+                }
+                diff_score += 1;
+            }
+            for (k, _v) in new_attributes.iter() {
+                if diff_options.deduplication_attributes && k == ROJO_DEDUP_KEY {
+                    continue;
+                }
+
+                if old_attributes.get(k.as_str()).is_none() {
+                    diff_score += 1;
+                }
+            }
+
+            if old_instance.class == new_instance.class {
+                same_score += 1;
+            } else {
+                diff_score += 1;
+            }
+
+            if old_instance.name == new_instance.name {
+                same_score += 1;
+            } else {
                 diff_score += 1;
             }
         }
 
-        let old_attributes = old_instance.get_attributes_opt();
-        let new_attributes = new_instance.get_attributes_opt();
+        if diff_options.deep_comparison {
+            let mut descendant_props: BTreeMap<u64, i32> = BTreeMap::new();
 
-        if let (Some(old_attributes), Some(new_attributes)) = (old_attributes, new_attributes) {
-            let old_dedup_id = old_attributes.get(ROJO_DEDUP_KEY);
-            let new_dedup_id = new_attributes.get(ROJO_DEDUP_KEY);
-            if let (Some(old_dedup_id), Some(new_dedup_id)) = (old_dedup_id, new_dedup_id) {
-                if old_dedup_id != new_dedup_id {
-                    diff_score += 10;
-                } else {
-                    same_score += 10;
+            let mut process = Vec::new();
+            process.push((0, old_instance.referent(), 0));
+            while let Some((path_hash, old_ref, depth)) = process.pop() {
+                let old_instance = self.old_tree.get_by_ref(old_ref).unwrap();
+
+                if !(diff_options.basic_comparison && depth == 0) {
+                    // We skip the root item if it was already processed by the basic comparison
+                    for (property_name, value) in old_instance.properties.iter() {
+                        let mut hasher = DefaultHasher::new();
+                        path_hash.hash(&mut hasher);
+                        old_instance.name.hash(&mut hasher);
+                        property_name.hash(&mut hasher);
+                        value.hash(&mut hasher);
+
+                        let hash = hasher.finish();
+                        diff_score += 1;
+                        *descendant_props.entry(hash).or_default() += 1;
+                    }
+                }
+
+                if depth < diff_options.deep_comparison_depth {
+                    let mut hasher = DefaultHasher::new();
+                    path_hash.hash(&mut hasher);
+                    old_instance.name.hash(&mut hasher);
+                    let next_path_hash = hasher.finish();
+
+                    for child_ref in old_instance.children() {
+                        process.push((next_path_hash, *child_ref, depth + 1));
+                    }
+                }
+            }
+
+            let mut process = Vec::new();
+            process.push((0, new_instance.referent(), 0));
+            while let Some((path_hash, new_ref, depth)) = process.pop() {
+                let new_instance = self.new_tree.get_by_ref(new_ref).unwrap();
+
+                if !(diff_options.basic_comparison && depth == 0) {
+                    // We skip the root item if it was already processed by the basic comparison
+                    for (property_name, value) in new_instance.properties.iter() {
+                        let mut hasher = DefaultHasher::new();
+                        path_hash.hash(&mut hasher);
+                        new_instance.name.hash(&mut hasher);
+                        property_name.hash(&mut hasher);
+                        value.hash(&mut hasher);
+
+                        let hash = hasher.finish();
+                        diff_score += 1;
+
+                        descendant_props.entry(hash).and_modify(|v| {
+                            if *v > 0 {
+                                same_score += 1;
+                                diff_score -= 2; // subtract diff added by both loops
+                                *v -= 1;
+                            }
+                        });
+                    }
+                }
+
+                if depth < diff_options.deep_comparison_depth {
+                    let mut hasher = DefaultHasher::new();
+                    path_hash.hash(&mut hasher);
+                    new_instance.name.hash(&mut hasher);
+                    let next_path_hash = hasher.finish();
+
+                    for child_ref in new_instance.children() {
+                        process.push((next_path_hash, *child_ref, depth + 1));
+                    }
                 }
             }
         }
-
-        if old_instance.class == new_instance.class {
-            same_score += 1;
-        } else {
-            diff_score += 1;
-        }
-
-        if old_instance.name == new_instance.name {
-            same_score += 1;
-        } else {
-            diff_score += 1;
-        }
-
-        // let mut children_by_name: HashMap<&str, i32> = HashMap::new();
-        // for child_ref in old_instance.children() {
-        //     let child = self.old_tree.get_by_ref(*child_ref).unwrap();
-        //     diff_score += 1;
-        //     *children_by_name.entry(&child.name).or_default() += 1;
-        // }
-        // for child_ref in new_instance.children() {
-        //     let child = self.new_tree.get_by_ref(*child_ref).unwrap();
-        //     diff_score += 1;
-        //     children_by_name.entry(&child.name).and_modify(|v| {
-        //         if *v > 0 {
-        //             same_score += 1;
-        //             diff_score -= 2; // subtract diff added by both loops
-        //             *v -= 1;
-        //         }
-        //     });
-        // }
-
-        // let mut children_props: BTreeMap<u64, i32> = BTreeMap::new();
-        // for child_ref in old_instance.children() {
-        //     let child = self.old_tree.get_by_ref(*child_ref).unwrap();
-
-        //     for (property_name, value) in child.properties.iter() {
-        //         let mut hasher = DefaultHasher::new();
-        //         child.name.hash(&mut hasher);
-        //         property_name.hash(&mut hasher);
-        //         value.hash(&mut hasher);
-        //         let hash = hasher.finish();
-
-        //         diff_score += 1;
-        //         *children_props.entry(hash).or_default() += 1;
-        //     }
-        // }
-        // for child_ref in new_instance.children() {
-        //     let child = self.new_tree.get_by_ref(*child_ref).unwrap();
-
-        //     for (property_name, value) in child.properties.iter() {
-        //         let mut hasher = DefaultHasher::new();
-        //         child.name.hash(&mut hasher);
-        //         property_name.hash(&mut hasher);
-        //         value.hash(&mut hasher);
-        //         let hash = hasher.finish();
-
-        //         diff_score += 1;
-        //         children_props.entry(hash).and_modify(|v| {
-        //             if *v > 0 {
-        //                 same_score += 1;
-        //                 diff_score -= 2; // subtract diff added by both loops
-        //                 *v -= 1;
-        //             }
-        //         });
-        //     }
-        // }
 
         (diff_score, same_score)
     }

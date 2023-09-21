@@ -14,8 +14,8 @@ use rbx_dom_weak::{
 use crate::{multimap::MultiMap, snapshot::InstigatingSource, snapshot_middleware::get_middleware};
 
 use super::{
-    diff::DeepDiff, FsSnapshot, InstanceMetadata, InstanceSnapshot, PropertyFilter, SyncbackArgs,
-    SyncbackNode,
+    diff::DeepDiff, DiffOptions, FsSnapshot, InstanceMetadata, InstanceSnapshot, PropertyFilter,
+    SyncbackArgs, SyncbackNode,
 };
 
 /// An expanded variant of rbx_dom_weak's `WeakDom` that tracks additional
@@ -308,12 +308,14 @@ impl RojoTree {
         old_id: Ref,
         new_dom: &mut WeakDom,
         new_id: Ref,
+        diff_options: DiffOptions,
     ) -> DeepDiff {
         DeepDiff::new(
             &self.inner,
             old_id,
             new_dom,
             new_id,
+            diff_options,
             |old_ref| self.syncback_get_filters(old_ref),
             |old_ref| self.syncback_should_skip(old_ref),
         )

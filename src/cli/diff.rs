@@ -2,7 +2,7 @@ use std::{mem::forget, path::PathBuf};
 
 use crate::{
     open_tree::{open_tree_at_location, InputTree},
-    snapshot::{default_filters_diff, DeepDiff},
+    snapshot::{default_filters_diff, DeepDiff, DiffOptions, DiffOptionsCommand},
 };
 
 use clap::Parser;
@@ -20,6 +20,9 @@ pub struct DiffCommand {
 
     /// Path to the object to diff in the tree.
     pub path: Option<String>,
+
+    #[clap(flatten)]
+    pub diff_options: DiffOptionsCommand,
 }
 
 impl DiffCommand {
@@ -45,11 +48,21 @@ impl DiffCommand {
         log::trace!("Diffing trees...");
         let timer = std::time::Instant::now();
 
+        let diff_options = DiffOptions {
+            basic_comparison: true,
+            deduplication_attributes: false,
+            rescan_ref_fix: true,
+            deep_comparison: true,
+            deep_comparison_depth: 2,
+        }
+        .apply_command_args(self.diff_options);
+
         let diff = DeepDiff::new(
             old_dom,
             old_dom.root_ref(),
             &mut new_dom,
             new_root_ref,
+            diff_options.clone(),
             |old_ref| match &old_tree {
                 InputTree::RojoTree(tree) => tree.syncback_get_filters(old_ref),
                 InputTree::WeakDom(_) => default_filters_diff(),
@@ -70,6 +83,7 @@ impl DiffCommand {
             old_dom,
             &new_dom,
             &path_parts.unwrap_or(vec![]),
+            diff_options.clone(),
             |old_ref| match &old_tree {
                 InputTree::RojoTree(tree) => tree.syncback_get_filters(old_ref),
                 InputTree::WeakDom(_) => default_filters_diff(),

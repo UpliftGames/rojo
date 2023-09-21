@@ -7,7 +7,7 @@ use std::{
 
 use crate::{
     open_tree::{open_tree_at_location, InputTree},
-    snapshot::RojoTree,
+    snapshot::{DiffOptions, DiffOptionsCommand, RojoTree},
 };
 use anyhow::bail;
 use clap::Parser;
@@ -33,6 +33,9 @@ pub struct SyncbackCommand {
     /// Skip (say "yes" to) the diff viewer confirmation screen.
     #[clap(short = 'y', long, required = false)]
     pub non_interactive: bool,
+
+    #[clap(flatten)]
+    pub diff_options: DiffOptionsCommand,
 }
 
 impl SyncbackCommand {
@@ -57,7 +60,22 @@ impl SyncbackCommand {
             timer.elapsed().as_secs_f64()
         );
 
-        let result = syncback(&vfs, &mut tree, &self.input, self.non_interactive);
+        let diff_options = DiffOptions {
+            basic_comparison: true,
+            deduplication_attributes: true,
+            rescan_ref_fix: false,
+            deep_comparison: false,
+            deep_comparison_depth: 2,
+        }
+        .apply_command_args(self.diff_options);
+
+        let result = syncback(
+            &vfs,
+            &mut tree,
+            &self.input,
+            diff_options,
+            self.non_interactive,
+        );
 
         log::trace!("syncback out");
         if let Err(e) = result {
@@ -74,7 +92,13 @@ impl SyncbackCommand {
 }
 
 #[profiling::function]
-fn syncback(vfs: &Vfs, tree: &mut RojoTree, input: &Path, skip_prompt: bool) -> anyhow::Result<()> {
+fn syncback(
+    vfs: &Vfs,
+    tree: &mut RojoTree,
+    input: &Path,
+    diff_options: DiffOptions,
+    skip_prompt: bool,
+) -> anyhow::Result<()> {
     let tree = tree.borrow_mut();
     let root_id = tree.get_root_id();
 
@@ -96,7 +120,7 @@ fn syncback(vfs: &Vfs, tree: &mut RojoTree, input: &Path, skip_prompt: bool) -> 
     log::info!("Diffing project and input file...");
     let timer = std::time::Instant::now();
 
-    let diff = tree.syncback_start(vfs, root_id, &mut new_dom, new_root);
+    let diff = tree.syncback_start(vfs, root_id, &mut new_dom, new_root, diff_options.clone());
 
     log::info!(
         "  diffed project and input file in {:.3}s",
@@ -109,6 +133,7 @@ fn syncback(vfs: &Vfs, tree: &mut RojoTree, input: &Path, skip_prompt: bool) -> 
             tree.inner(),
             &new_dom,
             &Vec::new(),
+            diff_options.clone(),
             |old_ref| tree.syncback_get_filters(old_ref),
             |old_ref| tree.syncback_should_skip(old_ref),
         );
