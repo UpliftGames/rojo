@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashSet},
     path::Path,
 };
 
@@ -214,30 +214,34 @@ fn convert_localization_csv(contents: &[u8]) -> Result<String, csv::Error> {
         entries.push(entry);
     }
 
+    entries.sort_by(|a, b| a.source.cmp(&b.source).then_with(|| a.key.cmp(&b.key)));
+
     let encoded =
         serde_json::to_string(&entries).expect("Could not encode JSON for localization table");
 
     Ok(encoded)
 }
 
+// TODO: move useful stuff out of here and into a generalized localization
+// tables utility module.
 #[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct LocalizationEntryOwned {
+pub struct LocalizationEntryOwned {
     #[serde(skip_serializing_if = "Option::is_none")]
-    key: Option<String>,
+    pub key: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    context: Option<String>,
+    pub context: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    example: Option<String>,
+    pub example: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    source: Option<String>,
+    pub source: Option<String>,
 
     // We use a BTreeMap here to get deterministic output order.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
-    values: BTreeMap<String, String>,
+    pub values: BTreeMap<String, String>,
 }
 
 fn get_instance_contents(instance: &Instance) -> anyhow::Result<Vec<u8>> {
@@ -258,18 +262,22 @@ fn read_table_to_csv(contents: &str) -> anyhow::Result<Vec<u8>> {
     let mut result: Vec<u8> = Vec::new();
     let mut writer = csv::Writer::from_writer(&mut result);
 
-    let contents: Vec<LocalizationEntryOwned> = serde_json::from_str(contents)?;
+    let mut contents: Vec<LocalizationEntryOwned> = serde_json::from_str(contents)?;
+
+    contents.sort_by(|a, b| a.source.cmp(&b.source).then_with(|| a.key.cmp(&b.key)));
 
     let mut headers = vec!["Key", "Source", "Context", "Example"];
 
-    let mut extra_headers = HashMap::new();
+    let mut extra_headers = BTreeSet::new();
     for entry in &contents {
         for key in entry.values.keys() {
-            if !extra_headers.contains_key(key.as_str()) {
-                extra_headers.insert(key.as_str(), headers.len());
-                headers.push(key);
-            }
+            extra_headers.insert(key.as_str());
         }
+    }
+
+    // extra_headers is already sorted since it's a BTreeSet
+    for key in extra_headers.into_iter() {
+        headers.push(key);
     }
 
     let extra_headers_iter = headers.iter().skip(4).copied();

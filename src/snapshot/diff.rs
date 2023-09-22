@@ -16,6 +16,8 @@ use rbx_dom_weak::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::snapshot_middleware::LocalizationEntryOwned;
+
 use super::{
     default_filters_diff, filter, get_default_property, InstanceExtra, PropertiesFiltered,
     PropertyFilter, ToVariantBinaryString, WeakDomExtra,
@@ -36,20 +38,20 @@ pub struct DiffOptions {
 #[derive(Debug, Parser)]
 pub struct DiffOptionsCommand {
     /// diff: Enable basic top-level property comparison
-    #[clap(takes_value = true, require_equals = true)]
+    #[clap(long, takes_value = true, require_equals = true)]
     pub diff_basic_comparison: Option<bool>,
     /// diff: Enable deduplication attribute assignment and checking
-    #[clap(takes_value = true, require_equals = true)]
+    #[clap(long, takes_value = true, require_equals = true)]
     pub diff_deduplication_attributes: Option<bool>,
     /// diff: Enable two diff passes in order to fix ref properties that were
     /// matched incorrectly on the first pass
-    #[clap(takes_value = true, require_equals = true)]
+    #[clap(long, takes_value = true, require_equals = true)]
     pub diff_rescan_ref_fix: Option<bool>,
     /// diff: Enable deeper property comparison
-    #[clap(takes_value = true, require_equals = true)]
+    #[clap(long, takes_value = true, require_equals = true)]
     pub diff_deep_comparison: Option<bool>,
     /// diff: Set deeper property comparison depth [default: 2]
-    #[clap(takes_value = true, require_equals = true)]
+    #[clap(long, takes_value = true, require_equals = true)]
     pub diff_deep_comparison_depth: Option<usize>,
 }
 
@@ -79,6 +81,12 @@ fn empty_attributes() -> &'static Attributes {
     static VALUE: OnceLock<Attributes> = OnceLock::new();
 
     VALUE.get_or_init(|| Attributes::new())
+}
+
+fn reserialize_localization_table_contents(contents: &str) -> anyhow::Result<String> {
+    let mut localization_table: Vec<LocalizationEntryOwned> = serde_json::from_str(contents)?;
+    localization_table.sort_by(|a, b| a.source.cmp(&b.source).then_with(|| a.key.cmp(&b.key)));
+    Ok(serde_json::to_string(&localization_table)?)
 }
 
 // We've copied the exact return type from the iterator here so that we can
@@ -271,13 +279,17 @@ pub fn round_variant_floats_for_hash(v: &Variant) -> Cow<Variant> {
     }
 }
 
+fn display_variant_short_string(v: &str) -> String {
+    if v.len() < 50 {
+        format!("\"{}\"", v)
+    } else {
+        format!("\"{}...\"", &v[0..47])
+    }
+}
+
 pub fn display_variant_short(value: &Variant) -> String {
     match value {
         Variant::Axes(v) => format!("{:?}", v),
-        Variant::BinaryString(v) => format!(
-            "BinaryString(length = {})",
-            <rbx_dom_weak::types::BinaryString as AsRef<[u8]>>::as_ref(v).len()
-        ),
         Variant::Bool(v) => format!("{}", v),
         Variant::BrickColor(v) => format!("BrickColor({})", v),
         Variant::CFrame(_v) => "CFrame".to_string(),
@@ -333,7 +345,22 @@ pub fn display_variant_short(value: &Variant) -> String {
             "Region3int16([{}, {}, {}], [{}, {}, {}])",
             v.min.x, v.min.y, v.min.z, v.max.x, v.max.y, v.max.z
         ),
-        Variant::SharedString(v) => format!("SharedString(length = {})", v.data().len()),
+        Variant::BinaryString(v) => {
+            let v = <rbx_dom_weak::types::BinaryString as AsRef<[u8]>>::as_ref(v);
+            if let Ok(v) = std::str::from_utf8(v) {
+                format!("BinaryString({})", display_variant_short_string(v))
+            } else {
+                format!("BinaryString(length = {})", v.len())
+            }
+        }
+        Variant::SharedString(v) => {
+            let v = v.data();
+            if let Ok(v) = std::str::from_utf8(v) {
+                format!("SharedString({})", display_variant_short_string(v))
+            } else {
+                format!("SharedString(length = {})", v.len())
+            }
+        }
         Variant::String(v) => if v.len() < 50 {
             format!("\"{}\"", v)
         } else {
@@ -351,8 +378,22 @@ pub fn display_variant_short(value: &Variant) -> String {
         Variant::Vector3(v) => format!("Vector3({}, {}, {})", v.x, v.y, v.z),
         Variant::Vector3int16(v) => format!("Vector3int16({}, {}, {})", v.x, v.y, v.z),
         Variant::OptionalCFrame(v) => {
-            if let Some(_cframe) = v {
-                "OptionalCFrame(CFrame)".to_owned()
+            if let Some(cframe) = v {
+                format!(
+                    "OptionalCFrame({:.3},{:.3},{:.3}, {:.3},{:.3},{:.3}, {:.3},{:.3},{:.3}, {:.3},{:.3},{:.3})",
+                    cframe.position.x,
+                    cframe.position.y,
+                    cframe.position.z,
+                    cframe.orientation.x.x,
+                    cframe.orientation.x.y,
+                    cframe.orientation.x.z,
+                    cframe.orientation.y.x,
+                    cframe.orientation.y.y,
+                    cframe.orientation.y.z,
+                    cframe.orientation.z.x,
+                    cframe.orientation.z.y,
+                    cframe.orientation.z.z
+                )
             } else {
                 "OptionalCFrame(None)".to_owned()
             }
@@ -458,6 +499,8 @@ impl DeepDiff {
     ) -> Self {
         let mut diff = Self::default();
 
+        diff.reserialize_tree_localization_table_contents(new_tree);
+
         if diff_options.deduplication_attributes {
             diff.update_rojo_dedup_ids(new_tree);
         }
@@ -477,7 +520,7 @@ impl DeepDiff {
         if diff_options.rescan_ref_fix {
             let new_root = *ref_map.get(&new_root).unwrap_or(&new_root);
             diff.clear();
-            log::info!("Beginning second diff pass (use_rescan_ref_fix enabled)");
+            log::info!("Beginning second diff pass (rescan_ref_fix enabled)");
             diff.deep_diff(
                 old_tree,
                 old_root,
@@ -767,11 +810,20 @@ impl DeepDiff {
                                 attribute_names.sort();
 
                                 for attribute_name in attribute_names {
-                                    if attribute_name == ROJO_DEDUP_KEY {
-                                        continue;
-                                    }
                                     let old_value = old_attributes.get(attribute_name);
                                     let new_value = new_attributes.get(attribute_name);
+
+                                    if old_value == new_value {
+                                        continue;
+                                    }
+
+                                    if let (Some(old_value), Some(new_value)) =
+                                        (old_value, new_value)
+                                    {
+                                        if are_variants_similar(old_value, new_value) {
+                                            continue;
+                                        }
+                                    }
 
                                     let old_display = old_value
                                         .map(|v| display_variant_short(v))
@@ -1221,6 +1273,35 @@ impl DeepDiff {
                 );
                 process.extend(matches.into_iter());
             }
+        }
+    }
+
+    fn reserialize_tree_localization_table_contents(&mut self, new_tree: &mut WeakDom) {
+        let mut processing: Vec<Ref> = vec![new_tree.root_ref()];
+
+        while let Some(new_ref) = processing.pop() {
+            let new_inst = new_tree.get_by_ref_mut(new_ref).unwrap();
+            if new_inst.class == "LocalizationTable" {
+                if let Some(v) = new_inst.properties.get_mut("Contents") {
+                    if let Variant::String(inner) = v {
+                        match reserialize_localization_table_contents(inner.as_str()) {
+                            Ok(new_inner) => {
+                                *v = Variant::String(new_inner);
+                            }
+                            Err(err) => {
+                                log::warn!(
+                                    "Failed to reserialize localization table contents. This may produce additional diffs.\n  Cause: {}",
+                                    err
+                                );
+                            }
+                        }
+                    } else {
+                        log::warn!("Failed to reserialize localization table contents. This may produce additional diffs.\n  Cause: expected a String, got {:?}", v.ty());
+                    }
+                }
+            }
+
+            processing.extend(new_inst.children());
         }
     }
 

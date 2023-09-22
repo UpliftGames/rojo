@@ -193,9 +193,17 @@ pub struct ProjectSyncback {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub exclude_globs: Vec<Glob>,
 
+    /// A list of instance names which should always be excluded.
+    pub exclude_instance_names: Vec<String>,
+
+    /// Extended property defaults
+    /// (same as property filtering, generally, but more concise for convenience)
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub property_defaults: BTreeMap<String, UnresolvedValue>,
+
     /// Property filtering
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub properties: BTreeMap<String, ProjectSyncbackProperty>,
+    pub property_filters: BTreeMap<String, ProjectSyncbackProperty>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

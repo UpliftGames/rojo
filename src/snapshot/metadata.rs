@@ -1,6 +1,6 @@
 use std::{
     borrow::Cow,
-    collections::BTreeMap,
+    collections::{BTreeMap, HashSet},
     fmt,
     path::{Path, PathBuf},
     sync::Arc,
@@ -202,87 +202,37 @@ impl InstanceContext {
             .exclude_globs
             .extend(new_options.exclude_globs.iter().cloned());
 
-        for (key, new_value) in &new_options.properties {
-            // TODO: deduplicate these
-            'diff: {
-                if syncback.property_filters_diff.contains_key(key) {
-                    let old_value = syncback.property_filters_diff.get_mut(key).unwrap();
-                    if let ProjectSyncbackPropertyMode::WhenNotEqual(new_eq_values) =
-                        &new_value.diff
-                    {
-                        if let PropertyFilter::IgnoreWhenEq(old_eq_values) = old_value {
-                            for eq_value in new_eq_values.iter().cloned() {
-                                let eq_value = eq_value.resolve_unambiguous().with_context(|| format!("Excluded syncback property {} could not be resolved to a proper value.", key))?;
-                                old_eq_values.push(eq_value);
-                                break 'diff;
-                            }
-                        }
-                    }
-                }
-
-                match &new_value.diff {
-                    ProjectSyncbackPropertyMode::Always => {
-                        break 'diff;
-                    }
-                    ProjectSyncbackPropertyMode::Never => {
-                        syncback
-                            .property_filters_diff
-                            .insert(key.clone(), PropertyFilter::Ignore);
-                    }
-                    ProjectSyncbackPropertyMode::WhenNotEqual(eq_values) => {
-                        let mut resolved_eq_values = Vec::new();
-                        for eq_value in eq_values.iter().cloned() {
-                            let eq_value = eq_value.resolve_unambiguous().with_context(|| format!("Excluded syncback property {} could not be resolved to a proper value.", key))?;
-                            resolved_eq_values.push(eq_value);
-                        }
-
-                        syncback.property_filters_diff.insert(
-                            key.clone(),
-                            PropertyFilter::IgnoreWhenEq(resolved_eq_values),
-                        );
-                    }
-                }
+        for name in new_options.exclude_instance_names.iter() {
+            if !syncback.exclude_instance_names.contains(name) {
+                syncback.exclude_instance_names.insert(name.clone());
             }
+        }
 
-            'save: {
-                if syncback.property_filters_save.contains_key(key) {
-                    let old_value = syncback.property_filters_save.get_mut(key).unwrap();
-                    if let ProjectSyncbackPropertyMode::WhenNotEqual(new_eq_values) =
-                        &new_value.save
-                    {
-                        if let PropertyFilter::IgnoreWhenEq(old_eq_values) = old_value {
-                            for eq_value in new_eq_values.iter().cloned() {
-                                let eq_value = eq_value.resolve_unambiguous().with_context(|| format!("Excluded syncback property {} could not be resolved to a proper value.", key))?;
-                                old_eq_values.push(eq_value);
-                                break 'save;
-                            }
-                        }
-                    }
-                }
+        for (key, default) in &new_options.property_defaults {
+            let property_mode = ProjectSyncbackPropertyMode::WhenNotEqual(vec![default.clone()]);
+            add_property_filter(
+                &mut syncback.property_filters_diff,
+                key.as_str(),
+                &property_mode,
+            )?;
+            add_property_filter(
+                &mut syncback.property_filters_save,
+                key.as_str(),
+                &property_mode,
+            )?;
+        }
 
-                match &new_value.save {
-                    ProjectSyncbackPropertyMode::Always => {
-                        break 'save;
-                    }
-                    ProjectSyncbackPropertyMode::Never => {
-                        syncback
-                            .property_filters_save
-                            .insert(key.clone(), PropertyFilter::Ignore);
-                    }
-                    ProjectSyncbackPropertyMode::WhenNotEqual(eq_values) => {
-                        let mut resolved_eq_values = Vec::new();
-                        for eq_value in eq_values.iter().cloned() {
-                            let eq_value = eq_value.resolve_unambiguous().with_context(|| format!("Excluded syncback property {} could not be resolved to a proper value.", key))?;
-                            resolved_eq_values.push(eq_value);
-                        }
-
-                        syncback.property_filters_save.insert(
-                            key.clone(),
-                            PropertyFilter::IgnoreWhenEq(resolved_eq_values),
-                        );
-                    }
-                }
-            }
+        for (key, new_value) in &new_options.property_filters {
+            add_property_filter(
+                &mut syncback.property_filters_diff,
+                key.as_str(),
+                &new_value.diff,
+            )?;
+            add_property_filter(
+                &mut syncback.property_filters_save,
+                key.as_str(),
+                &new_value.save,
+            )?;
         }
 
         Ok(())
@@ -329,14 +279,62 @@ impl Default for InstanceContext {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncbackContext {
     pub exclude_globs: Vec<Glob>,
+    pub exclude_instance_names: HashSet<String>,
     pub property_filters_diff: BTreeMap<String, PropertyFilter>,
     pub property_filters_save: BTreeMap<String, PropertyFilter>,
+}
+
+fn add_property_filter(
+    target: &mut BTreeMap<String, PropertyFilter>,
+    key: &str,
+    filter: &ProjectSyncbackPropertyMode,
+) -> anyhow::Result<()> {
+    if target.contains_key(key) {
+        let old_value = target.get_mut(key).unwrap();
+        if let ProjectSyncbackPropertyMode::WhenNotEqual(new_eq_values) = filter {
+            if let PropertyFilter::IgnoreWhenEq(old_eq_values) = old_value {
+                for eq_value in new_eq_values.iter().cloned() {
+                    let eq_value = eq_value.resolve_unambiguous().with_context(|| format!("Excluded syncback property {} could not be resolved to a proper value.", key))?;
+                    old_eq_values.push(eq_value);
+                    return Ok(());
+                }
+            }
+        }
+    }
+
+    match filter {
+        ProjectSyncbackPropertyMode::Always => {
+            return Ok(());
+        }
+        ProjectSyncbackPropertyMode::Never => {
+            target.insert(key.to_string(), PropertyFilter::Ignore);
+        }
+        ProjectSyncbackPropertyMode::WhenNotEqual(eq_values) => {
+            let mut resolved_eq_values = Vec::new();
+            for eq_value in eq_values.iter().cloned() {
+                let eq_value = eq_value.resolve_unambiguous().with_context(|| {
+                    format!(
+                        "Excluded syncback property {} could not be resolved to a proper value.",
+                        key
+                    )
+                })?;
+                resolved_eq_values.push(eq_value);
+            }
+
+            target.insert(
+                key.to_string(),
+                PropertyFilter::IgnoreWhenEq(resolved_eq_values),
+            );
+        }
+    }
+    Ok(())
 }
 
 impl Default for SyncbackContext {
     fn default() -> Self {
         Self {
             exclude_globs: Vec::new(),
+            exclude_instance_names: HashSet::new(),
             property_filters_diff: default_filters_diff().clone(),
             property_filters_save: default_filters_save().clone(),
         }

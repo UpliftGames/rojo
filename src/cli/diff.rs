@@ -45,7 +45,7 @@ impl DiffCommand {
 
         log::info!("  opened new tree in {:.3}s", timer.elapsed().as_secs_f64());
 
-        log::trace!("Diffing trees...");
+        log::info!("Diffing trees...");
         let timer = std::time::Instant::now();
 
         let diff_options = DiffOptions {
@@ -77,8 +77,6 @@ impl DiffCommand {
             .path
             .map(|v| v.split('.').map(str::to_string).collect());
 
-        log::info!("  diffed trees in {:.3}s", timer.elapsed().as_secs_f64());
-
         diff.show_diff(
             old_dom,
             &new_dom,
@@ -93,6 +91,8 @@ impl DiffCommand {
                 InputTree::WeakDom(_) => false,
             },
         );
+
+        log::info!("diffed trees in {:.3}s", timer.elapsed().as_secs_f64());
 
         // Leak objects that would cause a delay while running destructors.
         // We're about to close, and the destructors do nothing important.

@@ -129,6 +129,11 @@ fn syncback(
 
     if !skip_prompt {
         println!("The following is a diff of the changes to be synced back to the filesystem:");
+        if diff_options.deduplication_attributes {
+            println!("  Because deduplication attributes are turned on, additional changes");
+            println!("  may be written to the filesystem to update deduplication attributes.");
+        }
+
         let _any_changes = diff.show_diff(
             tree.inner(),
             &new_dom,
