@@ -496,6 +496,7 @@ impl DeepDiff {
         diff_options: DiffOptions,
         get_property_filters: impl Fn(Ref) -> &'a BTreeMap<String, PropertyFilter>,
         should_skip: impl Fn(Ref) -> bool,
+        get_skip_instance_names: impl Fn(Ref) -> &'a HashSet<String>,
     ) -> Self {
         let mut diff = Self::default();
 
@@ -513,6 +514,7 @@ impl DeepDiff {
             diff_options.clone(),
             &get_property_filters,
             &should_skip,
+            &get_skip_instance_names,
         );
 
         let ref_map = diff.deduplicate_refs(old_tree, new_tree);
@@ -529,6 +531,7 @@ impl DeepDiff {
                 diff_options.clone(),
                 &get_property_filters,
                 &should_skip,
+                &get_skip_instance_names,
             );
         }
 
@@ -1106,6 +1109,7 @@ impl DeepDiff {
         new_instance: &Instance,
         diff_options: DiffOptions,
         filters: &BTreeMap<String, PropertyFilter>,
+        skip_instance_names: &HashSet<String>,
     ) -> HashMap<Ref, Ref> {
         let mut matches = HashMap::new();
 
@@ -1120,6 +1124,10 @@ impl DeepDiff {
         for child_ref in new_instance.children() {
             let child = new_tree.get_by_ref(*child_ref).unwrap();
             by_name.entry(&child.name).or_default().1.insert(*child_ref);
+        }
+
+        for name in skip_instance_names {
+            by_name.remove(name.as_str());
         }
 
         let mut scorer = SimilarityScorer::new(old_tree, new_tree, diff_options.clone(), filters);
@@ -1240,6 +1248,7 @@ impl DeepDiff {
         diff_options: DiffOptions,
         get_filters: &impl Fn(Ref) -> &'a BTreeMap<String, PropertyFilter>,
         should_skip: &impl Fn(Ref) -> bool,
+        get_skip_instance_names: &impl Fn(Ref) -> &'a HashSet<String>,
     ) {
         let mut process: Vec<(Ref, Ref)> = vec![(old_root, new_root)];
 
@@ -1252,6 +1261,8 @@ impl DeepDiff {
             let new_inst = new_tree.get_by_ref(new_ref).unwrap();
 
             let filters = get_filters(old_ref);
+
+            let skip_instance_names = get_skip_instance_names(old_ref);
 
             if are_properties_different(old_inst, new_inst, filters) {
                 self.changed.insert(old_ref, new_ref);
@@ -1270,6 +1281,7 @@ impl DeepDiff {
                     new_inst,
                     diff_options.clone(),
                     filters,
+                    skip_instance_names,
                 );
                 process.extend(matches.into_iter());
             }

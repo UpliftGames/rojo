@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     sync::OnceLock,
 };
 
@@ -41,6 +41,12 @@ pub fn is_filename_legal_everywhere(filename: &str) -> bool {
         && !filename.ends_with('.')
         && !filename.ends_with(' ')
         && filename.len() <= 255
+}
+
+pub fn empty_hashset() -> &'static HashSet<String> {
+    static VALUE: OnceLock<HashSet<String>> = OnceLock::new();
+
+    VALUE.get_or_init(HashSet::new)
 }
 
 pub fn default_filters_diff() -> &'static BTreeMap<String, PropertyFilter> {

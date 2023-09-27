@@ -193,8 +193,14 @@ pub struct ProjectSyncback {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub exclude_globs: Vec<Glob>,
 
-    /// A list of instance names which should always be excluded.
-    pub exclude_instance_names: Vec<String>,
+    /// A list of instance names which should always be skipped during diff.
+    ///
+    /// These instances will appear as descendants in model files if the model
+    /// file is re-serialized, but will never be serialized as their own
+    /// individual file on the filesystem. They will be practically invisible to
+    /// diffing and all other operations except serializing as a descendant.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skip_instance_names: Vec<String>,
 
     /// Extended property defaults
     /// (same as property filtering, generally, but more concise for convenience)

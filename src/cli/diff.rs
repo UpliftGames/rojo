@@ -2,7 +2,7 @@ use std::{mem::forget, path::PathBuf};
 
 use crate::{
     open_tree::{open_tree_at_location, InputTree},
-    snapshot::{default_filters_diff, DeepDiff, DiffOptions, DiffOptionsCommand},
+    snapshot::{default_filters_diff, empty_hashset, DeepDiff, DiffOptions, DiffOptionsCommand},
 };
 
 use clap::Parser;
@@ -70,6 +70,10 @@ impl DiffCommand {
             |old_ref| match &old_tree {
                 InputTree::RojoTree(tree) => tree.syncback_should_skip(old_ref),
                 InputTree::WeakDom(_) => false,
+            },
+            |old_ref| match &old_tree {
+                InputTree::RojoTree(tree) => tree.syncback_get_skip_instance_names(old_ref),
+                InputTree::WeakDom(_) => empty_hashset(),
             },
         );
 

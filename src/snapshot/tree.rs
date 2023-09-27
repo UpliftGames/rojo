@@ -11,7 +11,11 @@ use rbx_dom_weak::{
     Instance, InstanceBuilder, WeakDom,
 };
 
-use crate::{multimap::MultiMap, snapshot::InstigatingSource, snapshot_middleware::get_middleware};
+use crate::{
+    multimap::MultiMap,
+    snapshot::{empty_hashset, InstigatingSource},
+    snapshot_middleware::get_middleware,
+};
 
 use super::{
     diff::DeepDiff, DiffOptions, FsSnapshot, InstanceMetadata, InstanceSnapshot, PropertyFilter,
@@ -302,6 +306,13 @@ impl RojoTree {
         false
     }
 
+    pub fn syncback_get_skip_instance_names(&self, old_ref: Ref) -> &HashSet<String> {
+        match self.get_metadata(old_ref) {
+            Some(metadata) => &metadata.context.syncback.skip_instance_names,
+            None => empty_hashset(),
+        }
+    }
+
     pub fn syncback_start(
         &mut self,
         _vfs: &Vfs,
@@ -318,6 +329,7 @@ impl RojoTree {
             diff_options,
             |old_ref| self.syncback_get_filters(old_ref),
             |old_ref| self.syncback_should_skip(old_ref),
+            |old_ref| self.syncback_get_skip_instance_names(old_ref),
         )
     }
 

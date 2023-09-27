@@ -202,9 +202,9 @@ impl InstanceContext {
             .exclude_globs
             .extend(new_options.exclude_globs.iter().cloned());
 
-        for name in new_options.exclude_instance_names.iter() {
-            if !syncback.exclude_instance_names.contains(name) {
-                syncback.exclude_instance_names.insert(name.clone());
+        for name in new_options.skip_instance_names.iter() {
+            if !syncback.skip_instance_names.contains(name) {
+                syncback.skip_instance_names.insert(name.clone());
             }
         }
 
@@ -279,7 +279,7 @@ impl Default for InstanceContext {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncbackContext {
     pub exclude_globs: Vec<Glob>,
-    pub exclude_instance_names: HashSet<String>,
+    pub skip_instance_names: HashSet<String>,
     pub property_filters_diff: BTreeMap<String, PropertyFilter>,
     pub property_filters_save: BTreeMap<String, PropertyFilter>,
 }
@@ -334,7 +334,7 @@ impl Default for SyncbackContext {
     fn default() -> Self {
         Self {
             exclude_globs: Vec::new(),
-            exclude_instance_names: HashSet::new(),
+            skip_instance_names: HashSet::new(),
             property_filters_diff: default_filters_diff().clone(),
             property_filters_save: default_filters_save().clone(),
         }
