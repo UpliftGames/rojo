@@ -104,10 +104,23 @@ impl BuildCommand {
             }
         }
 
+        log::info!("Opening project...");
+        let timer = std::time::Instant::now();
+
         let session = ServeSession::new(vfs, &project_path)?;
         let mut cursor = session.message_queue().cursor();
 
+        log::info!("  opened project in {:.3}s", timer.elapsed().as_secs_f64());
+
+        log::info!("Serializing project and writing to filesystem...");
+        let timer = std::time::Instant::now();
+
         write_model(&session, &self.output, output_kind)?;
+
+        log::info!(
+            "  wrote to filesystem in {:.3}s",
+            timer.elapsed().as_secs_f64()
+        );
 
         if self.watch {
             let rt = Runtime::new().unwrap();
