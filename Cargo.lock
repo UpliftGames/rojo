@@ -2061,7 +2061,7 @@ dependencies = [
 
 [[package]]
 name = "rojo"
-version = "7.3.0-uplift.12.pre.4"
+version = "7.3.0-uplift.12.pre.7"
 dependencies = [
  "anyhow",
  "backtrace",
