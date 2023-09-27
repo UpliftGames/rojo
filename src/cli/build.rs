@@ -33,6 +33,15 @@ pub struct BuildCommand {
     /// Whether to automatically rebuild when any input files change.
     #[clap(long)]
     pub watch: bool,
+
+    /// Skip (say "yes" to) the overwrite confirmation prompts.
+    #[clap(short = 'y', long, required = false)]
+    pub non_interactive: bool,
+
+    /// Directly overwrite the output file instead of putting it in the
+    /// Trash or Recycle Bin first.
+    #[clap(long, required = false)]
+    pub no_trash: bool,
 }
 
 impl BuildCommand {
@@ -44,6 +53,56 @@ impl BuildCommand {
         log::trace!("Constructing in-memory filesystem");
         let vfs = Vfs::new_default();
         vfs.set_watch_enabled(self.watch);
+
+        if !self.non_interactive {
+            let mut new_filename = self
+                .output
+                .file_name()
+                .context("Could not get filename of output target")?
+                .to_os_string();
+            new_filename.push(".lock");
+
+            let lock_file_metadata = vfs.metadata(self.output.with_file_name(new_filename));
+            if lock_file_metadata.is_ok() {
+                println!("The output file has a Roblox lock file associated with it.");
+                println!("This usually means that the target file is open in Roblox Studio.");
+                println!(
+                    "\nDo you want to overwrite {}? [y/N]",
+                    self.output.display()
+                );
+                std::io::stdout().flush()?;
+
+                let mut input = String::new();
+                std::io::stdin().read_line(&mut input)?;
+                if input.trim().to_lowercase() == "n" || input.trim() == "" {
+                    println!("Cancelled");
+                    return Ok(());
+                }
+            }
+        }
+
+        if !self.no_trash {
+            let existing_file_metadata = vfs.metadata(&self.output);
+            if existing_file_metadata.is_ok() {
+                if let Err(e) = vfs.trash_file(&self.output) {
+                    println!("Failed to trash {}: {}", self.output.display(), e);
+                    if !self.non_interactive {
+                        println!("\n Would you like to overwrite {} instead? You won't be able to recover the current file. [y/N]", self.output.display());
+
+                        let mut input = String::new();
+                        std::io::stdin().read_line(&mut input)?;
+                        if input.trim().to_lowercase() == "n" || input.trim() == "" {
+                            println!("Cancelled");
+                            return Ok(());
+                        }
+                    }
+                    println!(
+                        "\nOverwriting {} without trashing first.",
+                        self.output.display()
+                    );
+                }
+            }
+        }
 
         let session = ServeSession::new(vfs, &project_path)?;
         let mut cursor = session.message_queue().cursor();

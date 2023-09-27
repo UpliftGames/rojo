@@ -88,6 +88,7 @@ pub trait VfsBackend: sealed::Sealed + Send + 'static {
     fn metadata(&mut self, path: &Path) -> io::Result<Metadata>;
     fn remove_file(&mut self, path: &Path) -> io::Result<()>;
     fn remove_dir_all(&mut self, path: &Path) -> io::Result<()>;
+    fn trash_file(&mut self, path: &Path) -> io::Result<()>;
 
     fn event_receiver(&self) -> crossbeam_channel::Receiver<VfsEvent>;
     fn watch(&mut self, path: &Path) -> io::Result<()>;
@@ -201,6 +202,12 @@ impl VfsInner {
         let path = path.as_ref();
         let _ = self.backend.unwatch(path);
         self.backend.remove_dir_all(path)
+    }
+
+    fn trash_file<P: AsRef<Path>>(&mut self, path: P) -> io::Result<()> {
+        let path = path.as_ref();
+        let _ = self.backend.unwatch(path);
+        self.backend.trash_file(path)
     }
 
     fn metadata<P: AsRef<Path>>(&mut self, path: P) -> io::Result<Metadata> {
@@ -334,6 +341,17 @@ impl Vfs {
     pub fn remove_dir_all<P: AsRef<Path>>(&self, path: P) -> io::Result<()> {
         let path = path.as_ref();
         self.inner.lock().unwrap().remove_dir_all(path)
+    }
+
+    /// Trash a file. Puts the file in the system's recoverable Trash or Recycle Bin.
+    ///
+    /// Roughly equivalent to [`trash::delete`][trash::delete].
+    ///
+    /// [trash::delete]: https://docs.rs/trash/3.0.6/trash/fn.delete.html
+    #[inline]
+    pub fn trash_file<P: AsRef<Path>>(&self, path: P) -> io::Result<()> {
+        let path = path.as_ref();
+        self.inner.lock().unwrap().trash_file(path)
     }
 
     /// Query metadata about the given path.

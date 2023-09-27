@@ -202,6 +202,10 @@ impl VfsBackend for InMemoryFs {
         }
     }
 
+    fn trash_file(&mut self, path: &Path) -> io::Result<()> {
+        self.remove_file(path)
+    }
+
     fn metadata(&mut self, path: &Path) -> io::Result<Metadata> {
         let inner = self.inner.lock().unwrap();
 

@@ -56,6 +56,13 @@ impl VfsBackend for NoopBackend {
         ))
     }
 
+    fn trash_file(&mut self, _path: &Path) -> io::Result<()> {
+        Err(io::Error::new(
+            io::ErrorKind::Other,
+            "NoopBackend doesn't do anything",
+        ))
+    }
+
     fn metadata(&mut self, _path: &Path) -> io::Result<Metadata> {
         Err(io::Error::new(
             io::ErrorKind::Other,

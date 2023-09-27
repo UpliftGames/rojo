@@ -88,6 +88,10 @@ impl VfsBackend for StdBackend {
         fs_err::remove_dir_all(path)
     }
 
+    fn trash_file(&mut self, path: &Path) -> io::Result<()> {
+        trash::delete(path).map_err(|v| io::Error::new(io::ErrorKind::Other, v))
+    }
+
     fn metadata(&mut self, path: &Path) -> io::Result<Metadata> {
         let inner = fs_err::metadata(path)?;
 
