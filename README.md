@@ -18,9 +18,11 @@ Known issues:
 - Diffing can take a while on large projects
 - The diff display displays some changes which are intentionally never
   committed. For example, it displays all extra services in the place file.
-- Localization files nearly always show up in diffs. Their contents are actually
+- ~~Localization files nearly always show up in diffs. Their contents are actually
   just a json string, and they'll be "different" even if the json decodes to the
-  same. Additionally, Roblox's json output is not deterministic.
+  same. Additionally, Roblox's json output is not deterministic.~~\
+  This is mostly fixed now — we reserialize the localization table json
+  deterministically before diffing.
 - Absolutely zero tests for all of this new functionality
 - Other things I'm almost certainly forgetting!
 
@@ -46,7 +48,18 @@ New `project.json` fields:
 {
     "syncback": { // optional
         "excludeGlobs": ["glob/paths/here"], // optional
-        "properties": {                      // optional
+        "skipInstanceNames": [               // optional
+            // skip every instance with one of these names
+
+            // These instances practically become invisible to all syncback operations except
+            // serialization of their ancestors. They will not trigger diff changes and they
+            // will not be saved as their own file on the filesystem.
+            "InstanceName"
+        ],
+        "propertyDefaults": {                // optional
+            "PropertyName": { "Float32": 0.0 } // skip this property in all circumstances when it's this default value
+        },
+        "propertyFilters": {                 // optional
             "PropertyNameSample1": {
                 "diff": "always", // optional, default
                 "save": "always", // optional, default
