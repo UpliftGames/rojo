@@ -141,6 +141,7 @@ fn syncback(
             diff_options.clone(),
             |old_ref| tree.syncback_get_filters(old_ref),
             |old_ref| tree.syncback_should_skip(old_ref),
+            |old_ref| tree.syncback_should_show_adds_removes(old_ref),
         );
         println!("\nDo you want to continue and apply these changes? [Y/n]");
         std::io::stdout().flush()?;

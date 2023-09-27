@@ -313,6 +313,15 @@ impl RojoTree {
         }
     }
 
+    pub fn syncback_should_show_adds_removes(&self, old_ref: Ref) -> bool {
+        if let Some(metadata) = self.get_metadata(old_ref) {
+            // TODO: make this a method of the middleware trait
+            metadata.middleware_id.map_or(true, |v| v != "project")
+        } else {
+            true
+        }
+    }
+
     pub fn syncback_start(
         &mut self,
         _vfs: &Vfs,

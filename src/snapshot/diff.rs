@@ -658,6 +658,7 @@ impl DeepDiff {
         diff_options: DiffOptions,
         get_filters: impl Fn(Ref) -> &'a BTreeMap<String, PropertyFilter>,
         should_skip: impl Fn(Ref) -> bool,
+        should_show_adds_removes: impl Fn(Ref) -> bool,
     ) -> bool {
         let old_root_ref = 'old_ref: {
             let mut item = old_tree.root_ref();
@@ -896,11 +897,13 @@ impl DeepDiff {
                                         .collect_vec();
                                     changed.sort_by(|(a, _), (b, _)| a.cmp(b));
 
-                                    for removed_name in removed {
-                                        println!("{}- {}", "  ".repeat(tabs + 1), removed_name);
-                                    }
-                                    for added_name in added {
-                                        println!("{}+ {}", "  ".repeat(tabs + 1), added_name);
+                                    if should_show_adds_removes(old_ref) {
+                                        for removed_name in removed {
+                                            println!("{}- {}", "  ".repeat(tabs + 1), removed_name);
+                                        }
+                                        for added_name in added {
+                                            println!("{}+ {}", "  ".repeat(tabs + 1), added_name);
+                                        }
                                     }
                                     for (_, changed_ref) in changed {
                                         processing.push((changed_ref, tabs + 1));

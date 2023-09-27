@@ -94,6 +94,10 @@ impl DiffCommand {
                 InputTree::RojoTree(tree) => tree.syncback_should_skip(old_ref),
                 InputTree::WeakDom(_) => false,
             },
+            |old_ref| match &old_tree {
+                InputTree::RojoTree(tree) => tree.syncback_should_show_adds_removes(old_ref),
+                InputTree::WeakDom(_) => true,
+            },
         );
 
         log::info!("diffed trees in {:.3}s", timer.elapsed().as_secs_f64());
