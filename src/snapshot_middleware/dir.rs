@@ -679,6 +679,11 @@ pub fn snapshot_dir_no_meta(
                 }) as Arc<dyn MiddlewareContextAny>);
             }
 
+            let old_relevant_paths = relevant_paths;
+
+            relevant_paths = init_snapshot.metadata.relevant_paths.clone();
+            relevant_paths.extend(old_relevant_paths);
+
             let metadata = init_snapshot
                 .metadata
                 .clone()
