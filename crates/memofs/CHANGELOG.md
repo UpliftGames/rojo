@@ -2,7 +2,7 @@
 
 ## Unreleased Changes
 * Changed the `StdBackend` file watcher to use `PollWatcher` on macOS.
-* Added `create_dir` to allow creating directories.
+* Added `create_dir` and `create_dir_all` to allow creating directories.
 
 ## 0.2.0 (2021-08-23)
 * Updated to `crossbeam-channel` 0.5.1.
