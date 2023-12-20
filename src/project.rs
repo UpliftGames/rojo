@@ -10,7 +10,7 @@ use thiserror::Error;
 
 use crate::{
     glob::Glob, resolution::UnresolvedValue, snapshot::SyncRule,
-    snapshot_middleware::emit_legacy_scripts_default,
+    snapshot_middleware::emit_legacy_scripts_default, syncback::SyncbackIgnoreRules,
 };
 
 static PROJECT_FILENAME: &str = "default.project.json";
@@ -88,6 +88,8 @@ pub struct Project {
     /// match files that should be excluded if Rojo encounters them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub glob_ignore_paths: Vec<Glob>,
+
+    pub syncback_rules: Option<SyncbackIgnoreRules>,
 
     /// A list of mappings of globs to syncing rules. If a file matches a glob,
     /// it will be 'transformed' into an Instance following the rule provided.
