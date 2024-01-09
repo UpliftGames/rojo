@@ -21,6 +21,11 @@ pub struct AdjacentMetadata {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ignore_unknown_instances: Option<bool>,
 
+    /// Indicates an ID that can be used elsewhere in the project for
+    /// reference properties.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preferred_id: Option<String>,
+
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub properties: BTreeMap<String, UnresolvedValue>,
 
@@ -42,6 +47,14 @@ impl AdjacentMetadata {
 
         meta.path = path;
         Ok(meta)
+    }
+
+    pub fn apply_all(&mut self, snapshot: &mut InstanceSnapshot) -> anyhow::Result<()> {
+        self.apply_ignore_unknown_instances(snapshot);
+        self.apply_properties(snapshot)?;
+        self.apply_preferred_id(snapshot)?;
+
+        Ok(())
     }
 
     pub fn apply_ignore_unknown_instances(&mut self, snapshot: &mut InstanceSnapshot) {
@@ -80,9 +93,10 @@ impl AdjacentMetadata {
         Ok(())
     }
 
-    pub fn apply_all(&mut self, snapshot: &mut InstanceSnapshot) -> anyhow::Result<()> {
-        self.apply_ignore_unknown_instances(snapshot);
-        self.apply_properties(snapshot)?;
+    pub fn apply_preferred_id(&mut self, snapshot: &mut InstanceSnapshot) -> anyhow::Result<()> {
+        if let Some(id) = self.preferred_id.take() {
+            snapshot.metadata.specified_id = id.into()
+        }
         Ok(())
     }
 
@@ -111,6 +125,11 @@ impl AdjacentMetadata {
 pub struct DirectoryMetadata {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ignore_unknown_instances: Option<bool>,
+
+    /// Indicates an ID that can be used elsewhere in the project for
+    /// reference properties.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preferred_id: Option<String>,
 
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub properties: BTreeMap<String, UnresolvedValue>,
@@ -142,6 +161,7 @@ impl DirectoryMetadata {
         self.apply_ignore_unknown_instances(snapshot);
         self.apply_class_name(snapshot)?;
         self.apply_properties(snapshot)?;
+        self.apply_preferred_id(snapshot)?;
 
         Ok(())
     }
@@ -192,6 +212,13 @@ impl DirectoryMetadata {
                 .insert("Attributes".into(), attributes.into());
         }
 
+        Ok(())
+    }
+
+    pub fn apply_preferred_id(&mut self, snapshot: &mut InstanceSnapshot) -> anyhow::Result<()> {
+        if let Some(id) = self.preferred_id.take() {
+            snapshot.metadata.specified_id = id.into()
+        }
         Ok(())
     }
 
