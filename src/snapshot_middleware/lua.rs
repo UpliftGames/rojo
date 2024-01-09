@@ -152,6 +152,7 @@ pub fn syncback_lua<'new, 'old>(
     } else {
         AdjacentMetadata {
             ignore_unknown_instances: None,
+            preferred_id: None,
             properties: BTreeMap::new(),
             attributes: BTreeMap::new(),
             path: path
@@ -224,6 +225,7 @@ pub fn syncback_lua_init<'new, 'old>(
     } else {
         DirectoryMetadata {
             ignore_unknown_instances: None,
+            preferred_id: None,
             class_name: None,
             properties: BTreeMap::new(),
             attributes: BTreeMap::new(),

@@ -67,6 +67,7 @@ pub fn syncback_txt<'new, 'old>(
     } else {
         AdjacentMetadata {
             ignore_unknown_instances: None,
+            preferred_id: None,
             properties: BTreeMap::new(),
             attributes: BTreeMap::new(),
             path: path

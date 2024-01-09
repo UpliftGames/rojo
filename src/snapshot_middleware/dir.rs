@@ -108,6 +108,7 @@ pub fn syncback_dir<'new, 'old>(
     } else {
         DirectoryMetadata {
             ignore_unknown_instances: None,
+            preferred_id: None,
             properties: BTreeMap::new(),
             attributes: BTreeMap::new(),
             class_name: if new_inst.class == "Folder" {
