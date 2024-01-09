@@ -66,3 +66,10 @@ pub use tree::*;
 
 #[cfg(test)]
 mod tests;
+
+/// The name of an attribute that may be used to manually specify an ID for Ref
+/// properties.
+pub const REF_ID_ATTRIBUTE_NAME: &str = "Rojo_Id";
+
+/// The prefix for attributes that specify the value of a Ref property.
+pub const REF_POINTER_ATTRIBUTE_PREFIX: &str = "Rojo_Target_";

@@ -25,11 +25,12 @@ use std::{
 
 use anyhow::Context;
 use memofs::{IoResultExt, Vfs};
+use rbx_dom_weak::types::Variant;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     glob::Glob,
-    snapshot::RojoRef,
+    snapshot::{RojoRef, REF_ID_ATTRIBUTE_NAME},
     syncback::{SyncbackReturn, SyncbackSnapshot},
 };
 use crate::{
@@ -96,7 +97,18 @@ pub fn snapshot_from_vfs(
     // middleware.
     .map(|opt| {
         opt.map(|mut inner| {
-            inner.metadata.specified_id = RojoRef::Ref(inner.snapshot_id);
+            if let Some(Variant::Attributes(attrs)) = inner.properties.get("Attributes") {
+                for (name, value) in attrs.iter() {
+                    if name == REF_ID_ATTRIBUTE_NAME {
+                        if let Variant::String(id) = value {
+                            inner.metadata.specified_id = id.clone().into()
+                        }
+                    }
+                }
+            }
+            if !inner.metadata.specified_id.is_custom() {
+                inner.metadata.specified_id = RojoRef::Ref(inner.snapshot_id);
+            }
             inner
         })
     })
