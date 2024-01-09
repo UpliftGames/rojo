@@ -310,9 +310,9 @@ impl RojoRef {
         RojoRef::Ref(Ref::none())
     }
 
-    /// Returns this `RojoRef`` and leaves an empty `Ref`` in its place
-    pub fn take(&mut self) -> Self {
-        std::mem::replace(self, Self::none())
+    /// Returns whether this `RojoRef` is a custom one or a normal `Ref`.
+    pub fn is_custom(&self) -> bool {
+        matches!(self, Self::Custom(_))
     }
 
     pub fn ref_for_instance(inst: &InstanceWithMeta<'_>) -> Self {
@@ -337,5 +337,11 @@ impl From<String> for RojoRef {
 impl From<Ref> for RojoRef {
     fn from(value: Ref) -> Self {
         Self::Ref(value)
+    }
+}
+
+impl Default for RojoRef {
+    fn default() -> Self {
+        Self::Ref(Ref::none())
     }
 }

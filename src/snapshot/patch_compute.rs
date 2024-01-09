@@ -99,12 +99,12 @@ fn compute_patch_set_internal(
     id: Ref,
     patch_set: &mut PatchSet,
 ) {
-    // The clone of `user_id` is wasteful but preserving a reference to it is
-    // difficult and in most cases won't matter since Refs are Copy. If it does
-    // end up being a performance issue, we can swap RojoRef to use Cow<str>
-    // but it's a bit of a hassle due to the lifetimes it involves.
-    let user_id = snapshot.metadata.specified_id.take();
     if snapshot.snapshot_id.is_some() {
+        // The cloning of `user_id` is wasteful but preserving a reference to it is
+        // difficult and in most cases won't matter since Refs are Copy. If it does
+        // end up being a performance issue, we can swap RojoRef to use Cow<str>
+        // but it's a bit of a hassle due to the lifetimes it involves.
+        let user_id = std::mem::take(&mut snapshot.metadata.specified_id);
         context
             .snapshot_id_to_user_id
             .insert(snapshot.snapshot_id, user_id.clone());
