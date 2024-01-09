@@ -12,5 +12,7 @@ metadata:
   context:
     emit_legacy_scripts: true
   middleware: ~
+  specified_id:
+    Ref: "00000000000000000000000000000000"
 children: []
 

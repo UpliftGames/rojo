@@ -12,6 +12,8 @@ metadata:
   context:
     emit_legacy_scripts: true
   middleware: ~
+  specified_id:
+    Ref: "00000000000000000000000000000000"
 name: foo
 class_name: IntValue
 properties:
@@ -25,6 +27,8 @@ children:
       context:
         emit_legacy_scripts: true
       middleware: ~
+      specified_id:
+        Ref: "00000000000000000000000000000000"
     name: The Child
     class_name: StringValue
     properties: {}
