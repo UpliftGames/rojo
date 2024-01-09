@@ -327,3 +327,15 @@ impl RojoRef {
         }
     }
 }
+
+impl From<String> for RojoRef {
+    fn from(value: String) -> Self {
+        Self::Custom(value)
+    }
+}
+
+impl From<Ref> for RojoRef {
+    fn from(value: Ref) -> Self {
+        Self::Ref(value)
+    }
+}
