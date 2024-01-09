@@ -194,7 +194,7 @@ impl UiService {
 
         html! {
             <div class="instance">
-                <label class="instance-title" for={ format!("instance-{:?}", id) }>
+                <label class="instance-title" for={ format!("instance-{:?}", id) } title = { format!("ref: {id}") }>
                     { instance.name().to_owned() }
                     { class_name_specifier }
                 </label>
