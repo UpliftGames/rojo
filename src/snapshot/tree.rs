@@ -7,6 +7,7 @@ use rbx_dom_weak::{
     types::{Ref, Variant},
     Instance, InstanceBuilder, WeakDom,
 };
+use serde::{Deserialize, Serialize};
 
 use crate::multimap::MultiMap;
 
@@ -295,5 +296,34 @@ impl InstanceWithMetaMut<'_> {
 
     pub fn metadata(&self) -> &InstanceMetadata {
         self.metadata
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Debug)]
+pub enum RojoRef {
+    Custom(String),
+    Ref(Ref),
+}
+
+impl RojoRef {
+    pub fn none() -> Self {
+        RojoRef::Ref(Ref::none())
+    }
+
+    /// Returns this `RojoRef`` and leaves an empty `Ref`` in its place
+    pub fn take(&mut self) -> Self {
+        std::mem::replace(self, Self::none())
+    }
+
+    pub fn ref_for_instance(inst: &InstanceWithMeta<'_>) -> Self {
+        match inst.metadata.specified_id {
+            // This could technically be in a `Cow`, but that cascades into a
+            // lifetime for RojoTree, which isn't something that's within scope
+            // right now. If someone is reading this in the future, please
+            // go ahead and swap this to a Cow in a PR!
+            Self::Custom(ref str) => Self::Custom(str.clone()),
+            Self::Ref(referent) if referent.is_none() => Self::Ref(inst.id()),
+            Self::Ref(referent) => Self::Ref(referent),
+        }
     }
 }

@@ -29,6 +29,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     glob::Glob,
+    snapshot::RojoRef,
     syncback::{SyncbackReturn, SyncbackSnapshot},
 };
 use crate::{
@@ -91,6 +92,14 @@ pub fn snapshot_from_vfs(
 
         snapshot_from_path(context, vfs, path)
     }
+    // This is disgusting but it's very temporary while we rebootstrap the
+    // middleware.
+    .map(|opt| {
+        opt.map(|mut inner| {
+            inner.metadata.specified_id = RojoRef::Ref(inner.snapshot_id);
+            inner
+        })
+    })
 }
 
 /// Gets the appropriate middleware for a directory by checking for `init`

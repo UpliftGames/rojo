@@ -14,6 +14,8 @@ use crate::{
     snapshot_middleware::{emit_legacy_scripts_default, Middleware},
 };
 
+use super::RojoRef;
+
 /// Rojo-specific metadata that can be associated with an instance or a snapshot
 /// of an instance.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -60,6 +62,9 @@ pub struct InstanceMetadata {
     pub context: InstanceContext,
 
     pub middleware: Option<Middleware>,
+
+    /// Indicates the ID used for Ref properties.
+    pub specified_id: RojoRef,
 }
 
 impl InstanceMetadata {
@@ -70,6 +75,7 @@ impl InstanceMetadata {
             relevant_paths: Vec::new(),
             context: InstanceContext::default(),
             middleware: None,
+            specified_id: RojoRef::none(),
         }
     }
 
@@ -97,6 +103,13 @@ impl InstanceMetadata {
     pub fn context(self, context: &InstanceContext) -> Self {
         Self {
             context: context.clone(),
+            ..self
+        }
+    }
+
+    pub fn specified_id(self, id: RojoRef) -> Self {
+        Self {
+            specified_id: id,
             ..self
         }
     }
