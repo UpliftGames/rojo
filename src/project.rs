@@ -226,6 +226,11 @@ impl PathNode {
 /// Describes an instance and its descendants in a project.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct ProjectNode {
+    /// If set, indicates an ID that can be used for Ref properties elsewhere in
+    /// the project.
+    #[serde(rename = "$preferredId", skip_serializing_if = "Option::is_none")]
+    pub preferred_id: Option<String>,
+
     /// If set, defines the ClassName of the described instance.
     ///
     /// `$className` MUST be set if `$path` is not set.

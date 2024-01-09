@@ -279,6 +279,10 @@ pub fn snapshot_project_node(
         metadata.ignore_unknown_instances = true;
     }
 
+    if let Some(custom) = &node.preferred_id {
+        metadata.specified_id = custom.clone().into()
+    }
+
     metadata.instigating_source = Some(InstigatingSource::ProjectNode {
         path: project_path.to_path_buf(),
         name: instance_name.to_string(),
