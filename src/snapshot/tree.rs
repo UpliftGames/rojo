@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::multimap::MultiMap;
 
-use super::{InstanceMetadata, InstanceSnapshot};
+use super::{InstanceMetadata, InstanceSnapshot, REF_ID_ATTRIBUTE_NAME};
 
 /// An expanded variant of rbx_dom_weak's `WeakDom` that tracks additional
 /// metadata per instance that's Rojo-specific.
@@ -34,6 +34,10 @@ pub struct RojoTree {
     /// appearing multiple times in the same Rojo project. This is sometimes
     /// called "path aliasing" in various Rojo documentation.
     path_to_ids: MultiMap<PathBuf, Ref>,
+
+    /// A map of user-specified RojoRef properties to the internal ID for that
+    /// Instance.
+    user_ids_to_ids: HashMap<RojoRef, Ref>,
 }
 
 impl RojoTree {
@@ -46,6 +50,7 @@ impl RojoTree {
             inner: WeakDom::new(root_builder),
             metadata_map: HashMap::new(),
             path_to_ids: MultiMap::new(),
+            user_ids_to_ids: HashMap::new(),
         };
 
         let root_ref = tree.inner.root_ref();
@@ -94,6 +99,32 @@ impl RojoTree {
             .with_properties(snapshot.properties);
 
         let referent = self.inner.insert(parent_ref, builder);
+
+        if snapshot.metadata.specified_id.is_none() {
+            let inst = self.inner.get_by_ref(referent).unwrap();
+            for prop_value in inst.properties.values() {
+                if let Variant::Attributes(attrs) = prop_value {
+                    match attrs.get(REF_ID_ATTRIBUTE_NAME) {
+                        Some(Variant::String(id)) => {
+                            self.user_ids_to_ids.insert(id.clone().into(), referent);
+                        }
+                        Some(value) => log::warn!(
+                            "Attribute {REF_ID_ATTRIBUTE_NAME} is of type {:?}\
+                        when it was supposed to be String",
+                            value.ty()
+                        ),
+                        None => {
+                            self.user_ids_to_ids.insert(referent.into(), referent);
+                        }
+                    }
+                    break;
+                }
+            }
+        } else {
+            self.user_ids_to_ids
+                .insert(snapshot.metadata.specified_id.clone(), referent);
+        }
+
         self.insert_metadata(referent, snapshot.metadata);
 
         for child in snapshot.children {
@@ -160,6 +191,13 @@ impl RojoTree {
 
     pub fn get_metadata(&self, id: Ref) -> Option<&InstanceMetadata> {
         self.metadata_map.get(&id)
+    }
+
+    /// If the provided `RojoRef` references an Instance in the tree, it is
+    /// returned. Otherwise, returns `None`.
+    #[inline]
+    pub fn get_real_id(&self, id: &RojoRef) -> Option<Ref> {
+        self.user_ids_to_ids.get(id).copied()
     }
 
     fn insert_metadata(&mut self, id: Ref, metadata: InstanceMetadata) {
@@ -306,24 +344,23 @@ pub enum RojoRef {
 }
 
 impl RojoRef {
+    #[inline]
     pub fn none() -> Self {
         RojoRef::Ref(Ref::none())
     }
 
     /// Returns whether this `RojoRef` is a custom one or a normal `Ref`.
+    #[inline]
     pub fn is_custom(&self) -> bool {
         matches!(self, Self::Custom(_))
     }
 
-    pub fn ref_for_instance(inst: &InstanceWithMeta<'_>) -> Self {
-        match inst.metadata.specified_id {
-            // This could technically be in a `Cow`, but that cascades into a
-            // lifetime for RojoTree, which isn't something that's within scope
-            // right now. If someone is reading this in the future, please
-            // go ahead and swap this to a Cow in a PR!
-            Self::Custom(ref str) => Self::Custom(str.clone()),
-            Self::Ref(referent) if referent.is_none() => Self::Ref(inst.id()),
-            Self::Ref(referent) => Self::Ref(referent),
+    /// Returns whether this `RojoRef` represents a `None` referent.
+    #[inline]
+    pub fn is_none(&self) -> bool {
+        match self {
+            Self::Ref(inner) => inner.is_none(),
+            _ => false,
         }
     }
 }
