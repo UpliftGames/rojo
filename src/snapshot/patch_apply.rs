@@ -7,9 +7,11 @@ use std::{
 
 use rbx_dom_weak::types::{Ref, Variant};
 
+use crate::multimap::MultiMap;
+
 use super::{
     patch::{AppliedPatchSet, AppliedPatchUpdate, PatchSet, PatchUpdate},
-    InstanceSnapshot, RojoTree,
+    InstanceSnapshot, RojoTree, REF_POINTER_ATTRIBUTE_PREFIX,
 };
 
 /// Consumes the input `PatchSet`, applying all of its prescribed changes to the
@@ -88,6 +90,8 @@ struct PatchApplyContext {
 /// then apply properties all at once at the end.
 #[profiling::function]
 fn finalize_patch_application(context: PatchApplyContext, tree: &mut RojoTree) -> AppliedPatchSet {
+    let mut deferred_rewrites = MultiMap::with_capacity(context.has_refs_to_rewrite.len());
+
     for id in context.has_refs_to_rewrite {
         // This should always succeed since instances marked as added in our
         // patch should be added without fail.
@@ -100,7 +104,37 @@ fn finalize_patch_application(context: PatchApplyContext, tree: &mut RojoTree) -
                 if let Some(&instance_referent) = context.snapshot_id_to_instance_id.get(referent) {
                     *value = Variant::Ref(instance_referent);
                 }
+            } else if let Variant::Attributes(attr) = value {
+                for (name, attr_value) in attr.iter() {
+                    if let Some(prop_name) = name.strip_prefix(REF_POINTER_ATTRIBUTE_PREFIX) {
+                        if let Variant::String(prop_id) = attr_value {
+                            deferred_rewrites.insert(id, (prop_name.to_owned(), prop_id.clone()))
+                        }
+                    }
+                }
             }
+        }
+    }
+
+    let mut prop_ids = Vec::new();
+    for (id, prop_rewrites) in deferred_rewrites {
+        log::trace!("Rewriting user-specified Referents for {id}");
+        for (prop_name, prop_value) in prop_rewrites {
+            if let Some(real_value) = tree.get_real_id(&prop_value.into()) {
+                prop_ids.push((prop_name, real_value))
+            } else {
+                log::warn!(
+                    "Property {prop_name} is a broken reference \
+                    and refers to an Instance that does not exist."
+                );
+            }
+        }
+        let mut inst = tree
+            .get_instance_mut(id)
+            .expect("Invalid instance ID in deferred property map");
+        for (prop_name, value) in prop_ids.drain(..) {
+            log::trace!("Rewriting {prop_name} to point to {value}");
+            inst.properties_mut().insert(prop_name, Variant::Ref(value));
         }
     }
 
@@ -125,6 +159,9 @@ fn apply_add_child(
     // instance down as needing to be revisited later.
     let has_refs = snapshot.properties.values().any(|value| match value {
         Variant::Ref(value) => value.is_some(),
+        Variant::Attributes(value) => value
+            .iter()
+            .any(|(value, _)| value.starts_with(REF_POINTER_ATTRIBUTE_PREFIX)),
         _ => false,
     });
 
