@@ -143,7 +143,7 @@ fn apply_add_child(
         apply_add_child(context, tree, id, child);
     }
 
-    process_user_specified_refs(tree, id);
+    let _ = process_user_specified_refs(tree, id);
 }
 
 fn apply_update_child(context: &mut PatchApplyContext, tree: &mut RojoTree, patch: PatchUpdate) {
@@ -218,14 +218,18 @@ fn apply_update_child(context: &mut PatchApplyContext, tree: &mut RojoTree, patc
     }
 
     if attributes_updated {
-        process_user_specified_refs(tree, patch.id);
+        let updates = process_user_specified_refs(tree, patch.id);
+        applied_patch
+            .changed_properties
+            .extend(updates.into_iter().map(|(k, v)| (k, Some(v))));
     }
 
     context.applied_patch_set.updated.push(applied_patch)
 }
 
 /// Processes referent properties that the user has specified with attributes.
-fn process_user_specified_refs(tree: &mut RojoTree, id: Ref) {
+#[must_use = "this function does not update the patch context"]
+fn process_user_specified_refs(tree: &mut RojoTree, id: Ref) -> Vec<(String, Variant)> {
     log::debug!("Rewriting user-specified Referents for {id}");
 
     let inst = tree
@@ -234,28 +238,46 @@ fn process_user_specified_refs(tree: &mut RojoTree, id: Ref) {
 
     let mut list = Vec::new();
 
+    let attr_filter = |entry: &(&String, &Variant)| {
+        let (attr_name, attr_value) = entry;
+        if attr_name
+            .strip_prefix(REF_POINTER_ATTRIBUTE_PREFIX)
+            .is_some()
+        {
+            if let Variant::String(_) = attr_value {
+                return true;
+            } else {
+                log::warn!(
+                    "Attribute {attr_name} is of type {:?} \
+                when it was supposed to be String",
+                    attr_value.ty()
+                );
+            }
+        }
+        false
+    };
+
     for value in inst.properties().values() {
         if let Variant::Attributes(attrs) = value {
-            for (attr_name, attr_value) in attrs.iter() {
-                if let Some(prop_name) = attr_name.strip_prefix(REF_POINTER_ATTRIBUTE_PREFIX) {
-                    if let Variant::String(prop_id) = attr_value {
-                        if let Some(referent) = tree.get_real_id(&prop_id.clone().into()) {
-                            list.push((prop_name.to_owned(), referent.into()));
-                        } else {
-                            log::warn!(
-                                "Property {prop_name} of {} is a broken reference! \
+            for (attr_name, attr_value) in attrs.iter().filter(attr_filter) {
+                // This is safe due to the filtering we do to this loop
+                let prop_name = attr_name
+                    .strip_prefix(REF_POINTER_ATTRIBUTE_PREFIX)
+                    .unwrap();
+                let prop_id = match attr_value {
+                    Variant::String(prop_id) => prop_id,
+                    _ => unreachable!(),
+                };
+
+                if let Some(referent) = tree.get_real_id(&prop_id.clone().into()) {
+                    list.push((prop_name.to_owned(), referent.into()));
+                } else {
+                    log::warn!(
+                        "Property {prop_name} of {} is a broken reference! \
                                 The specified ID '{prop_id}' is not valid.",
-                                inst.name()
-                            );
-                            list.push((prop_name.to_owned(), Ref::none().into()))
-                        }
-                    } else {
-                        log::warn!(
-                            "Attribute {attr_name} is of type {:?} \
-                        when it was supposed to be String",
-                            value.ty()
-                        );
-                    }
+                        inst.name()
+                    );
+                    list.push((prop_name.to_owned(), Ref::none().into()))
                 }
             }
         }
@@ -264,7 +286,10 @@ fn process_user_specified_refs(tree: &mut RojoTree, id: Ref) {
     tree.get_instance_mut(id)
         .expect("Invalid instance ID in deferred property map")
         .properties_mut()
-        .extend(list);
+        // This is not ideal, but it's necessary.
+        .extend(list.clone());
+
+    list
 }
 
 #[cfg(test)]
