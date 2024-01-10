@@ -240,12 +240,14 @@ fn process_user_specified_refs(tree: &mut RojoTree, id: Ref) {
                 if let Some(prop_name) = attr_name.strip_prefix(REF_POINTER_ATTRIBUTE_PREFIX) {
                     if let Variant::String(prop_id) = attr_value {
                         if let Some(referent) = tree.get_real_id(&prop_id.clone().into()) {
-                            list.push((prop_name.to_owned(), Variant::Ref(referent)));
+                            list.push((prop_name.to_owned(), referent.into()));
                         } else {
                             log::warn!(
-                                "Property {prop_name} is a broken reference \
-                        and refers to an Instance that does not exist."
+                                "Property {prop_name} of {} is a broken reference! \
+                                The specified ID '{prop_id}' is not valid.",
+                                inst.name()
                             );
+                            list.push((prop_name.to_owned(), Ref::none().into()))
                         }
                     } else {
                         log::warn!(
