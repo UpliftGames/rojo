@@ -25,12 +25,10 @@ use std::{
 
 use anyhow::Context;
 use memofs::{IoResultExt, Vfs};
-use rbx_dom_weak::types::Variant;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     glob::Glob,
-    snapshot::{RojoRef, REF_ID_ATTRIBUTE_NAME},
     syncback::{SyncbackReturn, SyncbackSnapshot},
 };
 use crate::{
@@ -93,25 +91,6 @@ pub fn snapshot_from_vfs(
 
         snapshot_from_path(context, vfs, path)
     }
-    // This is disgusting but it's very temporary while we rebootstrap the
-    // middleware.
-    .map(|opt| {
-        opt.map(|mut inner| {
-            if let Some(Variant::Attributes(attrs)) = inner.properties.get("Attributes") {
-                for (name, value) in attrs.iter() {
-                    if name == REF_ID_ATTRIBUTE_NAME {
-                        if let Variant::String(id) = value {
-                            inner.metadata.specified_id = id.clone().into()
-                        }
-                    }
-                }
-            }
-            if !inner.metadata.specified_id.is_custom() {
-                inner.metadata.specified_id = RojoRef::Ref(inner.snapshot_id);
-            }
-            inner
-        })
-    })
 }
 
 /// Gets the appropriate middleware for a directory by checking for `init`
