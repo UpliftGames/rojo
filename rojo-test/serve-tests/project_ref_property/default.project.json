@@ -1,13 +1,18 @@
 {
   "name": "project_ref_property",
   "tree": {
-    "$className": "Folder",
-    "$preferredId": "arbitrary string",
-    "Pointer": {
-      "$className": "ObjectValue",
-      "$attributes": {
-        "Rojo_Target_Value": {
-          "String": "arbitrary string"
+    "$className": "DataModel",
+    "Workspace": {
+      "Target": {
+        "$className": "Folder",
+        "$preferredId": "arbitrary string",
+        "Pointer": {
+          "$className": "ObjectValue",
+          "$attributes": {
+            "Rojo_Target_Value": {
+              "String": "arbitrary string"
+            }
+          }
         }
       }
     }
