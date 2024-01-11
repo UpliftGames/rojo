@@ -1,6 +1,6 @@
 use std::{
     borrow::Borrow,
-    collections::{hash_map, HashMap},
+    collections::HashMap,
     fmt::{self, Debug},
     hash::Hash,
 };
@@ -16,14 +16,6 @@ impl<K: Hash + Eq, V: Eq> MultiMap<K, V> {
     pub fn new() -> Self {
         MultiMap {
             inner: HashMap::new(),
-        }
-    }
-
-    /// Creates a new `MultiMap` with the given capacity.
-    #[inline]
-    pub fn with_capacity(capacity: usize) -> Self {
-        MultiMap {
-            inner: HashMap::with_capacity(capacity),
         }
     }
 
@@ -77,28 +69,5 @@ impl<K: Debug + Hash + Eq, V: Debug + Eq> Debug for MultiMap<K, V> {
 impl<K: Hash + Eq, V: Eq> PartialEq for MultiMap<K, V> {
     fn eq(&self, other: &Self) -> bool {
         self.inner == other.inner
-    }
-}
-
-pub struct MultiMapIntoIter<K: Hash + Eq, V: Eq> {
-    inner: hash_map::IntoIter<K, Vec<V>>,
-}
-
-impl<K: Hash + Eq, V: Eq> Iterator for MultiMapIntoIter<K, V> {
-    type Item = (K, Vec<V>);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.inner.next()
-    }
-}
-
-impl<K: Hash + Eq, V: Eq> IntoIterator for MultiMap<K, V> {
-    type IntoIter = MultiMapIntoIter<K, V>;
-    type Item = (K, Vec<V>);
-
-    fn into_iter(self) -> Self::IntoIter {
-        MultiMapIntoIter {
-            inner: self.inner.into_iter(),
-        }
     }
 }
