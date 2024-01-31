@@ -144,6 +144,7 @@ fn json_model_from_pair(snapshot: &SyncbackSnapshot, new: Ref, old: Option<Ref>)
         children,
         properties,
         attributes,
+        id: None,
     }
 }
 
