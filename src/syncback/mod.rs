@@ -1,5 +1,6 @@
 mod file_names;
 mod fs_snapshot;
+mod hash;
 mod snapshot;
 
 use anyhow::Context;
@@ -13,13 +14,14 @@ use std::{
 
 use crate::{
     glob::Glob,
-    snapshot::{hash_tree, InstanceSnapshot, InstanceWithMeta, RojoTree},
+    snapshot::{InstanceSnapshot, InstanceWithMeta, RojoTree},
     snapshot_middleware::Middleware,
     Project,
 };
 
 pub use file_names::{is_valid_file_name, name_for_inst};
 pub use fs_snapshot::FsSnapshot;
+pub use hash::*;
 pub use snapshot::{SyncbackData, SyncbackSnapshot};
 
 pub fn syncback_loop<'old>(
@@ -223,4 +225,22 @@ fn get_inst_path(dom: &WeakDom, referent: Ref) -> String {
         inst = dom.get_by_ref(instance.parent());
     }
     path.into_iter().collect::<Vec<&str>>().join("/")
+}
+
+pub(crate) fn descendants(dom: &WeakDom) -> Vec<Ref> {
+    let mut queue = VecDeque::new();
+    let mut ordered = Vec::new();
+    queue.push_front(dom.root_ref());
+
+    while let Some(referent) = queue.pop_front() {
+        let inst = dom
+            .get_by_ref(referent)
+            .expect("Invariant: WeakDom had a Ref that wasn't inside it");
+        ordered.push(referent);
+        for child in inst.children() {
+            queue.push_back(*child)
+        }
+    }
+
+    ordered
 }
