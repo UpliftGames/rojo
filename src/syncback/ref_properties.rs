@@ -19,13 +19,6 @@ pub fn link_referents(dom: &mut WeakDom) -> anyhow::Result<()> {
     // VecDeque::extend is the equivalent to using push_back.
     queue.push_back(dom.root_ref());
     while let Some(referent) = queue.pop_front() {
-        {
-            let attributes = get_or_insert_attributes(dom.get_by_ref_mut(referent).unwrap())?;
-            if attributes.get(REF_ID_ATTRIBUTE_NAME).is_none() {
-                let bstring = BinaryString::from(referent.to_string().into_bytes());
-                attributes.insert(REF_ID_ATTRIBUTE_NAME.into(), bstring.into());
-            }
-        }
         let instance = dom.get_by_ref(referent).unwrap();
 
         queue.extend(instance.children().iter().copied());
@@ -41,14 +34,31 @@ pub fn link_referents(dom: &mut WeakDom) -> anyhow::Result<()> {
 
     for (referent, ref_properties) in links {
         for (prop_name, target_ref) in ref_properties {
-            let target_id = get_attributes(dom.get_by_ref(target_ref).unwrap())
-                .unwrap()
+            log::debug!(
+                "Linking {} to {}.{prop_name}",
+                dom.get_by_ref(target_ref).unwrap().name,
+                dom.get_by_ref(referent).unwrap().name,
+            );
+            let target_inst = dom
+                .get_by_ref_mut(target_ref)
+                .expect("Ref properties that aren't in DOM should be filtered");
+
+            let attributes = get_or_insert_attributes(target_inst)?;
+            if attributes.get(REF_ID_ATTRIBUTE_NAME).is_none() {
+                attributes.insert(
+                    REF_ID_ATTRIBUTE_NAME.to_owned(),
+                    Variant::BinaryString(referent.to_string().into_bytes().into()),
+                );
+            }
+
+            let target_id = attributes
                 .get(REF_ID_ATTRIBUTE_NAME)
                 .expect("every Instance to have an ID");
             if let Variant::BinaryString(target_id) = target_id {
                 rewrites.push((prop_name, target_id.clone()));
             }
         }
+
         let inst = dom.get_by_ref_mut(referent).unwrap();
         let attrs = get_or_insert_attributes(inst)?;
         for (name, id) in rewrites.drain(..) {
@@ -60,13 +70,6 @@ pub fn link_referents(dom: &mut WeakDom) -> anyhow::Result<()> {
     }
 
     Ok(())
-}
-
-fn get_attributes(inst: &Instance) -> Option<&Attributes> {
-    match inst.properties.get("Attributes") {
-        Some(Variant::Attributes(attrs)) => Some(attrs),
-        _ => None,
-    }
 }
 
 fn get_or_insert_attributes(inst: &mut Instance) -> anyhow::Result<&mut Attributes> {
