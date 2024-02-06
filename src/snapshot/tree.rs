@@ -354,3 +354,30 @@ impl InstanceWithMetaMut<'_> {
         self.metadata
     }
 }
+
+#[cfg(test)]
+mod test {
+    use crate::{
+        snapshot::{InstanceMetadata, InstanceSnapshot},
+        RojoRef,
+    };
+
+    use super::RojoTree;
+
+    #[test]
+    fn swap_duped_specified_ids() {
+        let custom_ref = RojoRef::new("MyCoolRef".into());
+        let snapshot = InstanceSnapshot::new()
+            .metadata(InstanceMetadata::new().specified_id(Some(custom_ref.clone())));
+        let mut tree = RojoTree::new(InstanceSnapshot::new());
+
+        let original = tree.insert_instance(tree.get_root_id(), snapshot.clone());
+        assert_eq!(tree.get_specified_id(&custom_ref.clone()), Some(original));
+
+        let duped = tree.insert_instance(tree.get_root_id(), snapshot.clone());
+        assert_eq!(tree.get_specified_id(&custom_ref.clone()), None);
+
+        tree.remove(original);
+        assert_eq!(tree.get_specified_id(&custom_ref.clone()), Some(duped));
+    }
+}
