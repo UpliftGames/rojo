@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     env,
+    path::Path,
     sync::OnceLock,
 };
 
@@ -117,12 +118,33 @@ pub fn syncback_loop(
         project,
     };
 
+    // Borrowed from 7.4.x backport
+    // This is not how I would normally do this, but this is a temporary
+    // implementation. The one in 7.5+ is better.
+    let project_name = project.name.as_deref().unwrap_or_else(|| {
+        let file_name = project_path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .expect("project file names should be valid UTF-8");
+        if file_name == "default.project.json" {
+            project_path
+                .parent()
+                .and_then(Path::file_name)
+                .and_then(|s| s.to_str())
+                .expect("default.project.json should be inside a folder with a valid UTF-8 name")
+        } else {
+            file_name
+                .strip_suffix(".project.json")
+                .expect("project file names should end with .project.json")
+        }
+    });
+
     let mut snapshots = vec![SyncbackSnapshot {
         data: syncback_data,
         old: Some(old_tree.get_root_id()),
         new: new_tree.root_ref(),
         parent_path: project.file_location.clone(),
-        name: project.name.clone(),
+        name: project_name.to_string(),
         middleware: Some(Middleware::Project),
     }];
 
@@ -164,6 +186,8 @@ pub fn syncback_loop(
                     continue 'syncback;
                 }
             }
+
+            // Try pruning CurrentCamera here so it does not sync?
         }
 
         let appended_name = name_for_inst(middleware, snapshot.new_inst(), snapshot.old_inst())?;

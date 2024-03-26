@@ -1,11 +1,11 @@
-local TextService = game:GetService("TextService")
-
 local Rojo = script:FindFirstAncestor("Rojo")
 local Plugin = Rojo.Plugin
 local Packages = Rojo.Packages
 
 local Roact = require(Packages.Roact)
 
+local Timer = require(Plugin.Timer)
+local PatchTree = require(Plugin.PatchTree)
 local Settings = require(Plugin.Settings)
 local Theme = require(Plugin.App.Theme)
 local TextButton = require(Plugin.App.Components.TextButton)
@@ -25,6 +25,7 @@ function ConfirmingPage:init()
 	self.containerSize, self.setContainerSize = Roact.createBinding(Vector2.new(0, 0))
 
 	self:setState({
+		patchTree = nil,
 		showingStringDiff = false,
 		oldString = "",
 		newString = "",
@@ -32,6 +33,28 @@ function ConfirmingPage:init()
 		oldTable = {},
 		newTable = {},
 	})
+
+	if self.props.confirmData and self.props.confirmData.patch and self.props.confirmData.instanceMap then
+		self:buildPatchTree()
+	end
+end
+
+function ConfirmingPage:didUpdate(prevProps)
+	if prevProps.confirmData ~= self.props.confirmData then
+		self:buildPatchTree()
+	end
+end
+
+function ConfirmingPage:buildPatchTree()
+	Timer.start("ConfirmingPage:buildPatchTree")
+	self:setState({
+		patchTree = PatchTree.build(
+			self.props.confirmData.patch,
+			self.props.confirmData.instanceMap,
+			{ "Property", "Current", "Incoming" }
+		),
+	})
+	Timer.stop()
 end
 
 function ConfirmingPage:render()
@@ -63,9 +86,7 @@ function ConfirmingPage:render()
 				transparency = self.props.transparency,
 				layoutOrder = 3,
 
-				changeListHeaders = { "Property", "Current", "Incoming" },
-				patch = self.props.confirmData.patch,
-				instanceMap = self.props.confirmData.instanceMap,
+				patchTree = self.state.patchTree,
 
 				showStringDiff = function(oldString: string, newString: string)
 					self:setState({

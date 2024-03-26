@@ -8,6 +8,10 @@ jobs:
   create-release:
     name: Create Release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      repository-projects: write
     outputs:
       upload_url: ${{ steps.create_release.outputs.upload_url }}
     steps:
@@ -26,6 +30,10 @@ jobs:
     needs: ["create-release"]
     name: Build Roblox Studio Plugin
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      repository-projects: write
     steps:
       - uses: actions/checkout@v3
         with:
@@ -36,7 +44,7 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           trust-check: false
-          version: 'v0.2.6'
+          version: "v0.2.6"
 
       - name: Build Plugin
         run: rojo build plugin --output Rojo.rbxm
@@ -86,6 +94,10 @@ jobs:
 
     name: Build (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+      pull-requests: write
+      repository-projects: write
     env:
       BIN: rojo
     steps:
@@ -113,7 +125,7 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           trust-check: false
-          version: 'v0.2.6'
+          version: "v0.2.6"
 
       - name: Build Release
         run: cargo build --release --locked --verbose --target ${{ matrix.target }}
@@ -121,10 +133,6 @@ jobs:
           # Build into a known directory so we can find our build artifact more
           # easily.
           CARGO_TARGET_DIR: output
-
-          # On platforms that use OpenSSL, ensure it is statically linked to
-          # make binaries more portable.
-          OPENSSL_STATIC: 1
 
       - name: Create Release Archive
         shell: bash

@@ -208,9 +208,7 @@ impl Middleware {
             Self::ServerScript => snapshot_lua(context, vfs, path, name, ScriptType::Server),
             Self::ClientScript => snapshot_lua(context, vfs, path, name, ScriptType::Client),
             Self::ModuleScript => snapshot_lua(context, vfs, path, name, ScriptType::Module),
-            // At the moment, snapshot_project does not use `name` so we
-            // don't provide it.
-            Self::Project => snapshot_project(context, vfs, path),
+            Self::Project => snapshot_project(context, vfs, path, name),
             Self::Rbxm => snapshot_rbxm(context, vfs, path, name),
             Self::Rbxmx => snapshot_rbxmx(context, vfs, path, name),
             Self::Toml => snapshot_toml(context, vfs, path, name),
@@ -383,8 +381,7 @@ fn default_sync_rules() -> &'static [SyncRule] {
             sync_rule!("*.client.lua", ClientScript, ".client.lua"),
             sync_rule!("*.client.luau", ClientScript, ".client.luau"),
             sync_rule!("*.{lua,luau}", ModuleScript),
-            // Project middleware doesn't use the file name.
-            sync_rule!("*.project.json", Project),
+            sync_rule!("*.project.json", Project, ".project.json"),
             sync_rule!("*.model.json", JsonModel, ".model.json"),
             sync_rule!("*.json", Json, ".json", "*.meta.json"),
             sync_rule!("*.toml", Toml),
