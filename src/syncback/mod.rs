@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     env,
+    path::Path,
     sync::OnceLock,
 };
 
@@ -78,20 +79,10 @@ pub fn syncback_loop(
     log::debug!("Hashing file DOM");
     let new_hashes = hash_tree(project, &new_tree, new_tree.root_ref());
 
-    let ignore_referents = project
-        .syncback_rules
-        .as_ref()
-        .and_then(|s| s.ignore_referents)
-        .unwrap_or_default();
-    if !ignore_referents {
-        log::debug!("Linking referents for new DOM");
-        deferred_referents.link(&mut new_tree)?;
-    } else {
-        log::debug!("Skipping referent linking as per project syncback rules");
-    }
-
+    // I think pruning the CurrentCamera ref before we link referents might be a good idea?
     if let Some(syncback_rules) = &project.syncback_rules {
         if !syncback_rules.sync_current_camera.unwrap_or_default() {
+            log::debug!("Skipping CurrentCamera sync as per project syncback rules");
             let mut camera_ref = None;
             for child_ref in new_tree.root().children() {
                 let inst = new_tree.get_by_ref(*child_ref).unwrap();
@@ -107,6 +98,18 @@ pub fn syncback_loop(
         }
     }
 
+    let ignore_referents = project
+        .syncback_rules
+        .as_ref()
+        .and_then(|s| s.ignore_referents)
+        .unwrap_or_default();
+    if !ignore_referents {
+        log::debug!("Linking referents for new DOM");
+        deferred_referents.link(&mut new_tree)?;
+    } else {
+        log::debug!("Skipping referent linking as per project syncback rules");
+    }
+
     let project_path = project.folder_location();
 
     let syncback_data = SyncbackData {
@@ -116,12 +119,33 @@ pub fn syncback_loop(
         project,
     };
 
+    // Borrowed from 7.4.x backport
+    // This is not how I would normally do this, but this is a temporary
+    // implementation. The one in 7.5+ is better.
+    let project_name = project.name.as_deref().unwrap_or_else(|| {
+        let file_name = project_path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .expect("project file names should be valid UTF-8");
+        if file_name == "default.project.json" {
+            project_path
+                .parent()
+                .and_then(Path::file_name)
+                .and_then(|s| s.to_str())
+                .expect("default.project.json should be inside a folder with a valid UTF-8 name")
+        } else {
+            file_name
+                .strip_suffix(".project.json")
+                .expect("project file names should end with .project.json")
+        }
+    });
+
     let mut snapshots = vec![SyncbackSnapshot {
         data: syncback_data,
         old: Some(old_tree.get_root_id()),
         new: new_tree.root_ref(),
         parent_path: project.file_location.clone(),
-        name: project.name.clone(),
+        name: project_name.to_string(),
         middleware: Some(Middleware::Project),
     }];
 
@@ -163,6 +187,8 @@ pub fn syncback_loop(
                     continue 'syncback;
                 }
             }
+
+            // Try pruning CurrentCamera here so it does not sync?
         }
 
         let appended_name = name_for_inst(middleware, snapshot.new_inst(), snapshot.old_inst())?;

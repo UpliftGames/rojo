@@ -19,3 +19,6 @@
 
 # Snapshot files from the 'insta' Rust crate
 **/*.snap.new
+
+# VSCode debug files
+.vscode
