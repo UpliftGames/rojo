@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::{BTreeMap, BTreeSet},
     fs, io,
     net::IpAddr,
     path::{Path, PathBuf},
@@ -56,7 +56,7 @@ pub struct Project {
     /// This setting is intended to help prevent syncing a Rojo project into the
     /// wrong Roblox place.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub serve_place_ids: Option<HashSet<u64>>,
+    pub serve_place_ids: Option<BTreeSet<u64>>,
 
     /// If specified, sets the current place's place ID when connecting to the
     /// Rojo server from Roblox Studio.

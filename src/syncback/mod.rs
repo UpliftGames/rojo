@@ -79,10 +79,9 @@ pub fn syncback_loop(
     log::debug!("Hashing file DOM");
     let new_hashes = hash_tree(project, &new_tree, new_tree.root_ref());
 
-    // I think pruning the CurrentCamera ref before we link referents might be a good idea?
     if let Some(syncback_rules) = &project.syncback_rules {
         if !syncback_rules.sync_current_camera.unwrap_or_default() {
-            log::debug!("Skipping CurrentCamera sync as per project syncback rules");
+            log::debug!("Removing CurrentCamera from new DOM");
             let mut camera_ref = None;
             for child_ref in new_tree.root().children() {
                 let inst = new_tree.get_by_ref(*child_ref).unwrap();

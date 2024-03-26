@@ -1,6 +1,6 @@
 use std::{
     borrow::Cow,
-    collections::HashSet,
+    collections::BTreeSet,
     io,
     net::IpAddr,
     path::{Path, PathBuf},
@@ -241,7 +241,7 @@ impl ServeSession {
         self.start_time
     }
 
-    pub fn serve_place_ids(&self) -> Option<&HashSet<u64>> {
+    pub fn serve_place_ids(&self) -> Option<&BTreeSet<u64>> {
         self.root_project.serve_place_ids.as_ref()
     }
 
