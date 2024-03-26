@@ -44,7 +44,7 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           trust-check: false
-          version: 'v0.2.6'
+          version: "v0.2.6"
 
       - name: Build Plugin
         run: rojo build plugin --output Rojo.rbxm
@@ -125,7 +125,7 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           trust-check: false
-          version: 'v0.2.6'
+          version: "v0.2.6"
 
       - name: Build Release
         run: cargo build --release --locked --verbose --target ${{ matrix.target }}
