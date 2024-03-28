@@ -326,11 +326,7 @@ pub fn syncback_project<'sync>(
         .expect("all projects should have a relevant path");
     let vfs = snapshot.vfs();
 
-    log::debug!(
-        "Reloading project {} from vfs (name: {})",
-        project_path.display(),
-        snapshot.name
-    );
+    log::debug!("Reloading project {} from vfs", project_path.display(),);
     let mut project = Project::load_from_slice(&vfs.read(project_path)?, project_path)?;
     let base_path = project.folder_location().to_path_buf();
 
@@ -427,12 +423,6 @@ pub fn syncback_project<'sync>(
             let child = snapshot
                 .get_new_instance(*child_ref)
                 .expect("all children of Instances should be in new DOM");
-            // As of writing (Feb 27 2024) Roblox serializes several Instances
-            // with the class 'Instance' that all have the same name. To avoid
-            // difficulties, we just ignore them. :-)
-            if child.class == "Instance" {
-                continue;
-            }
             if new_child_map.insert(&child.name, child).is_some() {
                 anyhow::bail!(
                     "Instances that are direct children of an Instance that is made by a project file \
@@ -506,12 +496,20 @@ pub fn syncback_project<'sync>(
             // syncback on the project node path above (or is itself a node).
             // So the only things we need to run seperately is new children.
             if old_child_map.remove(name.as_str()).is_none() {
-                descendant_snapshots.push(snapshot.with_new_parent(
-                    parent_path,
-                    new_child.name.clone(),
-                    new_child.referent(),
-                    None,
-                ));
+                let (parent_middleware, _, _) =
+                    Middleware::middleware_and_path(vfs, &project.sync_rules, &parent_path)?
+                        .expect("project nodes should have a middleware if they have children.");
+                // If this node points directly to a project, it may still have
+                // children but they'll be handled by syncback. This isn't a
+                // concern with directories because they're singular things,
+                // files that contain their own children.
+                if parent_middleware != Middleware::Project {
+                    descendant_snapshots.push(snapshot.with_base_path(
+                        &parent_path,
+                        new_child.referent(),
+                        None,
+                    )?);
+                }
             }
         }
         removed_descendants.extend(old_child_map.drain().map(|(_, v)| v));
@@ -533,7 +531,7 @@ fn syncback_project_node<'sync>(
     new_inst: &Instance,
     old_inst: InstanceWithMeta,
 ) -> anyhow::Result<SyncbackSnapshot<'sync>> {
-    let (middleware, _, mut file_path) =
+    let (middleware, _, file_path) =
         match Middleware::middleware_and_path(snapshot.vfs(), sync_rules, node_path)? {
             Some(stuff) => stuff,
             // The only way this can happen at this point is if the path does
@@ -544,21 +542,13 @@ fn syncback_project_node<'sync>(
             ),
         };
 
-    if !file_path.pop() {
-        anyhow::bail!(
-            "cannot syncback node {} using middleware {:?} because it is at the disk root",
-            old_inst.name(),
-            middleware
-        )
-    }
-    Ok(snapshot
-        .with_new_parent(
-            file_path,
-            old_inst.name().to_owned(),
-            new_inst.referent(),
-            Some(old_inst.id()),
-        )
-        .middleware(middleware))
+    Ok(SyncbackSnapshot {
+        data: snapshot.data,
+        old: Some(old_inst.id()),
+        new: new_inst.referent(),
+        path: file_path,
+        middleware: Some(middleware),
+    })
 }
 
 fn infer_class_name(name: &str, parent_class: Option<&str>) -> Option<Cow<'static, str>> {
