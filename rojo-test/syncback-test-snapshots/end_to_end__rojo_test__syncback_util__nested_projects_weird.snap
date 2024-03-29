@@ -7,8 +7,8 @@ added_files:
   - client-only.project.json
   - default.project.json
   - server-only.project.json
-  - "src/modules/ClientModule.luau"
-  - "src/modules/ServerModule.luau"
+  - src/modules/ClientModule.luau
+  - src/modules/ServerModule.luau
 added_dirs:
   - src/modules
 removed_files: []

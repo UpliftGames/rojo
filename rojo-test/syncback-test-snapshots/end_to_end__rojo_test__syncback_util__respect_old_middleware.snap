@@ -4,8 +4,8 @@ assertion_line: 48
 expression: "visualize_fs_snapshot(&fs_snapshot, &output_path)"
 ---
 added_files:
-  - "Workspace/Baseplate.model.json"
-  - "Workspace/Terrain.rbxm"
+  - Workspace/Baseplate.model.json
+  - Workspace/Terrain.rbxm
   - default.project.json
 added_dirs:
   - Workspace
