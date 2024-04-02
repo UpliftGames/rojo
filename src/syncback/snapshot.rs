@@ -1,7 +1,6 @@
 use memofs::Vfs;
-use rbx_reflection::Scriptability;
 use std::{
-    collections::{BTreeSet, HashMap},
+    collections::HashMap,
     path::{Path, PathBuf},
     sync::OnceLock,
 };
@@ -10,14 +9,14 @@ use crate::{
     glob::Glob,
     snapshot::{InstanceWithMeta, RojoTree},
     snapshot_middleware::Middleware,
-    variant_eq::variant_eq,
+    Project,
 };
 use rbx_dom_weak::{
     types::{Ref, Variant},
     Instance, WeakDom,
 };
 
-use super::SyncbackRules;
+use super::{get_best_middleware, name_for_inst, property_filter::filter_properties};
 
 /// A glob that can be used to tell if a path contains a `.git` folder.
 static GIT_IGNORE_GLOB: OnceLock<Glob> = OnceLock::new();
@@ -27,51 +26,61 @@ pub struct SyncbackData<'sync> {
     pub(super) vfs: &'sync Vfs,
     pub(super) old_tree: &'sync RojoTree,
     pub(super) new_tree: &'sync WeakDom,
-    pub(super) syncback_rules: Option<&'sync SyncbackRules>,
+    pub(super) project: &'sync Project,
 }
 
 pub struct SyncbackSnapshot<'sync> {
     pub data: SyncbackData<'sync>,
     pub old: Option<Ref>,
     pub new: Ref,
-    pub parent_path: PathBuf,
-    pub name: String,
+    pub path: PathBuf,
     pub middleware: Option<Middleware>,
 }
 
 impl<'sync> SyncbackSnapshot<'sync> {
     /// Constructs a SyncbackSnapshot from the provided refs
-    /// while inheriting the parent's trees and path
+    /// while inheriting this snapshot's path and data. This should be used for
+    /// directories.
     #[inline]
-    pub fn with_parent(&self, new_name: String, new_ref: Ref, old_ref: Option<Ref>) -> Self {
-        Self {
+    pub fn with_joined_path(&self, new_ref: Ref, old_ref: Option<Ref>) -> anyhow::Result<Self> {
+        let mut snapshot = Self {
             data: self.data,
             old: old_ref,
             new: new_ref,
-            parent_path: self.parent_path.join(&self.name),
-            name: new_name,
+            path: PathBuf::new(),
             middleware: None,
-        }
+        };
+        let middleware = get_best_middleware(&snapshot);
+        let name = name_for_inst(middleware, snapshot.new_inst(), snapshot.old_inst())?;
+        snapshot.path = self.path.join(name.as_ref());
+
+        Ok(snapshot)
     }
 
-    /// Constructs a SyncbackSnapshot from the provided refs and path, while
-    /// inheriting this snapshot's trees.
+    /// Constructs a SyncbackSnapshot from the provided refs and a base path,
+    /// while inheriting this snapshot's data.
+    ///
+    /// The actual path of the snapshot is made by getting a file name for the
+    /// snapshot and then appending it to the provided base path.
     #[inline]
-    pub fn with_new_parent(
+    pub fn with_base_path(
         &self,
-        new_parent: PathBuf,
-        new_name: String,
+        base_path: &Path,
         new_ref: Ref,
         old_ref: Option<Ref>,
-    ) -> Self {
-        Self {
+    ) -> anyhow::Result<Self> {
+        let mut snapshot = Self {
             data: self.data,
             old: old_ref,
             new: new_ref,
-            parent_path: new_parent,
-            name: new_name,
+            path: PathBuf::new(),
             middleware: None,
-        }
+        };
+        let middleware = get_best_middleware(&snapshot);
+        let name = name_for_inst(middleware, snapshot.new_inst(), snapshot.old_inst())?;
+        snapshot.path = base_path.join(name.as_ref());
+
+        Ok(snapshot)
     }
 
     /// Allows a middleware to be 'forced' onto a SyncbackSnapshot to override
@@ -82,122 +91,27 @@ impl<'sync> SyncbackSnapshot<'sync> {
         self
     }
 
-    /// Returns a map of properties for the 'new' Instance with filtering
-    /// done to avoid noise.
-    ///
-    /// Note that while the returned map does filter based on the user's
-    /// `ignore_props` field, it does not do any other filtering and doesn't
-    /// clone any data. This is left to the consumer.
-    #[inline]
-    pub fn new_filtered_properties(&self) -> HashMap<&'sync str, &'sync Variant> {
-        self.get_filtered_properties(self.new, self.old).unwrap()
-    }
-
     /// Returns a map of properties for an Instance from the 'new' tree
     /// with filtering done to avoid noise. Returns `None` only if `new_ref`
-    /// instance is not in the new tree or if `old_ref` is provided and not in
-    /// the old tree.
+    /// instance is not in the new tree.
     ///
-    /// Note that while the returned map does filter based on the user's
-    /// `ignore_props` field, it does not do any other filtering and doesn't
-    /// clone any data. This is left to the consumer.
+    /// This method is not necessary or desired for blobs like RBXM or RBXMX.
+    #[inline]
+    #[must_use]
     pub fn get_filtered_properties(
         &self,
         new_ref: Ref,
-        old_ref: Option<Ref>,
     ) -> Option<HashMap<&'sync str, &'sync Variant>> {
         let inst = self.get_new_instance(new_ref)?;
-        let mut properties: HashMap<&str, &Variant> =
-            HashMap::with_capacity(inst.properties.capacity());
 
-        let filter = self.get_property_filter();
-        let class_data = rbx_reflection_database::get()
-            .classes
-            .get(inst.class.as_str());
-
-        let predicate = |prop_name: &String, prop_value: &Variant| {
-            if matches!(prop_value, Variant::Ref(_) | Variant::SharedString(_)) {
-                return true;
-            }
-            if filter_out_property(inst, prop_name) {
-                return true;
-            }
-            if let Some(list) = &filter {
-                if list.contains(prop_name) {
-                    return true;
-                }
-            }
-            if !self.sync_unscriptable() {
-                if let Some(data) = class_data {
-                    if let Some(prop_data) = data.properties.get(prop_name.as_str()) {
-                        if matches!(prop_data.scriptability, Scriptability::None) {
-                            return true;
-                        }
-                    }
-                }
-            }
-            false
-        };
-
-        if let Some(old_inst) = old_ref.and_then(|referent| self.get_old_instance(referent)) {
-            for (name, value) in &inst.properties {
-                if predicate(name, value) {
-                    continue;
-                }
-                if old_inst.properties().contains_key(name) {
-                    properties.insert(name, value);
-                }
-            }
-        }
-        if let Some(class_data) = class_data {
-            let defaults = &class_data.default_properties;
-            for (name, value) in &inst.properties {
-                if predicate(name, value) {
-                    continue;
-                }
-                if let Some(default) = defaults.get(name.as_str()) {
-                    if !variant_eq(value, default) {
-                        properties.insert(name, value);
-                    }
-                } else {
-                    properties.insert(name, value);
-                }
-            }
-        } else {
-            for (name, value) in &inst.properties {
-                if predicate(name, value) {
-                    continue;
-                }
-                properties.insert(name, value);
-            }
-        }
+        // The only filtering we have to do is filter out properties that are
+        // special-cased in some capacity.
+        let properties = filter_properties(self.data.project, inst)
+            .into_iter()
+            .filter(|(name, _)| !filter_out_property(inst, name))
+            .collect();
 
         Some(properties)
-    }
-
-    /// Returns a set of properties that should not be written with syncback if
-    /// one exists.
-    fn get_property_filter(&self) -> Option<BTreeSet<&String>> {
-        let filter = self.ignore_props()?;
-        let mut set = BTreeSet::new();
-
-        let database = rbx_reflection_database::get();
-        let mut current_class_name = self.new_inst().class.as_str();
-
-        loop {
-            if let Some(list) = filter.get(current_class_name) {
-                set.extend(list)
-            }
-
-            let class = database.classes.get(current_class_name)?;
-            if let Some(super_class) = class.superclass.as_ref() {
-                current_class_name = &super_class;
-            } else {
-                break;
-            }
-        }
-
-        Some(set)
     }
 
     /// Returns whether a given path is allowed for syncback by matching `path`
@@ -278,6 +192,12 @@ impl<'sync> SyncbackSnapshot<'sync> {
             .expect("SyncbackSnapshot should not contain invalid referents")
     }
 
+    /// Returns the root Project that was used to make this snapshot.
+    #[inline]
+    pub fn project(&self) -> &'sync Project {
+        self.data.project
+    }
+
     /// Returns the underlying VFS being used for syncback.
     #[inline]
     pub fn vfs(&self) -> &'sync Vfs {
@@ -294,7 +214,9 @@ impl<'sync> SyncbackSnapshot<'sync> {
     #[inline]
     pub fn ignore_props(&self) -> Option<&HashMap<String, Vec<String>>> {
         self.data
+            .project
             .syncback_rules
+            .as_ref()
             .map(|rules| &rules.ignore_properties)
     }
 
@@ -302,7 +224,9 @@ impl<'sync> SyncbackSnapshot<'sync> {
     #[inline]
     pub fn ignore_paths(&self) -> Option<&[Glob]> {
         self.data
+            .project
             .syncback_rules
+            .as_ref()
             .map(|rules| rules.ignore_paths.as_slice())
     }
 
@@ -310,7 +234,9 @@ impl<'sync> SyncbackSnapshot<'sync> {
     #[inline]
     pub fn ignore_tree(&self) -> Option<&[String]> {
         self.data
+            .project
             .syncback_rules
+            .as_ref()
             .map(|rules| rules.ignore_trees.as_slice())
     }
 
@@ -319,7 +245,9 @@ impl<'sync> SyncbackSnapshot<'sync> {
     #[inline]
     pub fn sync_unscriptable(&self) -> bool {
         self.data
+            .project
             .syncback_rules
+            .as_ref()
             .and_then(|sr| sr.sync_unscriptable)
             .unwrap_or_default()
     }

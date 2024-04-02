@@ -81,7 +81,7 @@ impl AdjacentMetadata {
             .unwrap_or_default();
 
         let class = &snapshot.new_inst().class;
-        for (name, value) in &snapshot.new_inst().properties {
+        for (name, value) in snapshot.get_filtered_properties(snapshot.new).unwrap() {
             match value {
                 Variant::Attributes(attrs) => {
                     for (attr_name, attr_value) in attrs.iter() {
@@ -98,23 +98,10 @@ impl AdjacentMetadata {
                 }
                 _ => {
                     properties.insert(
-                        name.clone(),
+                        name.to_owned(),
                         UnresolvedValue::from_variant(value.clone(), class, name),
                     );
                 }
-            }
-            if let Variant::Attributes(attrs) = value {
-                for (name, value) in attrs.iter() {
-                    attributes.insert(
-                        name.to_owned(),
-                        UnresolvedValue::from_variant_unambiguous(value.clone()),
-                    );
-                }
-            } else {
-                properties.insert(
-                    name.clone(),
-                    UnresolvedValue::from_variant(value.clone(), class, name),
-                );
             }
         }
 
@@ -275,19 +262,27 @@ impl DirectoryMetadata {
             .unwrap_or_default();
 
         let class = &snapshot.new_inst().class;
-        for (name, value) in &snapshot.new_inst().properties {
-            if let Variant::Attributes(attrs) = value {
-                for (name, value) in attrs.iter() {
-                    attributes.insert(
+        for (name, value) in snapshot.get_filtered_properties(snapshot.new).unwrap() {
+            match value {
+                Variant::Attributes(attrs) => {
+                    for (name, value) in attrs.iter() {
+                        attributes.insert(
+                            name.to_owned(),
+                            UnresolvedValue::from_variant_unambiguous(value.clone()),
+                        );
+                    }
+                }
+                Variant::SharedString(_) => {
+                    log::warn!(
+                    "Rojo cannot serialize the property {}.{name} in meta.json files.\n\
+                    If this is not acceptable, resave the Instance at '{}' manually as an RBXM or RBXMX.", class, snapshot.get_new_inst_path(snapshot.new))
+                }
+                _ => {
+                    properties.insert(
                         name.to_owned(),
-                        UnresolvedValue::from_variant_unambiguous(value.clone()),
+                        UnresolvedValue::from_variant(value.clone(), class, name),
                     );
                 }
-            } else {
-                properties.insert(
-                    name.clone(),
-                    UnresolvedValue::from_variant(value.clone(), class, name),
-                );
             }
         }
 

@@ -51,6 +51,7 @@ use self::{
 
 pub use self::{
     lua::ScriptType, project::snapshot_project_node, util::emit_legacy_scripts_default,
+    util::PathExt,
 };
 
 /// Returns an `InstanceSnapshot` for the provided path.
@@ -240,43 +241,33 @@ impl Middleware {
     pub fn syncback<'sync>(
         &self,
         snapshot: &SyncbackSnapshot<'sync>,
-        file_name: &str,
     ) -> anyhow::Result<SyncbackReturn<'sync>> {
-        // We don't care about the names of projects
-        if !matches!(self, Middleware::Project) {
-            validate_file_name(&snapshot.name).with_context(|| {
-                format!(
-                    "cannot create a file or directory with name {}",
-                    snapshot.name
-                )
+        let file_name = snapshot.path.file_name().and_then(|s| s.to_str());
+        if let Some(file_name) = file_name {
+            validate_file_name(file_name).with_context(|| {
+                format!("cannot create a file or directory with name {file_name}")
             })?;
         }
         match self {
-            Middleware::Csv => syncback_csv(snapshot, file_name),
-            Middleware::JsonModel => syncback_json_model(snapshot, file_name),
+            Middleware::Csv => syncback_csv(snapshot),
+            Middleware::JsonModel => syncback_json_model(snapshot),
             Middleware::Json => anyhow::bail!("cannot syncback Json middleware"),
             // Projects are only generated from files that already exist on the
             // file system, so we don't need to pass a file name.
             Middleware::Project => syncback_project(snapshot),
-            Middleware::ServerScript => syncback_lua(snapshot, file_name),
-            Middleware::ClientScript => syncback_lua(snapshot, file_name),
-            Middleware::ModuleScript => syncback_lua(snapshot, file_name),
-            Middleware::Rbxm => syncback_rbxm(snapshot, file_name),
-            Middleware::Rbxmx => syncback_rbxmx(snapshot, file_name),
+            Middleware::ServerScript => syncback_lua(snapshot),
+            Middleware::ClientScript => syncback_lua(snapshot),
+            Middleware::ModuleScript => syncback_lua(snapshot),
+            Middleware::Rbxm => syncback_rbxm(snapshot),
+            Middleware::Rbxmx => syncback_rbxmx(snapshot),
             Middleware::Toml => anyhow::bail!("cannot syncback Toml middleware"),
-            Middleware::Text => syncback_txt(snapshot, file_name),
+            Middleware::Text => syncback_txt(snapshot),
             Middleware::Ignore => anyhow::bail!("cannot syncback Ignore middleware"),
-            Middleware::Dir => syncback_dir(snapshot, file_name),
-            Middleware::ServerScriptDir => {
-                syncback_lua_init(ScriptType::Server, snapshot, file_name)
-            }
-            Middleware::ClientScriptDir => {
-                syncback_lua_init(ScriptType::Client, snapshot, file_name)
-            }
-            Middleware::ModuleScriptDir => {
-                syncback_lua_init(ScriptType::Module, snapshot, file_name)
-            }
-            Middleware::CsvDir => syncback_csv_init(snapshot, file_name),
+            Middleware::Dir => syncback_dir(snapshot),
+            Middleware::ServerScriptDir => syncback_lua_init(ScriptType::Server, snapshot),
+            Middleware::ClientScriptDir => syncback_lua_init(ScriptType::Client, snapshot),
+            Middleware::ModuleScriptDir => syncback_lua_init(ScriptType::Module, snapshot),
+            Middleware::CsvDir => syncback_csv_init(snapshot),
         }
     }
 
@@ -293,39 +284,26 @@ impl Middleware {
         )
     }
 
-    /// Attempts to return a middleware for a given path, along with the name of
-    /// the file or directory that should be passed to either
-    /// [`Middleware::syncback`] or [`Middleware::snapshot`] and the path of
-    /// said file.
-    #[inline]
-    pub fn middleware_and_path<'path>(
+    /// Attempts to return a middleware that should be used for the given path.
+    ///
+    /// Returns `Err` only if the Vfs cannot read information about the path.
+    pub fn middleware_for_path(
         vfs: &Vfs,
         sync_rules: &[SyncRule],
-        path: &'path Path,
-    ) -> anyhow::Result<Option<(Self, &'path str, PathBuf)>> {
+        path: &Path,
+    ) -> anyhow::Result<Option<Self>> {
         let meta = match vfs.metadata(path).with_not_found()? {
             Some(meta) => meta,
             None => return Ok(None),
         };
+
         if meta.is_dir() {
-            get_dir_middleware(vfs, path).map(Some)
+            let (middleware, _, _) = get_dir_middleware(vfs, path)?;
+            Ok(Some(middleware))
         } else {
-            for rule in sync_rules {
+            for rule in sync_rules.iter().chain(default_sync_rules()) {
                 if rule.matches(path) {
-                    return Ok(Some((
-                        rule.middleware,
-                        rule.file_name_for_path(path)?,
-                        path.to_path_buf(),
-                    )));
-                }
-            }
-            for rule in default_sync_rules() {
-                if rule.matches(path) {
-                    return Ok(Some((
-                        rule.middleware,
-                        rule.file_name_for_path(path)?,
-                        path.to_path_buf(),
-                    )));
+                    return Ok(Some(rule.middleware));
                 }
             }
             Ok(None)

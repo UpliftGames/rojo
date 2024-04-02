@@ -324,11 +324,7 @@ pub fn syncback_project<'sync>(
         .expect("all projects should have a relevant path");
     let vfs = snapshot.vfs();
 
-    log::debug!(
-        "Reloading project {} from vfs (name: {})",
-        project_path.display(),
-        snapshot.name
-    );
+    log::debug!("Reloading project {} from vfs", project_path.display(),);
     let mut project = Project::load_from_slice(&vfs.read(project_path)?, project_path)?;
     let base_path = project.folder_location().to_path_buf();
 
@@ -359,7 +355,7 @@ pub fn syncback_project<'sync>(
         }
 
         let filtered_properties = snapshot
-            .get_filtered_properties(new_inst.referent(), Some(old_inst.id()))
+            .get_filtered_properties(new_inst.referent())
             .unwrap();
         let properties = &mut node.properties;
         let mut attributes = BTreeMap::new();
@@ -425,12 +421,6 @@ pub fn syncback_project<'sync>(
             let child = snapshot
                 .get_new_instance(*child_ref)
                 .expect("all children of Instances should be in new DOM");
-            // As of writing (Feb 27 2024) Roblox serializes several Instances
-            // with the class 'Instance' that all have the same name. To avoid
-            // difficulties, we just ignore them. :-)
-            if child.class == "Instance" {
-                continue;
-            }
             if new_child_map.insert(&child.name, child).is_some() {
                 anyhow::bail!(
                     "Instances that are direct children of an Instance that is made by a project file \
@@ -483,7 +473,8 @@ pub fn syncback_project<'sync>(
                     Syncback cannot add or remove Instances from project {}", old_inst.name(), project_path.display()),
                 (None, _) => panic!(
                     "Invariant violated: the Instance matching of project nodes is flawed somehow.\n\
-                    Specifically, a child of the node did not exist in the old tree."
+                    Specifically, a child named {} of the node {} did not exist in the old tree.",
+                    child_name, old_inst.name()
                 ),
             }
         }
@@ -503,12 +494,20 @@ pub fn syncback_project<'sync>(
             // syncback on the project node path above (or is itself a node).
             // So the only things we need to run seperately is new children.
             if old_child_map.remove(name.as_str()).is_none() {
-                descendant_snapshots.push(snapshot.with_new_parent(
-                    parent_path,
-                    new_child.name.clone(),
-                    new_child.referent(),
-                    None,
-                ));
+                let parent_middleware =
+                    Middleware::middleware_for_path(vfs, &project.sync_rules, &parent_path)?
+                        .expect("project nodes should have a middleware if they have children.");
+                // If this node points directly to a project, it may still have
+                // children but they'll be handled by syncback. This isn't a
+                // concern with directories because they're singular things,
+                // files that contain their own children.
+                if parent_middleware != Middleware::Project {
+                    descendant_snapshots.push(snapshot.with_base_path(
+                        &parent_path,
+                        new_child.referent(),
+                        None,
+                    )?);
+                }
             }
         }
         removed_descendants.extend(old_child_map.drain().map(|(_, v)| v));
@@ -530,25 +529,23 @@ fn syncback_project_node<'sync>(
     new_inst: &Instance,
     old_inst: InstanceWithMeta,
 ) -> anyhow::Result<SyncbackSnapshot<'sync>> {
-    let (middleware, _, mut file_path) =
-        Middleware::middleware_and_path(snapshot.vfs(), sync_rules, node_path)?
-            .context("middleware_and_path should not fail for project nodes that exist")?;
+    let middleware = match Middleware::middleware_for_path(snapshot.vfs(), sync_rules, node_path)? {
+        Some(stuff) => stuff,
+        // The only way this can happen at this point is if the path does
+        // not exist on the file system or there's no middleware for it.
+        None => anyhow::bail!(
+            "path does not exist or could not be turned into a file Rojo understands: {}",
+            node_path.display()
+        ),
+    };
 
-    if !file_path.pop() {
-        anyhow::bail!(
-            "cannot syncback node {} using middleware {:?} because it is at the disk root",
-            old_inst.name(),
-            middleware
-        )
-    }
-    Ok(snapshot
-        .with_new_parent(
-            file_path,
-            old_inst.name().to_owned(),
-            new_inst.referent(),
-            Some(old_inst.id()),
-        )
-        .middleware(middleware))
+    Ok(SyncbackSnapshot {
+        data: snapshot.data,
+        old: Some(old_inst.id()),
+        new: new_inst.referent(),
+        path: node_path.to_path_buf(),
+        middleware: Some(middleware),
+    })
 }
 
 fn infer_class_name(name: &str, parent_class: Option<&str>) -> Option<Cow<'static, str>> {

@@ -1,5 +1,4 @@
 use std::{
-    borrow::Cow,
     collections::{BTreeMap, BTreeSet},
     path::Path,
 };
@@ -18,6 +17,7 @@ use crate::{
 use super::{
     dir::{dir_meta, snapshot_dir_no_meta, syncback_dir_no_meta},
     meta_file::{AdjacentMetadata, DirectoryMetadata},
+    PathExt as _,
 };
 
 pub fn snapshot_csv(
@@ -99,10 +99,8 @@ pub fn snapshot_csv_init(
 
 pub fn syncback_csv<'sync>(
     snapshot: &SyncbackSnapshot<'sync>,
-    file_name: &str,
 ) -> anyhow::Result<SyncbackReturn<'sync>> {
     let new_inst = snapshot.new_inst();
-    let path = snapshot.parent_path.join(file_name);
 
     let contents = if let Some(Variant::String(content)) = new_inst.properties.get("Contents") {
         content.as_str()
@@ -110,17 +108,16 @@ pub fn syncback_csv<'sync>(
         anyhow::bail!("LocalizationTables must have a `Contents` property that is a String")
     };
     let mut fs_snapshot = FsSnapshot::new();
-    fs_snapshot.add_file(&path, localization_to_csv(contents)?);
+    fs_snapshot.add_file(&snapshot.path, localization_to_csv(contents)?);
 
-    let meta = AdjacentMetadata::from_syncback_snapshot(snapshot, path.clone())?;
+    let meta = AdjacentMetadata::from_syncback_snapshot(snapshot, snapshot.path.clone())?;
     if let Some(mut meta) = meta {
         meta.properties.remove("Contents");
 
         if !meta.is_empty() {
+            let parent = snapshot.path.parent_err()?;
             fs_snapshot.add_file(
-                snapshot
-                    .parent_path
-                    .join(format!("{}.meta.json", new_inst.name)),
+                parent.join(format!("{}.meta.json", new_inst.name)),
                 serde_json::to_vec_pretty(&meta).context("cannot serialize metadata")?,
             )
         }
@@ -136,11 +133,8 @@ pub fn syncback_csv<'sync>(
 
 pub fn syncback_csv_init<'sync>(
     snapshot: &SyncbackSnapshot<'sync>,
-    dir_name: &str,
 ) -> anyhow::Result<SyncbackReturn<'sync>> {
     let new_inst = snapshot.new_inst();
-
-    let path = snapshot.parent_path.join(dir_name).join("init.csv");
 
     let contents = if let Some(Variant::String(content)) = new_inst.properties.get("Contents") {
         content.as_str()
@@ -148,17 +142,18 @@ pub fn syncback_csv_init<'sync>(
         anyhow::bail!("LocalizationTables must have a `Contents` property that is a String")
     };
 
-    let mut dir_syncback = syncback_dir_no_meta(snapshot, dir_name)?;
-    dir_syncback
-        .fs_snapshot
-        .add_file(&path, localization_to_csv(contents)?);
+    let mut dir_syncback = syncback_dir_no_meta(snapshot)?;
+    dir_syncback.fs_snapshot.add_file(
+        &snapshot.path.join("init.csv"),
+        localization_to_csv(contents)?,
+    );
 
-    let meta = DirectoryMetadata::from_syncback_snapshot(snapshot, path.clone())?;
+    let meta = DirectoryMetadata::from_syncback_snapshot(snapshot, snapshot.path.clone())?;
     if let Some(mut meta) = meta {
         meta.properties.remove("Contents");
         if !meta.is_empty() {
             dir_syncback.fs_snapshot.add_file(
-                snapshot.parent_path.join(dir_name).join("init.meta.json"),
+                snapshot.path.join("init.meta.json"),
                 serde_json::to_vec_pretty(&meta)
                     .context("could not serialize new init.meta.json")?,
             );
@@ -179,19 +174,19 @@ pub fn syncback_csv_init<'sync>(
 #[serde(rename_all = "camelCase")]
 struct LocalizationEntry<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
-    key: Option<Cow<'a, str>>,
+    key: Option<&'a str>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    context: Option<Cow<'a, str>>,
+    context: Option<&'a str>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    example: Option<Cow<'a, str>>,
+    examples: Option<&'a str>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    source: Option<Cow<'a, str>>,
+    source: Option<&'a str>,
 
     // We use a BTreeMap here to get deterministic output order.
-    values: BTreeMap<Cow<'a, str>, Cow<'a, str>>,
+    values: BTreeMap<&'a str, &'a str>,
 }
 
 /// Normally, we'd be able to let the csv crate construct our struct for us.
@@ -225,14 +220,12 @@ fn convert_localization_csv(contents: &[u8]) -> Result<String, csv::Error> {
             }
 
             match header {
-                "Key" => entry.key = Some(Cow::Borrowed(value)),
-                "Source" => entry.source = Some(Cow::Borrowed(value)),
-                "Context" => entry.context = Some(Cow::Borrowed(value)),
-                "Example" => entry.example = Some(Cow::Borrowed(value)),
+                "Key" => entry.key = Some(value),
+                "Source" => entry.source = Some(value),
+                "Context" => entry.context = Some(value),
+                "Example" => entry.examples = Some(value),
                 _ => {
-                    entry
-                        .values
-                        .insert(Cow::Borrowed(header), Cow::Borrowed(value));
+                    entry.values.insert(header, value);
                 }
             }
         }
@@ -279,14 +272,14 @@ fn localization_to_csv(csv_contents: &str) -> anyhow::Result<Vec<u8>> {
 
     let mut record: Vec<&str> = Vec::with_capacity(headers.len());
     for entry in &csv {
-        record.push(entry.key.as_ref().unwrap_or(&Cow::Borrowed("")));
-        record.push(entry.source.as_ref().unwrap_or(&Cow::Borrowed("")));
-        record.push(entry.context.as_ref().unwrap_or(&Cow::Borrowed("")));
-        record.push(entry.example.as_ref().unwrap_or(&Cow::Borrowed("")));
+        record.push(entry.key.unwrap_or_default());
+        record.push(entry.source.unwrap_or_default());
+        record.push(entry.context.unwrap_or_default());
+        record.push(entry.examples.unwrap_or_default());
 
         let values = &entry.values;
         for header in &extra_headers {
-            record.push(values.get(*header).unwrap_or(&Cow::Borrowed("")));
+            record.push(values.get(*header).copied().unwrap_or_default());
         }
 
         writer

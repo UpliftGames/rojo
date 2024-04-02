@@ -9,7 +9,7 @@ use anyhow::Context;
 use memofs::Vfs;
 use rbx_dom_weak::{
     types::{Ref, Variant},
-    WeakDom,
+    Instance, WeakDom,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -28,10 +28,18 @@ use crate::{
 pub use file_names::{name_for_inst, validate_file_name};
 pub use fs_snapshot::FsSnapshot;
 pub use hash::*;
-pub use property_filter::filter_properties;
+pub use property_filter::{filter_properties, filter_properties_preallocated};
 pub use ref_properties::collect_referents;
 pub use snapshot::{SyncbackData, SyncbackSnapshot};
 
+/// The name of an enviroment variable to use to override the behavior of
+/// syncback on model files.
+/// By default, syncabck will use `Rbxm` for model files.
+/// If this is set to `1`, it will instead use `Rbxmx`. If it is set to `2`,
+/// it will use `JsonModel`.
+///
+/// This will **not** override existing `Rbxm` middleware. It will only impact
+/// new files.
 const DEBUG_MODEL_FORMAT_VAR: &str = "ROJO_SYNCBACK_DEBUG";
 
 pub fn syncback_loop(
@@ -49,24 +57,30 @@ pub fn syncback_loop(
     log::debug!("Pre-filtering properties on DOMs");
     for referent in descendants(&new_tree, new_tree.root_ref()) {
         let new_inst = new_tree.get_by_ref_mut(referent).unwrap();
-        new_inst.properties = filter_properties(project.syncback_rules.as_ref(), new_inst);
+        if let Some(filter) = get_property_filter(project, new_inst) {
+            for prop in filter {
+                new_inst.properties.remove(prop);
+            }
+        }
     }
     for referent in descendants(old_tree.inner(), old_tree.get_root_id()) {
         let mut old_inst_rojo = old_tree.get_instance_mut(referent).unwrap();
         let old_inst = old_inst_rojo.inner_mut();
-        old_inst.properties = filter_properties(project.syncback_rules.as_ref(), old_inst);
+        if let Some(filter) = get_property_filter(project, old_inst) {
+            for prop in filter {
+                old_inst.properties.remove(prop);
+            }
+        }
     }
 
     log::debug!("Hashing project DOM");
-    let old_hashes = hash_tree(old_tree.inner(), old_tree.get_root_id());
+    let old_hashes = hash_tree(project, old_tree.inner(), old_tree.get_root_id());
     log::debug!("Hashing file DOM");
-    let new_hashes = hash_tree(&new_tree, new_tree.root_ref());
-
-    log::debug!("Linking referents for new DOM");
-    deferred_referents.link(&mut new_tree)?;
+    let new_hashes = hash_tree(project, &new_tree, new_tree.root_ref());
 
     if let Some(syncback_rules) = &project.syncback_rules {
         if !syncback_rules.sync_current_camera.unwrap_or_default() {
+            log::debug!("Removing CurrentCamera from new DOM");
             let mut camera_ref = None;
             for child_ref in new_tree.root().children() {
                 let inst = new_tree.get_by_ref(*child_ref).unwrap();
@@ -82,21 +96,32 @@ pub fn syncback_loop(
         }
     }
 
+    let ignore_referents = project
+        .syncback_rules
+        .as_ref()
+        .and_then(|s| s.ignore_referents)
+        .unwrap_or_default();
+    if !ignore_referents {
+        log::debug!("Linking referents for new DOM");
+        deferred_referents.link(&mut new_tree)?;
+    } else {
+        log::debug!("Skipping referent linking as per project syncback rules");
+    }
+
     let project_path = project.folder_location();
 
     let syncback_data = SyncbackData {
         vfs,
         old_tree,
         new_tree: &new_tree,
-        syncback_rules: project.syncback_rules.as_ref(),
+        project,
     };
 
     let mut snapshots = vec![SyncbackSnapshot {
         data: syncback_data,
         old: Some(old_tree.get_root_id()),
         new: new_tree.root_ref(),
-        parent_path: project.file_location.clone(),
-        name: project.name.clone(),
+        path: project.file_location.clone(),
         middleware: Some(Middleware::Project),
     }];
 
@@ -108,24 +133,23 @@ pub fn syncback_loop(
         // We can quickly check that two subtrees are identical and if they are,
         // skip reconciling them.
         if let Some(old_ref) = snapshot.old {
-            if old_hashes.get(&old_ref) == new_hashes.get(&snapshot.new) {
-                log::trace!(
-                    "Skipping {inst_path} due to it being identically hashed as {:?}",
-                    old_hashes.get(&old_ref)
-                );
-                continue;
+            match (old_hashes.get(&old_ref), new_hashes.get(&snapshot.new)) {
+                (Some(old), Some(new)) => {
+                    if old == new {
+                        log::trace!(
+                            "Skipping {inst_path} due to it being identically hashed as {old:?}"
+                        );
+                        continue;
+                    }
+                }
+                _ => unreachable!("All Instances in both DOMs should have hashes"),
             }
         }
 
-        let middleware = get_best_middleware(&snapshot);
-
-        log::trace!("Middleware for {inst_path} is {:?}", middleware);
-
-        if matches!(middleware, Middleware::Json | Middleware::Toml) {
-            log::warn!("Cannot syncback {middleware:?} at {inst_path}, skipping");
+        if !snapshot.is_valid_path(project_path, &snapshot.path) {
+            log::debug!("Skipping {inst_path} because its path matches ignore pattern");
             continue;
         }
-
         if let Some(syncback_rules) = &project.syncback_rules {
             // Ignore trees;
             for ignored in &syncback_rules.ignore_trees {
@@ -136,38 +160,22 @@ pub fn syncback_loop(
             }
         }
 
-        let appended_name = name_for_inst(middleware, snapshot.new_inst(), snapshot.old_inst())?;
-        let working_path = snapshot.parent_path.join(appended_name.as_ref());
+        let middleware = get_best_middleware(&snapshot);
 
-        if !snapshot.is_valid_path(project_path, &working_path) {
-            log::debug!("Skipping {inst_path} because its path matches ignore pattern");
+        log::trace!(
+            "Middleware for {inst_path} is {:?} (path is {})",
+            middleware,
+            snapshot.path.display()
+        );
+
+        if matches!(middleware, Middleware::Json | Middleware::Toml) {
+            log::warn!("Cannot syncback {middleware:?} at {inst_path}, skipping");
             continue;
         }
 
-        let mut syncback_res = middleware.syncback(&snapshot, &appended_name);
+        let mut syncback_res = middleware.syncback(&snapshot);
         if syncback_res.is_err() && middleware.is_dir() {
-            let new_middleware = match env::var(DEBUG_MODEL_FORMAT_VAR) {
-                Ok(value) if value == "1" => Middleware::Rbxmx,
-                _ => Middleware::Rbxm,
-            };
-            let appended_name =
-                name_for_inst(new_middleware, snapshot.new_inst(), snapshot.old_inst())?;
-            let working_path = snapshot.parent_path.join(appended_name.as_ref());
-
-            if !snapshot.is_valid_path(project_path, &working_path) {
-                log::warn!(
-                    "Skipping {inst_path} because it could not be syncbacked as a directory \
-                    and the new path matches an ignore pattern."
-                );
-                log::debug!("New path: {}", working_path.display());
-                continue;
-            }
-            log::warn!(
-                "Failed to syncback {inst_path} as a directory, it will \
-                instead be synced back as {}",
-                working_path.file_name().and_then(|s| s.to_str()).unwrap()
-            );
-            syncback_res = new_middleware.syncback(&snapshot, &appended_name);
+            todo!("Directory syncback failures will eventually result in an rbxm syncback");
         }
         let syncback = syncback_res.with_context(|| format!("Failed to syncback {inst_path}"))?;
 
@@ -227,7 +235,7 @@ pub fn get_best_middleware(snapshot: &SyncbackSnapshot) -> Middleware {
     if let Some(override_middleware) = snapshot.middleware {
         middleware = override_middleware;
     } else if let Some(old_middleware) = old_middleware {
-        middleware = old_middleware;
+        return old_middleware;
     } else if json_model_classes.contains(inst.class.as_str()) {
         middleware = Middleware::JsonModel;
     } else {
@@ -289,6 +297,39 @@ pub struct SyncbackRules {
     /// Defaults to `false`.
     #[serde(skip_serializing_if = "Option::is_none")]
     sync_unscriptable: Option<bool>,
+    /// Whether to skip serializing referent properties like `Model.PrimaryPart`
+    /// during syncback. Defaults to `false`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ignore_referents: Option<bool>,
+}
+
+/// Returns a set of properties that should not be written with syncback if
+/// one exists. This list is read directly from the Project and takes
+/// inheritance into effect.
+fn get_property_filter<'project>(
+    project: &'project Project,
+    new_inst: &Instance,
+) -> Option<HashSet<&'project String>> {
+    let filter = &project.syncback_rules.as_ref()?.ignore_properties;
+    let mut set = HashSet::new();
+
+    let database = rbx_reflection_database::get();
+    let mut current_class_name = new_inst.class.as_str();
+
+    loop {
+        if let Some(list) = filter.get(current_class_name) {
+            set.extend(list)
+        }
+
+        let class = database.classes.get(current_class_name)?;
+        if let Some(super_class) = class.superclass.as_ref() {
+            current_class_name = &super_class;
+        } else {
+            break;
+        }
+    }
+
+    Some(set)
 }
 
 /// Produces a list of descendants in the WeakDom such that all children come
