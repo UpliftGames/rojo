@@ -1761,7 +1761,7 @@ dependencies = [
 
 [[package]]
 name = "rojo"
-version = "7.4.1-cw.syncback.rc.10"
+version = "7.4.1-cw.syncback.rc.11"
 dependencies = [
  "anyhow",
  "backtrace",
