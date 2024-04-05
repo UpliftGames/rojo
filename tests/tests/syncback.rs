@@ -18,4 +18,7 @@ syncback_basic_test! {
     unscriptable_properties,
     nested_projects_weird,
     project_init,
+    all_middleware,
+    ref_properties,
+    rbxm_fallback
 }
