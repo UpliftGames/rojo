@@ -13,12 +13,15 @@ macro_rules! syncback_basic_test {
 
 syncback_basic_test! {
     baseplate,
-    respect_old_middleware,
-    nested_projects,
-    unscriptable_properties,
-    nested_projects_weird,
-    project_init,
     all_middleware,
-    ref_properties,
+    unscriptable_properties,
+    respect_old_middleware,
     rbxm_fallback
+    project_init,
+    nested_projects,
+    nested_projects_weird,
+    ref_properties,
+    ref_properties_blank,
+    ref_properties_update,
+    ignore_paths,
 }
