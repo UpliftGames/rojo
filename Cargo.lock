@@ -1840,7 +1840,7 @@ dependencies = [
 
 [[package]]
 name = "rojo"
-version = "7.4.0-uplift.syncback.rc.8"
+version = "7.4.0-uplift.syncback.rc.9"
 dependencies = [
  "anyhow",
  "backtrace",
