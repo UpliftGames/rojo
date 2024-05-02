@@ -24,4 +24,8 @@ syncback_basic_test! {
     ref_properties_blank,
     ref_properties_update,
     ignore_paths,
+    project_reserialize,
+    project_all_middleware,
+    duplicate_rojo_id,
+    string_value_project,
 }

@@ -63,7 +63,7 @@ pub fn syncback_loop(
     strip_unknown_root_children(&mut new_tree, old_tree);
 
     log::debug!("Collecting referents for new DOM...");
-    let deferred_referents = collect_referents(&new_tree)?;
+    let deferred_referents = collect_referents(&new_tree);
 
     log::debug!("Pre-filtering properties on DOMs");
     for referent in descendants(&new_tree, new_tree.root_ref()) {
@@ -112,6 +112,8 @@ pub fn syncback_loop(
     } else {
         log::debug!("Skipping referent linking as per project syncback rules");
     }
+
+    new_tree.root_mut().name = project.name.clone();
 
     log::debug!("Hashing project DOM");
     let old_hashes = hash_tree(project, old_tree.inner(), old_tree.get_root_id());
@@ -265,7 +267,7 @@ pub fn get_best_middleware(snapshot: &SyncbackSnapshot) -> Middleware {
     let mut middleware;
 
     if let Some(override_middleware) = snapshot.middleware {
-        middleware = override_middleware;
+        return override_middleware;
     } else if let Some(old_middleware) = old_middleware {
         return old_middleware;
     } else if json_model_classes.contains(inst.class.as_str()) {
