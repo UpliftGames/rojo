@@ -12,6 +12,20 @@
 
 <hr />
 
+# Uplift Games Fork
+
+This branch is used for making releases for Uplift Games' fork of Rojo. Very little thought has been put into how this branch would merge with others, because it is not the intention.
+
+Instead, this branch has changes made freely so that [releases](https://github.com/UpliftGames/rojo/releases) for Syncback's prototype can be made. These include at the time of writing:
+
+- The patch for Model pivots, which is present upstream but not in the version syncback is based on. It is in its own branch to avoid merge conflicts down the line.
+- Changing the version of the CLI and plugin.
+- This README change.
+
+However, this may change since **no stability is guaranteed on this branch**. If you're looking for syncback's implementation, check `syncback-tests` and `syncback-incremental`.
+
+# Rojo README
+
 **Rojo** is a tool designed to enable Roblox developers to use professional-grade software engineering tools.
 
 With Rojo, it's possible to use industry-leading tools like **Visual Studio Code** and **Git**.
