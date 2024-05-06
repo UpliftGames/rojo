@@ -20,6 +20,7 @@ Instead, this branch has changes made freely so that [releases](https://github.c
 
 - The patch for Model pivots, which is present upstream but not in the version syncback is based on. It is in its own branch to avoid merge conflicts down the line.
 - Changing the version of the CLI and plugin.
+- All [`rbx-dom`](https://github.com/rojo-rbx/rbx-dom/) dependencies point directly at [our fork](https://github.com/UpliftGames/rbx-dom/tree/master)'s `master` branch
 - This README change.
 
 However, this may change since **no stability is guaranteed on this branch**. If you're looking for syncback's implementation, check `syncback-tests` and `syncback-incremental`.
