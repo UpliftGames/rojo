@@ -1595,8 +1595,8 @@ dependencies = [
 
 [[package]]
 name = "rbx_binary"
-version = "0.7.0"
-source = "git+https://github.com/UpliftGames/rbx-dom.git#50e8bd040fc26e8271bbaefd05c59b2658392e80"
+version = "0.7.4"
+source = "git+https://github.com/UpliftGames/rbx-dom.git?rev=f6007d561bcde2d120922cec818c0765a00ec460#f6007d561bcde2d120922cec818c0765a00ec460"
 dependencies = [
  "log",
  "lz4",
@@ -1609,8 +1609,8 @@ dependencies = [
 
 [[package]]
 name = "rbx_dom_weak"
-version = "2.4.0"
-source = "git+https://github.com/UpliftGames/rbx-dom.git#50e8bd040fc26e8271bbaefd05c59b2658392e80"
+version = "2.7.0"
+source = "git+https://github.com/UpliftGames/rbx-dom.git?rev=f6007d561bcde2d120922cec818c0765a00ec460#f6007d561bcde2d120922cec818c0765a00ec460"
 dependencies = [
  "rbx_types",
  "serde",
@@ -1618,8 +1618,8 @@ dependencies = [
 
 [[package]]
 name = "rbx_reflection"
-version = "4.2.0"
-source = "git+https://github.com/UpliftGames/rbx-dom.git#50e8bd040fc26e8271bbaefd05c59b2658392e80"
+version = "4.5.0"
+source = "git+https://github.com/UpliftGames/rbx-dom.git?rev=f6007d561bcde2d120922cec818c0765a00ec460#f6007d561bcde2d120922cec818c0765a00ec460"
 dependencies = [
  "rbx_types",
  "serde",
@@ -1628,8 +1628,8 @@ dependencies = [
 
 [[package]]
 name = "rbx_reflection_database"
-version = "0.2.6+roblox-572"
-source = "git+https://github.com/UpliftGames/rbx-dom.git#50e8bd040fc26e8271bbaefd05c59b2658392e80"
+version = "0.2.10+roblox-607"
+source = "git+https://github.com/UpliftGames/rbx-dom.git?rev=f6007d561bcde2d120922cec818c0765a00ec460#f6007d561bcde2d120922cec818c0765a00ec460"
 dependencies = [
  "lazy_static",
  "rbx_reflection",
@@ -1639,8 +1639,8 @@ dependencies = [
 
 [[package]]
 name = "rbx_types"
-version = "1.5.0"
-source = "git+https://github.com/UpliftGames/rbx-dom.git#50e8bd040fc26e8271bbaefd05c59b2658392e80"
+version = "1.8.0"
+source = "git+https://github.com/UpliftGames/rbx-dom.git?rev=f6007d561bcde2d120922cec818c0765a00ec460#f6007d561bcde2d120922cec818c0765a00ec460"
 dependencies = [
  "base64 0.13.1",
  "bitflags 1.3.2",
@@ -1653,8 +1653,8 @@ dependencies = [
 
 [[package]]
 name = "rbx_xml"
-version = "0.13.0"
-source = "git+https://github.com/UpliftGames/rbx-dom.git#50e8bd040fc26e8271bbaefd05c59b2658392e80"
+version = "0.13.3"
+source = "git+https://github.com/UpliftGames/rbx-dom.git?rev=f6007d561bcde2d120922cec818c0765a00ec460#f6007d561bcde2d120922cec818c0765a00ec460"
 dependencies = [
  "base64 0.13.1",
  "log",
@@ -1812,9 +1812,9 @@ dependencies = [
 
 [[package]]
 name = "rmp-serde"
-version = "0.14.4"
+version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4ce7d70c926fe472aed493b902010bccc17fa9f7284145cb8772fd22fdb052d8"
+checksum = "938a142ab806f18b88a97b0dea523d39e0fd730a064b035726adcfc58a8a5188"
 dependencies = [
  "byteorder",
  "rmp",
