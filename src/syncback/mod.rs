@@ -113,7 +113,7 @@ pub fn syncback_loop(
         log::debug!("Skipping referent linking as per project syncback rules");
     }
 
-    new_tree.root_mut().name = project.name.clone();
+    new_tree.root_mut().name.clone_from(&project.name);
 
     log::debug!("Hashing project DOM");
     let old_hashes = hash_tree(project, old_tree.inner(), old_tree.get_root_id());
@@ -252,11 +252,24 @@ pub fn get_best_middleware(snapshot: &SyncbackSnapshot) -> Middleware {
     // equality for classes like this.
     static JSON_MODEL_CLASSES: OnceLock<HashSet<&str>> = OnceLock::new();
     let json_model_classes = JSON_MODEL_CLASSES.get_or_init(|| {
-        maplit::hashset! {
-            "Sound", "SoundGroup", "Sky", "Atmosphere", "BloomEffect",
-            "BlurEffect", "ColorCorrectionEffect", "DepthOfFieldEffect",
-            "SunRaysEffect", "ParticleEmitter"
-        }
+        [
+            "Sound",
+            "SoundGroup",
+            "Sky",
+            "Atmosphere",
+            "BloomEffect",
+            "BlurEffect",
+            "ColorCorrectionEffect",
+            "DepthOfFieldEffect",
+            "SunRaysEffect",
+            "ParticleEmitter",
+            "TextChannel",
+            "TextChatCommand",
+            "ChatWindowConfiguration",
+            "ChatInputBarConfiguration",
+            "BubbleChatConfiguration",
+        ]
+        .into()
     });
 
     let old_middleware = snapshot
@@ -406,7 +419,7 @@ fn get_property_filter<'project>(
 
         let class = database.classes.get(current_class_name)?;
         if let Some(super_class) = class.superclass.as_ref() {
-            current_class_name = &super_class;
+            current_class_name = super_class;
         } else {
             break;
         }
