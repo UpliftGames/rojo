@@ -332,7 +332,7 @@ pub fn syncback_project<'sync>(
     // Sync rules for this project do not have their base rule set but it is
     // important when performing syncback on other projects.
     for rule in &mut project.sync_rules {
-        rule.base_path = base_path.clone()
+        rule.base_path.clone_from(&base_path)
     }
 
     let mut descendant_snapshots = Vec::new();
@@ -584,7 +584,7 @@ fn project_node_should_reserialize(
         if let Some(inst_value) = instance.properties().get(prop_name) {
             let node_value = unresolved_node_value
                 .clone()
-                .resolve(instance.name(), prop_name)?;
+                .resolve(instance.class_name(), prop_name)?;
             if !variant_eq(inst_value, &node_value) {
                 return Ok(true);
             }
