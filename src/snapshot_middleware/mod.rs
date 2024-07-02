@@ -27,23 +27,31 @@ use anyhow::Context;
 use memofs::{IoResultExt, Vfs};
 use serde::{Deserialize, Serialize};
 
-use crate::glob::Glob;
-use crate::snapshot::{InstanceContext, InstanceSnapshot, SyncRule};
-
-use self::{
-    csv::{snapshot_csv, snapshot_csv_init},
-    dir::snapshot_dir,
-    json::snapshot_json,
-    json_model::snapshot_json_model,
-    lua::{snapshot_lua, snapshot_lua_init, ScriptType},
-    project::snapshot_project,
-    rbxm::snapshot_rbxm,
-    rbxmx::snapshot_rbxmx,
-    toml::snapshot_toml,
-    txt::snapshot_txt,
+use crate::{
+    glob::Glob,
+    syncback::{SyncbackReturn, SyncbackSnapshot},
+};
+use crate::{
+    snapshot::{InstanceContext, InstanceSnapshot, SyncRule},
+    syncback::validate_file_name,
 };
 
-pub use self::{project::snapshot_project_node, util::emit_legacy_scripts_default};
+use self::{
+    csv::{snapshot_csv, snapshot_csv_init, syncback_csv, syncback_csv_init},
+    dir::{snapshot_dir, syncback_dir},
+    json::snapshot_json,
+    json_model::{snapshot_json_model, syncback_json_model},
+    lua::{snapshot_lua, snapshot_lua_init, syncback_lua, syncback_lua_init},
+    project::{snapshot_project, syncback_project},
+    rbxm::{snapshot_rbxm, syncback_rbxm},
+    rbxmx::{snapshot_rbxmx, syncback_rbxmx},
+    toml::snapshot_toml,
+    txt::{snapshot_txt, syncback_txt},
+};
+
+pub use self::{
+    lua::ScriptType, project::snapshot_project_node, util::emit_legacy_scripts_default,
+};
 
 /// Returns an `InstanceSnapshot` for the provided path.
 /// This will inspect the path and find the appropriate middleware for it,
@@ -111,53 +119,44 @@ pub fn snapshot_from_vfs(
     }
 }
 
-/// Gets an `init` path for the given directory.
-/// This uses an intrinsic priority list and for compatibility,
-/// it should not be changed.
-fn get_init_path<P: AsRef<Path>>(vfs: &Vfs, dir: P) -> anyhow::Result<Option<PathBuf>> {
-    let path = dir.as_ref();
+/// Gets the appropriate middleware for a directory by checking for `init`
+/// files. This uses an intrinsic priority list and for compatibility,
+/// that order should be left unchanged.
+///
+/// Returns the middleware, the name of the directory, and the path to
+/// the init location.
+fn get_dir_middleware<'path>(
+    vfs: &Vfs,
+    dir_path: &'path Path,
+) -> anyhow::Result<(Middleware, &'path str, PathBuf)> {
+    let dir_name = dir_path
+        .file_name()
+        .expect("Could not extract directory name")
+        .to_str()
+        .ok_or_else(|| anyhow::anyhow!("File name was not valid UTF-8: {}", dir_path.display()))?;
 
-    let project_path = path.join("default.project.json");
-    if vfs.metadata(&project_path).with_not_found()?.is_some() {
-        return Ok(Some(project_path));
+    static INIT_PATHS: OnceLock<Vec<(Middleware, &str)>> = OnceLock::new();
+    let order = INIT_PATHS.get_or_init(|| {
+        vec![
+            (Middleware::Project, "default.project.json"),
+            (Middleware::ModuleScriptDir, "init.luau"),
+            (Middleware::ModuleScriptDir, "init.lua"),
+            (Middleware::ServerScriptDir, "init.server.luau"),
+            (Middleware::ServerScriptDir, "init.server.lua"),
+            (Middleware::ClientScriptDir, "init.client.luau"),
+            (Middleware::ClientScriptDir, "init.client.lua"),
+            (Middleware::CsvDir, "init.csv"),
+        ]
+    });
+
+    for (middleware, name) in order {
+        let test_path = dir_path.join(name);
+        if vfs.metadata(&test_path).with_not_found()?.is_some() {
+            return Ok((*middleware, dir_name, test_path));
+        }
     }
 
-    let init_path = path.join("init.luau");
-    if vfs.metadata(&init_path).with_not_found()?.is_some() {
-        return Ok(Some(init_path));
-    }
-
-    let init_path = path.join("init.lua");
-    if vfs.metadata(&init_path).with_not_found()?.is_some() {
-        return Ok(Some(init_path));
-    }
-
-    let init_path = path.join("init.server.luau");
-    if vfs.metadata(&init_path).with_not_found()?.is_some() {
-        return Ok(Some(init_path));
-    }
-
-    let init_path = path.join("init.server.lua");
-    if vfs.metadata(&init_path).with_not_found()?.is_some() {
-        return Ok(Some(init_path));
-    }
-
-    let init_path = path.join("init.client.luau");
-    if vfs.metadata(&init_path).with_not_found()?.is_some() {
-        return Ok(Some(init_path));
-    }
-
-    let init_path = path.join("init.client.lua");
-    if vfs.metadata(&init_path).with_not_found()?.is_some() {
-        return Ok(Some(init_path));
-    }
-
-    let init_path = path.join("init.csv");
-    if vfs.metadata(&init_path).with_not_found()?.is_some() {
-        return Ok(Some(init_path));
-    }
-
-    Ok(None)
+    Ok((Middleware::Dir, dir_name, dir_path.to_path_buf()))
 }
 
 /// Gets a snapshot for a path given an InstanceContext and Vfs, taking
@@ -187,9 +186,10 @@ fn snapshot_from_path(
 }
 
 /// Represents a possible 'transformer' used by Rojo to turn a file system
-/// item into a Roblox Instance. Missing from this list are directories and
-/// metadata. This is deliberate, as metadata is not a snapshot middleware
-/// and directories do not make sense to turn into files.
+/// item into a Roblox Instance. Missing from this list is metadata.
+/// This is deliberate, as metadata is not a snapshot middleware.
+///
+/// Directories cannot be used for sync rules so they're ignored by Serde.
 #[derive(Debug, Clone, Copy, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Middleware {
@@ -205,6 +205,17 @@ pub enum Middleware {
     Toml,
     Text,
     Ignore,
+
+    #[serde(skip_deserializing)]
+    Dir,
+    #[serde(skip_deserializing)]
+    ServerScriptDir,
+    #[serde(skip_deserializing)]
+    ClientScriptDir,
+    #[serde(skip_deserializing)]
+    ModuleScriptDir,
+    #[serde(skip_deserializing)]
+    CsvDir,
 }
 
 impl Middleware {
@@ -217,7 +228,7 @@ impl Middleware {
         path: &Path,
         name: &str,
     ) -> anyhow::Result<Option<InstanceSnapshot>> {
-        match self {
+        let mut output = match self {
             Self::Csv => snapshot_csv(context, vfs, path, name),
             Self::JsonModel => snapshot_json_model(context, vfs, path, name),
             Self::Json => snapshot_json(context, vfs, path, name),
@@ -230,6 +241,119 @@ impl Middleware {
             Self::Toml => snapshot_toml(context, vfs, path, name),
             Self::Text => snapshot_txt(context, vfs, path, name),
             Self::Ignore => Ok(None),
+
+            Self::Dir => snapshot_dir(context, vfs, path, name),
+            Self::ServerScriptDir => {
+                snapshot_lua_init(context, vfs, path, name, ScriptType::Server)
+            }
+            Self::ClientScriptDir => {
+                snapshot_lua_init(context, vfs, path, name, ScriptType::Client)
+            }
+            Self::ModuleScriptDir => {
+                snapshot_lua_init(context, vfs, path, name, ScriptType::Module)
+            }
+            Self::CsvDir => snapshot_csv_init(context, vfs, path, name),
+        };
+        if let Ok(Some(ref mut snapshot)) = output {
+            snapshot.metadata.middleware = Some(*self);
+        }
+        output
+    }
+
+    /// Runs the syncback mechanism for the provided middleware given a
+    /// SyncbackSnapshot.
+    pub fn syncback<'sync>(
+        &self,
+        snapshot: &SyncbackSnapshot<'sync>,
+        file_name: &str,
+    ) -> anyhow::Result<SyncbackReturn<'sync>> {
+        // We don't care about the names of projects
+        if !matches!(self, Middleware::Project) {
+            validate_file_name(&snapshot.name).with_context(|| {
+                format!(
+                    "cannot create a file or directory with name {}",
+                    snapshot.name
+                )
+            })?;
+        }
+        match self {
+            Middleware::Csv => syncback_csv(snapshot, file_name),
+            Middleware::JsonModel => syncback_json_model(snapshot, file_name),
+            Middleware::Json => anyhow::bail!("cannot syncback Json middleware"),
+            // Projects are only generated from files that already exist on the
+            // file system, so we don't need to pass a file name.
+            Middleware::Project => syncback_project(snapshot),
+            Middleware::ServerScript => syncback_lua(snapshot, file_name),
+            Middleware::ClientScript => syncback_lua(snapshot, file_name),
+            Middleware::ModuleScript => syncback_lua(snapshot, file_name),
+            Middleware::Rbxm => syncback_rbxm(snapshot, file_name),
+            Middleware::Rbxmx => syncback_rbxmx(snapshot, file_name),
+            Middleware::Toml => anyhow::bail!("cannot syncback Toml middleware"),
+            Middleware::Text => syncback_txt(snapshot, file_name),
+            Middleware::Ignore => anyhow::bail!("cannot syncback Ignore middleware"),
+            Middleware::Dir => syncback_dir(snapshot, file_name),
+            Middleware::ServerScriptDir => {
+                syncback_lua_init(ScriptType::Server, snapshot, file_name)
+            }
+            Middleware::ClientScriptDir => {
+                syncback_lua_init(ScriptType::Client, snapshot, file_name)
+            }
+            Middleware::ModuleScriptDir => {
+                syncback_lua_init(ScriptType::Module, snapshot, file_name)
+            }
+            Middleware::CsvDir => syncback_csv_init(snapshot, file_name),
+        }
+    }
+
+    /// Returns whether this particular middleware would become a directory.
+    #[inline]
+    pub fn is_dir(&self) -> bool {
+        matches!(
+            self,
+            Middleware::Dir
+                | Middleware::ServerScriptDir
+                | Middleware::ClientScriptDir
+                | Middleware::ModuleScriptDir
+                | Middleware::CsvDir
+        )
+    }
+
+    /// Attempts to return a middleware for a given path, along with the name of
+    /// the file or directory that should be passed to either
+    /// [`Middleware::syncback`] or [`Middleware::snapshot`] and the path of
+    /// said file.
+    #[inline]
+    pub fn middleware_and_path<'path>(
+        vfs: &Vfs,
+        sync_rules: &[SyncRule],
+        path: &'path Path,
+    ) -> anyhow::Result<Option<(Self, &'path str, PathBuf)>> {
+        let meta = match vfs.metadata(path).with_not_found()? {
+            Some(meta) => meta,
+            None => return Ok(None),
+        };
+        if meta.is_dir() {
+            get_dir_middleware(vfs, path).map(Some)
+        } else {
+            for rule in sync_rules {
+                if rule.matches(path) {
+                    return Ok(Some((
+                        rule.middleware,
+                        rule.file_name_for_path(path)?,
+                        path.to_path_buf(),
+                    )));
+                }
+            }
+            for rule in default_sync_rules() {
+                if rule.matches(path) {
+                    return Ok(Some((
+                        rule.middleware,
+                        rule.file_name_for_path(path)?,
+                        path.to_path_buf(),
+                    )));
+                }
+            }
+            Ok(None)
         }
     }
 }
