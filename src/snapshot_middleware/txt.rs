@@ -1,6 +1,6 @@
 use std::{path::Path, str};
 
-use anyhow::Context;
+use anyhow::Context as _;
 use maplit::hashmap;
 use memofs::{IoResultExt, Vfs};
 use rbx_dom_weak::types::Variant;
@@ -73,7 +73,6 @@ pub fn syncback_txt<'sync>(
     }
 
     Ok(SyncbackReturn {
-        inst_snapshot: InstanceSnapshot::from_instance(new_inst),
         fs_snapshot,
         children: Vec::new(),
         removed_children: Vec::new(),

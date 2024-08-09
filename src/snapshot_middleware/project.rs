@@ -20,7 +20,8 @@ use crate::{
         PathIgnoreRule, SyncRule,
     },
     snapshot_middleware::Middleware,
-    syncback::{FsSnapshot, SyncbackReturn, SyncbackSnapshot},
+    syncback::{filter_properties, FsSnapshot, SyncbackReturn, SyncbackSnapshot},
+    variant_eq::variant_eq,
     RojoRef,
 };
 
@@ -32,9 +33,12 @@ pub fn snapshot_project(
     path: &Path,
     name: &str,
 ) -> anyhow::Result<Option<InstanceSnapshot>> {
-    let project = Project::load_from_slice(&vfs.read(path)?, path)
+    let project = Project::load_exact(vfs, path, Some(name))
         .with_context(|| format!("File was not a valid Rojo project: {}", path.display()))?;
-    let project_name = project.name.as_deref().unwrap_or(name);
+    let project_name = match project.name.as_deref() {
+        Some(name) => name,
+        None => panic!("Project is missing a name"),
+    };
 
     let mut context = context.clone();
     context.clear_sync_rules();
@@ -291,7 +295,7 @@ pub fn snapshot_project_node(
     }
 
     if let Some(id) = &node.id {
-        metadata.specified_id = Some(RojoRef::from_string(id.clone()))
+        metadata.specified_id = Some(RojoRef::new(id.clone()))
     }
 
     metadata.instigating_source = Some(InstigatingSource::ProjectNode {
@@ -327,13 +331,13 @@ pub fn syncback_project<'sync>(
     let vfs = snapshot.vfs();
 
     log::debug!("Reloading project {} from vfs", project_path.display(),);
-    let mut project = Project::load_from_slice(&vfs.read(project_path)?, project_path)?;
+    let mut project = Project::load_exact(&vfs, project_path, None)?;
     let base_path = project.folder_location().to_path_buf();
 
     // Sync rules for this project do not have their base rule set but it is
     // important when performing syncback on other projects.
     for rule in &mut project.sync_rules {
-        rule.base_path = base_path.clone()
+        rule.base_path.clone_from(&base_path)
     }
 
     let mut descendant_snapshots = Vec::new();
@@ -343,6 +347,7 @@ pub fn syncback_project<'sync>(
     let mut old_child_map = HashMap::new();
     let mut new_child_map = HashMap::new();
 
+    let mut node_changed_map = Vec::new();
     let mut node_queue = VecDeque::with_capacity(1);
     node_queue.push_back((&mut project.tree, old_inst, snapshot.new_inst()));
 
@@ -350,51 +355,21 @@ pub fn syncback_project<'sync>(
         log::debug!("Processing node {}", old_inst.name());
         if old_inst.class_name() != new_inst.class {
             anyhow::bail!(
-                "Cannot change the class of {} in project file {}",
+                "Cannot change the class of {} in project file {}.\n\
+                Current class is {}, it is a {} in the input file.",
                 old_inst.name(),
-                project_path.display()
+                project_path.display(),
+                old_inst.class_name(),
+                new_inst.class
             );
         }
 
-        let filtered_properties = snapshot
-            .get_filtered_properties(new_inst.referent())
-            .unwrap();
-        let properties = &mut node.properties;
-        let mut attributes = BTreeMap::new();
-
-        // We would ideally have different behavior here based on whether a
-        // node has `$path` set. However, due to an issue with Middleware not
-        // knowing whether they originate from a project or not, we just skip
-        // writing metadata for things from projects. So to avoid properties
-        // being dropped, we don't filter them specially.
-        // TODO: We should handle this branching somehow so that meta.json files
-        // are respected.
-        for (name, value) in filtered_properties {
-            match value {
-                Variant::Attributes(attrs) => {
-                    for (attr_name, attr_value) in attrs.iter() {
-                        attributes.insert(
-                            attr_name.clone(),
-                            UnresolvedValue::from_variant_unambiguous(attr_value.clone()),
-                        );
-                    }
-                }
-                Variant::SharedString(_) => {
-                    log::warn!(
-                        "Rojo cannot serialize the property {}.{name} in project files.\n\
-                        If this is not acceptable, resave the Instance at '{}' manually as an RBXM or RBXMX.", new_inst.class, snapshot.get_new_inst_path(snapshot.new)
-                    );
-                }
-                _ => {
-                    properties.insert(
-                        name.to_string(),
-                        UnresolvedValue::from_variant(value.clone(), &new_inst.class, name),
-                    );
-                }
-            }
-        }
-        node.attributes = attributes;
-
+        // TODO handle meta.json files in this branch. Right now, we perform
+        // syncback if a node has `$path` set but the Middleware aren't aware
+        // that the Instances they're running on originate in a project.json.
+        // As a result, the `meta.json` syncback code is hardcoded to not work
+        // if the Instance originates from a project file. However, we should
+        // ideally use a .meta.json over the project node if it exists already.
         if node.path.is_some() {
             // Since the node has a path, we have to run syncback on it.
             let node_path = node.path.as_ref().map(PathNode::path).expect(
@@ -407,16 +382,34 @@ pub fn syncback_project<'sync>(
                 base_path.join(node_path)
             };
 
-            let snapshot = syncback_project_node(
-                snapshot,
+            let middleware = match Middleware::middleware_for_path(
+                snapshot.vfs(),
                 &project.sync_rules,
                 &full_path,
-                new_inst,
-                old_inst,
-            )?;
-            descendant_snapshots.push(snapshot);
+            )? {
+                Some(middleware) => middleware,
+                // The only way this can happen at this point is if the path does
+                // not exist on the file system or there's no middleware for it.
+                None => anyhow::bail!(
+                    "path does not exist or could not be turned into a file Rojo understands: {}",
+                    full_path.display()
+                ),
+            };
+
+            descendant_snapshots.push(
+                snapshot
+                    .with_new_path(full_path.clone(), new_inst.referent(), Some(old_inst.id()))
+                    .middleware(middleware),
+            );
 
             ref_to_path_map.insert(new_inst.referent(), full_path);
+
+            // We only want to set properties if it needs it.
+            if !middleware.handles_own_properties() {
+                project_node_property_syncback_path(snapshot, new_inst, node);
+            }
+        } else {
+            project_node_property_syncback_no_path(snapshot, new_inst, node);
         }
 
         for child_ref in new_inst.children() {
@@ -466,18 +459,19 @@ pub fn syncback_project<'sync>(
             }
             let new_equivalent = new_child_map.remove(child_name);
             let old_equivalent = old_child_map.remove(child_name.as_str());
-            // The panic below should never happen. If it does, something's gone
-            // wrong with the Instance matching for nodes.
             match (new_equivalent, old_equivalent) {
                 (Some(new), Some(old)) => node_queue.push_back((child_node, old, new)),
                 (_, None) => anyhow::bail!(
                     "The child '{child_name}' of Instance '{}' would be removed.\n\
-                    Syncback cannot add or remove Instances from project {}", old_inst.name(), project_path.display()),
-                (None, _) => panic!(
-                    "Invariant violated: the Instance matching of project nodes is flawed somehow.\n\
-                    Specifically, a child named {} of the node {} did not exist in the old tree.",
-                    child_name, old_inst.name()
+                    Syncback cannot add or remove Instances from project {}",
+                    old_inst.name(),
+                    project_path.display()
                 ),
+                (None, _) => anyhow::bail!(
+                    "The child '{child_name}' of Instance '{}' is present only in a project file,\n\
+                    and not the provided file. Syncback cannot add or remove Instances from project:\n{}.",
+                    old_inst.name(), project_path.display(),
+                )
             }
         }
 
@@ -513,41 +507,125 @@ pub fn syncback_project<'sync>(
             }
         }
         removed_descendants.extend(old_child_map.drain().map(|(_, v)| v));
+        node_changed_map.push((&node.properties, &node.attributes, old_inst))
+    }
+    let mut fs_snapshot = FsSnapshot::new();
+
+    for (node_properties, node_attributes, old_inst) in node_changed_map {
+        if project_node_should_reserialize(node_properties, node_attributes, old_inst)? {
+            fs_snapshot.add_file(project_path, serde_json::to_vec_pretty(&project)?);
+            break;
+        }
     }
 
     Ok(SyncbackReturn {
-        inst_snapshot: InstanceSnapshot::from_instance(snapshot.new_inst()),
-        fs_snapshot: FsSnapshot::new()
-            .with_added_file(project_path, serde_json::to_vec_pretty(&project)?),
+        fs_snapshot,
         children: descendant_snapshots,
         removed_children: removed_descendants,
     })
 }
 
-fn syncback_project_node<'sync>(
-    snapshot: &SyncbackSnapshot<'sync>,
-    sync_rules: &[SyncRule],
-    node_path: &Path,
+fn project_node_property_syncback<'inst>(
+    snapshot: &SyncbackSnapshot,
+    filtered_properties: HashMap<&'inst str, &'inst Variant>,
     new_inst: &Instance,
-    old_inst: InstanceWithMeta,
-) -> anyhow::Result<SyncbackSnapshot<'sync>> {
-    let middleware = match Middleware::middleware_for_path(snapshot.vfs(), sync_rules, node_path)? {
-        Some(stuff) => stuff,
-        // The only way this can happen at this point is if the path does
-        // not exist on the file system or there's no middleware for it.
-        None => anyhow::bail!(
-            "path does not exist or could not be turned into a file Rojo understands: {}",
-            node_path.display()
-        ),
-    };
+    node: &mut ProjectNode,
+) {
+    let properties = &mut node.properties;
+    let mut attributes = BTreeMap::new();
+    for (name, value) in filtered_properties {
+        match value {
+            Variant::Attributes(attrs) => {
+                for (attr_name, attr_value) in attrs.iter() {
+                    attributes.insert(
+                        attr_name.clone(),
+                        UnresolvedValue::from_variant_unambiguous(attr_value.clone()),
+                    );
+                }
+            }
+            Variant::SharedString(_) => {
+                log::warn!(
+                    "Rojo cannot serialize the property {}.{name} in project files.\n\
+                    If this is not acceptable, resave the Instance at '{}' manually as an RBXM or RBXMX.", new_inst.class, snapshot.get_new_inst_path(snapshot.new)
+                );
+            }
+            _ => {
+                properties.insert(
+                    name.to_string(),
+                    UnresolvedValue::from_variant(value.clone(), &new_inst.class, name),
+                );
+            }
+        }
+    }
+    node.attributes = attributes;
+}
 
-    Ok(snapshot
-        .with_new_path(
-            node_path.to_path_buf(),
-            new_inst.referent(),
-            Some(old_inst.id()),
-        )
-        .middleware(middleware))
+fn project_node_property_syncback_path(
+    snapshot: &SyncbackSnapshot,
+    new_inst: &Instance,
+    node: &mut ProjectNode,
+) {
+    let filtered_properties = snapshot
+        .get_path_filtered_properties(new_inst.referent())
+        .unwrap();
+    project_node_property_syncback(snapshot, filtered_properties, new_inst, node)
+}
+
+fn project_node_property_syncback_no_path(
+    snapshot: &SyncbackSnapshot,
+    new_inst: &Instance,
+    node: &mut ProjectNode,
+) {
+    let filtered_properties = filter_properties(snapshot.project(), new_inst);
+    project_node_property_syncback(snapshot, filtered_properties, new_inst, node)
+}
+
+fn project_node_should_reserialize(
+    node_properties: &BTreeMap<String, UnresolvedValue>,
+    node_attributes: &BTreeMap<String, UnresolvedValue>,
+    instance: InstanceWithMeta,
+) -> anyhow::Result<bool> {
+    for (prop_name, unresolved_node_value) in node_properties {
+        if let Some(inst_value) = instance.properties().get(prop_name) {
+            let node_value = unresolved_node_value
+                .clone()
+                .resolve(instance.class_name(), prop_name)?;
+            if !variant_eq(inst_value, &node_value) {
+                return Ok(true);
+            }
+        } else {
+            return Ok(true);
+        }
+    }
+
+    match instance.properties().get("Attributes") {
+        Some(Variant::Attributes(inst_attributes)) => {
+            // This will also catch if one is empty but the other isn't
+            if node_attributes.len() != inst_attributes.len() {
+                Ok(true)
+            } else {
+                for (attr_name, unresolved_node_value) in node_attributes {
+                    if let Some(inst_value) = inst_attributes.get(attr_name.as_str()) {
+                        let node_value = unresolved_node_value.clone().resolve_unambiguous()?;
+                        if !variant_eq(inst_value, &node_value) {
+                            return Ok(true);
+                        }
+                    } else {
+                        return Ok(true);
+                    }
+                }
+                Ok(false)
+            }
+        }
+        Some(_) => Ok(true),
+        None => {
+            if !node_attributes.is_empty() {
+                Ok(true)
+            } else {
+                Ok(false)
+            }
+        }
+    }
 }
 
 fn infer_class_name(name: &str, parent_class: Option<&str>) -> Option<Cow<'static, str>> {

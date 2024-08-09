@@ -72,6 +72,9 @@ pub fn snapshot_from_vfs(
     if meta.is_dir() {
         let (middleware, dir_name, init_path) = get_dir_middleware(vfs, path)?;
         // TODO: Support user defined init paths
+        // If and when we do, make sure to go support it in
+        // `Project::set_file_name`, as right now it special-cases
+        // `default.project.json` as an `init` path.
         match middleware {
             Middleware::Dir => middleware.snapshot(context, vfs, path, dir_name),
             _ => middleware.snapshot(context, vfs, &init_path, dir_name),
@@ -282,6 +285,21 @@ impl Middleware {
         )
     }
 
+    /// Returns whether this particular middleware sets its own properties.
+    /// This applies to things like `JsonModel` and `Project`, since they
+    /// set properties without needing a meta.json file.
+    ///
+    /// It does not cover middleware like `ServerScript` or `Csv` because they
+    /// need a meta.json file to set properties that aren't their designated
+    /// 'special' properties.
+    #[inline]
+    pub fn handles_own_properties(&self) -> bool {
+        matches!(
+            self,
+            Middleware::JsonModel | Middleware::Project | Middleware::Rbxm | Middleware::Rbxmx
+        )
+    }
+
     /// Attempts to return a middleware that should be used for the given path.
     ///
     /// Returns `Err` only if the Vfs cannot read information about the path.
@@ -349,7 +367,7 @@ macro_rules! sync_rule {
 /// Defines the 'default' syncing rules that Rojo uses.
 /// These do not broadly overlap, but the order matters for some in the case of
 /// e.g. JSON models.
-fn default_sync_rules() -> &'static [SyncRule] {
+pub fn default_sync_rules() -> &'static [SyncRule] {
     static DEFAULT_SYNC_RULES: OnceLock<Vec<SyncRule>> = OnceLock::new();
 
     DEFAULT_SYNC_RULES.get_or_init(|| {

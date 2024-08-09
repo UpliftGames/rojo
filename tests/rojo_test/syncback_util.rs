@@ -7,7 +7,7 @@ use memofs::{InMemoryFs, IoResultExt, Vfs, VfsSnapshot};
 use rbx_reflection::ReflectionDatabase;
 use serde::Serialize;
 
-use crate::rojo_test::io_util::SYNCBACK_TESTS_PATH;
+use crate::rojo_test::io_util::{serialize_vec_absolute, SYNCBACK_TESTS_PATH};
 
 const INPUT_FILE: &str = "input.rbxl";
 const EXPECTED_DIR: &str = "expected";
@@ -110,7 +110,7 @@ pub fn basic_syncback_test(name: &str) -> anyhow::Result<()> {
 }
 
 fn rojo_tree_from_path(vfs: &Vfs, path: &Path) -> anyhow::Result<(RojoTree, Project)> {
-    let project = Project::load_fuzzy(path)?
+    let project = Project::load_fuzzy(vfs, path)?
         .with_context(|| format!("no project file located at {}", path.display()))?;
 
     let context = InstanceContext::with_emit_legacy_scripts(project.emit_legacy_scripts);
@@ -185,37 +185,41 @@ fn normalize_line_endings(input: &Vec<u8>) -> Cow<Vec<u8>> {
 
 #[derive(Default, Debug, Serialize)]
 struct FsSnapshotVisual<'a> {
+    #[serde(serialize_with = "serialize_vec_absolute")]
     added_files: Vec<&'a Path>,
+    #[serde(serialize_with = "serialize_vec_absolute")]
     added_dirs: Vec<&'a Path>,
+    #[serde(serialize_with = "serialize_vec_absolute")]
     removed_files: Vec<&'a Path>,
+    #[serde(serialize_with = "serialize_vec_absolute")]
     removed_dirs: Vec<&'a Path>,
 }
 
 fn visualize_fs_snapshot<'a>(snapshot: &'a FsSnapshot, base_path: &Path) -> FsSnapshotVisual<'a> {
-    let map_closure = |p: &'a Path| p.strip_prefix(base_path).unwrap();
+    let mut added_files = Vec::new();
+    let mut added_dirs = Vec::new();
+    let mut removed_files = Vec::new();
+    let mut removed_dirs = Vec::new();
 
-    let mut added_files: Vec<_> = snapshot
-        .added_files()
-        .into_iter()
-        .map(map_closure)
-        .collect();
-    let mut added_dirs: Vec<_> = snapshot.added_dirs().into_iter().map(map_closure).collect();
-    let mut removed_files: Vec<_> = snapshot
-        .removed_files()
-        .into_iter()
-        .map(map_closure)
-        .collect();
-    let mut removed_dirs: Vec<_> = snapshot
-        .removed_dirs()
-        .into_iter()
-        .map(map_closure)
-        .collect();
+    for file in snapshot.added_files() {
+        added_files.push(file.strip_prefix(base_path).unwrap())
+    }
+    for file in snapshot.added_dirs() {
+        added_dirs.push(file.strip_prefix(base_path).unwrap())
+    }
+    for file in snapshot.removed_dirs() {
+        removed_dirs.push(file.strip_prefix(base_path).unwrap())
+    }
+    for file in snapshot.removed_files() {
+        removed_files.push(file.strip_prefix(base_path).unwrap())
+    }
 
     added_files.sort_unstable();
     added_dirs.sort_unstable();
     removed_files.sort_unstable();
     removed_dirs.sort_unstable();
 
+    // Turns out that the debug display for Path isn't stable. Who knew!
     FsSnapshotVisual {
         added_files,
         added_dirs,

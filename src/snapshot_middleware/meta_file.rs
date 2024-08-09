@@ -81,7 +81,7 @@ impl AdjacentMetadata {
             .unwrap_or_default();
 
         let class = &snapshot.new_inst().class;
-        for (name, value) in snapshot.get_filtered_properties(snapshot.new).unwrap() {
+        for (name, value) in snapshot.get_path_filtered_properties(snapshot.new).unwrap() {
             match value {
                 Variant::Attributes(attrs) => {
                     for (attr_name, attr_value) in attrs.iter() {
@@ -161,7 +161,7 @@ impl AdjacentMetadata {
                 self.path.display()
             );
         }
-        snapshot.metadata.specified_id = self.id.take().map(RojoRef::from_string);
+        snapshot.metadata.specified_id = self.id.take().map(RojoRef::new);
         Ok(())
     }
 
@@ -262,7 +262,7 @@ impl DirectoryMetadata {
             .unwrap_or_default();
 
         let class = &snapshot.new_inst().class;
-        for (name, value) in snapshot.get_filtered_properties(snapshot.new).unwrap() {
+        for (name, value) in snapshot.get_path_filtered_properties(snapshot.new).unwrap() {
             match value {
                 Variant::Attributes(attrs) => {
                     for (name, value) in attrs.iter() {
@@ -365,7 +365,7 @@ impl DirectoryMetadata {
                 self.path.display()
             );
         }
-        snapshot.metadata.specified_id = self.id.take().map(RojoRef::from_string);
+        snapshot.metadata.specified_id = self.id.take().map(RojoRef::new);
         Ok(())
     }
 

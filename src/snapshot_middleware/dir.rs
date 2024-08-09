@@ -7,7 +7,7 @@ use anyhow::Context;
 use memofs::{DirEntry, IoResultExt, Vfs};
 
 use crate::{
-    snapshot::{InstanceContext, InstanceMetadata, InstanceSnapshot},
+    snapshot::{InstanceContext, InstanceMetadata, InstanceSnapshot, InstigatingSource},
     syncback::{FsSnapshot, SyncbackReturn, SyncbackSnapshot},
 };
 
@@ -173,6 +173,15 @@ pub fn syncback_dir_no_meta<'sync>(
                         old_child.name()
                     );
                     continue;
+                } else if matches!(
+                    old_child.metadata().instigating_source,
+                    Some(InstigatingSource::ProjectNode { .. })
+                ) {
+                    log::debug!(
+                        "Skipping instance {} because it originates in a project file",
+                        old_child.name()
+                    );
+                    continue;
                 }
                 // This child exists in both doms. Pass it on.
                 children.push(snapshot.with_joined_path(*new_child_ref, Some(old_child.id()))?);
@@ -193,7 +202,6 @@ pub fn syncback_dir_no_meta<'sync>(
     fs_snapshot.add_dir(&snapshot.path);
 
     Ok(SyncbackReturn {
-        inst_snapshot: InstanceSnapshot::from_instance(new_inst),
         fs_snapshot,
         children,
         removed_children,

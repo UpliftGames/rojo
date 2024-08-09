@@ -5,7 +5,6 @@ use std::{
 };
 
 use crate::{
-    glob::Glob,
     snapshot::{InstanceWithMeta, RojoTree},
     snapshot_middleware::Middleware,
     Project,
@@ -101,13 +100,15 @@ impl<'sync> SyncbackSnapshot<'sync> {
     }
 
     /// Returns a map of properties for an Instance from the 'new' tree
-    /// with filtering done to avoid noise. Returns `None` only if `new_ref`
-    /// instance is not in the new tree.
+    /// with filtering done to avoid noise. This method filters out properties
+    /// that are not meant to be present in Instances that are represented
+    /// specially by a path, like `LocalScript.Source` and `StringValue.Value`.
     ///
-    /// This method is not necessary or desired for blobs like RBXM or RBXMX.
+    /// This method is not necessary or desired for blobs like Rbxm or non-path
+    /// middlewares like JsonModel.
     #[inline]
     #[must_use]
-    pub fn get_filtered_properties(
+    pub fn get_path_filtered_properties(
         &self,
         new_ref: Ref,
     ) -> Option<HashMap<&'sync str, &'sync Variant>> {
@@ -127,23 +128,7 @@ impl<'sync> SyncbackSnapshot<'sync> {
     /// where you would look for the object in Roblox Studio.
     #[inline]
     pub fn get_new_inst_path(&self, referent: Ref) -> String {
-        let mut path = Vec::new();
-        let mut path_capacity = 0;
-
-        let mut inst = self.get_new_instance(referent);
-        while let Some(instance) = inst {
-            path.push(&instance.name);
-            path_capacity += instance.name.len() + 1;
-            inst = self.get_new_instance(instance.parent());
-        }
-        let mut str = String::with_capacity(path_capacity);
-        while let Some(segment) = path.pop() {
-            str.push_str(segment);
-            str.push('/')
-        }
-        str.pop();
-
-        str
+        inst_path(self.new_tree(), referent)
     }
 
     /// Returns an Instance from the old tree with the provided referent, if it
@@ -213,18 +198,6 @@ impl<'sync> SyncbackSnapshot<'sync> {
             .as_ref()
             .map(|rules| rules.ignore_trees.as_slice())
     }
-
-    /// Returns the user-defined setting to determine whether unscriptable
-    /// properties should be synced back or not.
-    #[inline]
-    pub fn sync_unscriptable(&self) -> bool {
-        self.data
-            .project
-            .syncback_rules
-            .as_ref()
-            .and_then(|sr| sr.sync_unscriptable)
-            .unwrap_or_default()
-    }
 }
 
 pub fn filter_out_property(inst: &Instance, prop_name: &str) -> bool {
@@ -233,5 +206,42 @@ pub fn filter_out_property(inst: &Instance, prop_name: &str) -> bool {
         "LocalizationTable" => prop_name == "Contents",
         "StringValue" => prop_name == "Value",
         _ => false,
+    }
+}
+
+pub fn inst_path(dom: &WeakDom, referent: Ref) -> String {
+    let mut path = Vec::new();
+
+    let mut inst = dom.get_by_ref(referent);
+    while let Some(instance) = inst {
+        path.push(instance.name.as_str());
+        inst = dom.get_by_ref(instance.parent());
+    }
+    // This is to avoid the root's name from appearing in the path. Not
+    // optimal, but should be fine.
+    path.pop();
+
+    path.reverse();
+    path.join("/")
+}
+
+#[cfg(test)]
+mod test {
+    use rbx_dom_weak::{InstanceBuilder, WeakDom};
+
+    use super::inst_path as inst_path_outer;
+
+    #[test]
+    fn inst_path() {
+        let mut new_tree = WeakDom::new(InstanceBuilder::new("ROOT"));
+
+        let child_1 = new_tree.insert(new_tree.root_ref(), InstanceBuilder::new("Child1"));
+        let child_2 = new_tree.insert(child_1, InstanceBuilder::new("Child2"));
+        let child_3 = new_tree.insert(child_2, InstanceBuilder::new("Child3"));
+
+        assert_eq!(inst_path_outer(&new_tree, new_tree.root_ref()), "");
+        assert_eq!(inst_path_outer(&new_tree, child_1), "Child1");
+        assert_eq!(inst_path_outer(&new_tree, child_2), "Child1/Child2");
+        assert_eq!(inst_path_outer(&new_tree, child_3), "Child1/Child2/Child3");
     }
 }

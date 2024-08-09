@@ -12,7 +12,7 @@
     {
         "syncbackRules": {
             "ignoreTrees": [
-                "DataModel/ServerStorage/ImportantSecrets",
+                "ServerStorage/ImportantSecrets",
             ],
             "ignorePaths": [
                 "src/ServerStorage/Secrets/*"
@@ -32,7 +32,11 @@
     - `ignorePaths` is a list of paths in the **file system** that should be ignored
     - `ignoreProperties` is a list of properties that won't be synced back
     - `syncCurrentCamera` is a toggle for whether to sync back the Workspace's CurrentCamera. Defaults to `false`.
-    - `syncUnscriptable` is a toggle for whether to sync back properties that cannot be set by the Roblox Studio plugin. Defaults to `false`.
+    - `syncUnscriptable` is a toggle for whether to sync back properties that cannot be set by the Roblox Studio plugin. Defaults to `true`.
+
+ 	If you are used to the `UpliftGames` version of this feature, there are a few notable differences:
+    - `syncUnscriptable` defaults to `true` instead of `false`
+    - `ignoreTrees` doesn't require the root of the project's name in it.
 
 * Projects may now manually link `Ref` properties together using `Attributes`. ([#843])
  	This has two parts: using `id` or `$id` in JSON files or a `Rojo_Target` attribute, an Instance
@@ -53,9 +57,15 @@
     This is a very rough implementation and the usage will become more ergonomic
     over time.
 
+* Updated Undo/Redo history to be more robust ([#915])
+* Fixed removing trailing newlines ([#903])
+* Added Never option to Confirmation ([#893])
 * Added popout diff visualizer for table properties like Attributes and Tags ([#834])
 * Updated Theme to use Studio colors ([#838])
+* Improved patch visualizer UX ([#883])
 * Added experimental setting for Auto Connect in playtests ([#840])
+* Improved settings UI ([#886])
+* `Open Scripts Externally` option can now be changed while syncing ([#911])
 * Projects may now specify rules for syncing files as if they had a different file extension. ([#813])
  	This is specified via a new field on project files, `syncRules`:
 
@@ -107,7 +117,13 @@
 [#834]: https://github.com/rojo-rbx/rojo/pull/834
 [#838]: https://github.com/rojo-rbx/rojo/pull/838
 [#840]: https://github.com/rojo-rbx/rojo/pull/840
+[#843]: https://github.com/rojo-rbx/rojo/pull/843
+[#883]: https://github.com/rojo-rbx/rojo/pull/883
+[#886]: https://github.com/rojo-rbx/rojo/pull/886
 [#893]: https://github.com/rojo-rbx/rojo/pull/893
+[#903]: https://github.com/rojo-rbx/rojo/pull/903
+[#911]: https://github.com/rojo-rbx/rojo/pull/911
+[#915]: https://github.com/rojo-rbx/rojo/pull/915
 
 ## [7.4.1] - February 20, 2024
 * Made the `name` field optional on project files ([#870])

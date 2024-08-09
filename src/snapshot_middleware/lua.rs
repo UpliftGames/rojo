@@ -1,6 +1,6 @@
 use std::{collections::HashMap, path::Path, str};
 
-use anyhow::Context;
+use anyhow::Context as _;
 use memofs::{IoResultExt, Vfs};
 use rbx_dom_weak::types::{Enum, Variant};
 
@@ -151,7 +151,6 @@ pub fn syncback_lua<'sync>(
     }
 
     Ok(SyncbackReturn {
-        inst_snapshot: InstanceSnapshot::from_instance(new_inst),
         fs_snapshot,
         // Scripts don't have a child!
         children: Vec::new(),
@@ -165,9 +164,9 @@ pub fn syncback_lua_init<'sync>(
 ) -> anyhow::Result<SyncbackReturn<'sync>> {
     let new_inst = snapshot.new_inst();
     let path = snapshot.path.join(match script_type {
-        ScriptType::Server => "init.server.lua",
-        ScriptType::Client => "init.client.lua",
-        ScriptType::Module => "init.lua",
+        ScriptType::Server => "init.server.luau",
+        ScriptType::Client => "init.client.luau",
+        ScriptType::Module => "init.luau",
     });
 
     let contents = if let Some(Variant::String(source)) = new_inst.properties.get("Source") {
@@ -192,10 +191,7 @@ pub fn syncback_lua_init<'sync>(
         }
     }
 
-    Ok(SyncbackReturn {
-        inst_snapshot: InstanceSnapshot::from_instance(new_inst),
-        ..dir_syncback
-    })
+    Ok(dir_syncback)
 }
 
 #[cfg(test)]
