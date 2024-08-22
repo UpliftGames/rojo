@@ -1,6 +1,6 @@
 This is a fork of Rojo with changes specific to the workflow at Uplift Games.
 
-## If you are looking for syncback, check out [releases](https://github.com/UpliftGames/rojo/releases). If you're looking for its source, look at [`syncback-tests`](https://github.com/UpliftGames/rojo/tree/syncback-tests). If you're looking for the legacy fork we had that is being replaced, check out below:
+## If you are looking for syncback, check out [releases](https://github.com/UpliftGames/rojo/releases). If you're looking for its source, look at [`syncback-merge`](https://github.com/UpliftGames/rojo/tree/syncback-merge). If you're looking for the legacy fork we had that is being replaced, check out below:
 
 Changes from upstream Rojo:
 * TOML support
