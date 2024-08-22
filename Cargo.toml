@@ -1,6 +1,6 @@
 [package]
 name = "rojo"
-version = "7.4.0-uplift.syncback.rc.14"
+version = "7.4.0-uplift.syncback.rc.16"
 rust-version = "1.70.0"
 authors = ["Lucien Greathouse <me@lpghatguy.com>"]
 description = "Enables professional-grade development tools for Roblox developers"
@@ -51,17 +51,17 @@ memofs = { version = "0.2.0", path = "crates/memofs" }
 
 # These dependencies are being pulled directly from our GitHub fork so they can
 # be commented away for now.
-# rbx_binary = "0.7.4"
-# rbx_dom_weak = "2.7.0"
-# rbx_reflection = "4.5.0"
-# rbx_reflection_database = "0.2.10"
-# rbx_xml = "0.13.3"
+rbx_binary = "0.7.7"
+rbx_dom_weak = "2.9.0"
+rbx_reflection = "4.7.0"
+rbx_reflection_database = "0.2.12"
+rbx_xml = "0.13.5"
 
-rbx_binary = { git = "https://github.com/UpliftGames/rbx-dom.git", rev = "9607d73d8d1e5ff2b07b6af2826b7ddffc83fd5c" }
-rbx_dom_weak = { git = "https://github.com/UpliftGames/rbx-dom.git", rev = "9607d73d8d1e5ff2b07b6af2826b7ddffc83fd5c" }
-rbx_reflection = { git = "https://github.com/UpliftGames/rbx-dom.git", rev = "9607d73d8d1e5ff2b07b6af2826b7ddffc83fd5c" }
-rbx_reflection_database = { git = "https://github.com/UpliftGames/rbx-dom.git", rev = "9607d73d8d1e5ff2b07b6af2826b7ddffc83fd5c" }
-rbx_xml = { git = "https://github.com/UpliftGames/rbx-dom.git", rev = "9607d73d8d1e5ff2b07b6af2826b7ddffc83fd5c" }
+# rbx_binary = { git = "https://github.com/UpliftGames/rbx-dom.git", rev = "9607d73d8d1e5ff2b07b6af2826b7ddffc83fd5c" }
+# rbx_dom_weak = { git = "https://github.com/UpliftGames/rbx-dom.git", rev = "9607d73d8d1e5ff2b07b6af2826b7ddffc83fd5c" }
+# rbx_reflection = { git = "https://github.com/UpliftGames/rbx-dom.git", rev = "9607d73d8d1e5ff2b07b6af2826b7ddffc83fd5c" }
+# rbx_reflection_database = { git = "https://github.com/UpliftGames/rbx-dom.git", rev = "9607d73d8d1e5ff2b07b6af2826b7ddffc83fd5c" }
+# rbx_xml = { git = "https://github.com/UpliftGames/rbx-dom.git", rev = "9607d73d8d1e5ff2b07b6af2826b7ddffc83fd5c" }
 
 anyhow = "1.0.44"
 backtrace = "0.3.61"
