@@ -532,6 +532,10 @@ fn project_node_property_syncback<'inst>(
         match value {
             Variant::Attributes(attrs) => {
                 for (attr_name, attr_value) in attrs.iter() {
+                    if attr_name.starts_with("RBX_") {
+                        log::debug!("Skipping attribute {attr_name} because it starts with RBX_");
+                        continue;
+                    }
                     attributes.insert(
                         attr_name.clone(),
                         UnresolvedValue::from_variant_unambiguous(attr_value.clone()),
