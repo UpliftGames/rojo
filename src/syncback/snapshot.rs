@@ -230,7 +230,9 @@ impl<'sync> SyncbackSnapshot<'sync> {
 
 pub fn filter_out_property(inst: &Instance, prop_name: &str) -> bool {
     match inst.class.as_str() {
-        "Script" | "LocalScript" | "ModuleScript" => prop_name == "Source",
+        "Script" | "LocalScript" | "ModuleScript" => {
+            prop_name == "Source" || prop_name == "ScriptGuid"
+        }
         "LocalizationTable" => prop_name == "Contents",
         "StringValue" => prop_name == "Value",
         _ => false,
