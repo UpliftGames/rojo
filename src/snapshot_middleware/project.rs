@@ -537,6 +537,11 @@ fn project_node_property_syncback<'inst>(
         match value {
             Variant::Attributes(attrs) => {
                 for (attr_name, attr_value) in attrs.iter() {
+                    // We (probably) don't want to preserve internal attributes,
+                    // only user defined ones.
+                    if attr_name.starts_with("RBX") {
+                        continue;
+                    }
                     attributes.insert(
                         attr_name.clone(),
                         UnresolvedValue::from_variant_unambiguous(attr_value.clone()),
@@ -546,7 +551,7 @@ fn project_node_property_syncback<'inst>(
             Variant::SharedString(_) => {
                 log::warn!(
                     "Rojo cannot serialize the property {}.{name} in project files.\n\
-                    If this is not acceptable, resave the Instance at '{}' manually as an RBXM or RBXMX.", new_inst.class, snapshot.get_new_inst_path(snapshot.new)
+                    If this is not acceptable, resave the Instance at '{}' manually as an RBXM or RBXMX.", new_inst.class, snapshot.get_new_inst_path(new_inst.referent())
                 );
             }
             _ => {
