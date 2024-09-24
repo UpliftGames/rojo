@@ -89,6 +89,7 @@ pub fn syncback_loop(
             }
         }
     }
+    reserialize_humanoid_descriptions(&mut new_tree);
 
     // Handle removing the current camera.
     if let Some(syncback_rules) = &project.syncback_rules {
@@ -510,4 +511,40 @@ fn strip_unknown_root_children(new: &mut WeakDom, old: &RojoTree) {
         log::trace!("Pruning root child {} of class {}", child.name, child.class);
         new.destroy(child_ref);
     }
+}
+
+/// HACK: There are non-deterministic properties on `HumanoidDescription`
+/// and they cause spurious diffs. We can fix that by reserializing them
+/// manually.
+fn reserialize_humanoid_descriptions(dom: &mut WeakDom) {
+    log::debug!("Fixing serialization of HumanoidDescriptions");
+    for referent in descendants(dom, dom.root_ref()) {
+        let inst = dom
+            .get_by_ref_mut(referent)
+            .expect("all descendants should be in the DOM");
+        if inst.class != "HumanoidDescription" {
+            continue;
+        }
+        if let Some(Variant::String(content)) = inst.properties.remove("EquippedEmotesDataInternal")
+        {
+            inst.properties.insert(
+                "EquippedEmotesDataInternal".into(),
+                split_and_reorder(content).into(),
+            );
+        }
+        if let Some(Variant::String(content)) = inst.properties.remove("EmotesDataInternal") {
+            inst.properties.insert(
+                "EmotesDataInternal".into(),
+                split_and_reorder(content).into(),
+            );
+        }
+    }
+}
+
+fn split_and_reorder(content: String) -> String {
+    let mut subsections: Vec<_> = content.split("\\").collect();
+    subsections.pop();
+    subsections.sort();
+    subsections.push("");
+    subsections.join("\\")
 }
