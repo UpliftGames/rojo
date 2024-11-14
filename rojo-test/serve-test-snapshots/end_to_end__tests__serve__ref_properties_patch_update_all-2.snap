@@ -1,5 +1,6 @@
 ---
 source: tests/tests/serve.rs
+assertion_line: 513
 expression: "read_response.intern_and_redact(&mut redactions, root_id)"
 ---
 instances:
@@ -116,5 +117,5 @@ instances:
     Name: ProjectTarget
     Parent: id-3
     Properties: {}
-messageCursor: 0
+messageCursor: 1
 sessionId: id-1
