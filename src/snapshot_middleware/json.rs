@@ -1,8 +1,8 @@
 use std::path::Path;
 
 use anyhow::Context;
-use maplit::hashmap;
 use memofs::{IoResultExt, Vfs};
+use rbx_dom_weak::{ustr, UstrMap};
 
 use crate::{
     lua_ast::{Expression, Statement},
@@ -24,9 +24,7 @@ pub fn snapshot_json(
 
     let as_lua = json_to_lua(value).to_string();
 
-    let properties = hashmap! {
-        "Source".to_owned() => as_lua.into(),
-    };
+    let properties = UstrMap::from_iter([(ustr("Source"), as_lua.into())]);
 
     let meta_path = path.with_file_name(format!("{}.meta.json", name));
 

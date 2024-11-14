@@ -1,12 +1,14 @@
 use std::{
-    borrow::Cow,
     collections::BTreeMap,
     path::{Path, PathBuf},
 };
 
 use anyhow::{format_err, Context};
 use memofs::{IoResultExt as _, Vfs};
-use rbx_dom_weak::types::{Attributes, Variant};
+use rbx_dom_weak::{
+    types::{Attributes, Variant},
+    ustr, Ustr,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -27,7 +29,7 @@ pub struct AdjacentMetadata {
     pub ignore_unknown_instances: Option<bool>,
 
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub properties: BTreeMap<String, UnresolvedValue>,
+    pub properties: BTreeMap<Ustr, UnresolvedValue>,
 
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub attributes: BTreeMap<String, UnresolvedValue>,
@@ -103,7 +105,7 @@ impl AdjacentMetadata {
                 }
                 _ => {
                     properties.insert(
-                        name.to_owned(),
+                        ustr(name),
                         UnresolvedValue::from_variant(value.clone(), class, name),
                     );
                 }
@@ -207,13 +209,13 @@ pub struct DirectoryMetadata {
     pub ignore_unknown_instances: Option<bool>,
 
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub properties: BTreeMap<String, UnresolvedValue>,
+    pub properties: BTreeMap<Ustr, UnresolvedValue>,
 
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub attributes: BTreeMap<String, UnresolvedValue>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub class_name: Option<String>,
+    pub class_name: Option<Ustr>,
 
     #[serde(skip)]
     pub path: PathBuf,
@@ -266,7 +268,7 @@ impl DirectoryMetadata {
             .map(|inst| inst.metadata().ignore_unknown_instances)
             .unwrap_or_default();
 
-        let class = &snapshot.new_inst().class;
+        let class = snapshot.new_inst().class;
         for (name, value) in snapshot.get_path_filtered_properties(snapshot.new).unwrap() {
             match value {
                 Variant::Attributes(attrs) => {
@@ -289,8 +291,8 @@ impl DirectoryMetadata {
                 }
                 _ => {
                     properties.insert(
-                        name.to_owned(),
-                        UnresolvedValue::from_variant(value.clone(), class, name),
+                        ustr(name),
+                        UnresolvedValue::from_variant(value.clone(), class.as_str(), name),
                     );
                 }
             }
@@ -329,7 +331,7 @@ impl DirectoryMetadata {
                 ));
             }
 
-            snapshot.class_name = Cow::Owned(class_name);
+            snapshot.class_name = class_name;
         }
 
         Ok(())

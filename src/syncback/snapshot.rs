@@ -11,7 +11,7 @@ use crate::{
 };
 use rbx_dom_weak::{
     types::{Ref, Variant},
-    Instance, WeakDom,
+    Instance, Ustr, UstrMap, WeakDom,
 };
 
 use super::{get_best_middleware, name_for_inst, property_filter::filter_properties};
@@ -194,7 +194,7 @@ impl<'sync> SyncbackSnapshot<'sync> {
 
     /// Returns user-specified property ignore rules.
     #[inline]
-    pub fn ignore_props(&self) -> Option<&HashMap<String, Vec<String>>> {
+    pub fn ignore_props(&self) -> Option<&UstrMap<Vec<Ustr>>> {
         self.data
             .project
             .syncback_rules

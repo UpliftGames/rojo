@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use rbx_dom_weak::{types::Variant, Instance};
+use rbx_dom_weak::{types::Variant, ustr, Instance, Ustr};
 use rbx_reflection::{PropertyKind, PropertySerialization, Scriptability};
 
 use crate::{variant_eq::variant_eq, Project};
@@ -34,12 +34,12 @@ pub fn filter_properties_preallocated<'inst>(
         .classes
         .get(inst.class.as_str());
 
-    let predicate = |prop_name: &String, prop_value: &Variant| {
+    let predicate = |prop_name: Ustr, prop_value: &Variant| {
         // We don't want to serialize Ref or UniqueId properties in JSON files
         if matches!(prop_value, Variant::Ref(_) | Variant::UniqueId(_)) {
             return true;
         }
-        if !should_property_serialize(&inst.class, prop_name) {
+        if !should_property_serialize(inst.class, prop_name) {
             return true;
         }
         if !sync_unscriptable {
@@ -57,7 +57,7 @@ pub fn filter_properties_preallocated<'inst>(
     if let Some(class_data) = class_data {
         let defaults = &class_data.default_properties;
         for (name, value) in &inst.properties {
-            if predicate(name, value) {
+            if predicate(*name, value) {
                 continue;
             }
             if let Some(default) = defaults.get(name.as_str()) {
@@ -70,7 +70,7 @@ pub fn filter_properties_preallocated<'inst>(
         }
     } else {
         for (name, value) in &inst.properties {
-            if predicate(name, value) {
+            if predicate(*name, value) {
                 continue;
             }
             allocation.push((name, value));
@@ -78,22 +78,22 @@ pub fn filter_properties_preallocated<'inst>(
     }
 }
 
-fn should_property_serialize(class_name: &str, prop_name: &str) -> bool {
+fn should_property_serialize(class_name: Ustr, prop_name: Ustr) -> bool {
     let database = rbx_reflection_database::get();
     let mut current_class_name = class_name;
 
     loop {
-        let class_data = match database.classes.get(current_class_name) {
+        let class_data = match database.classes.get(current_class_name.as_str()) {
             Some(data) => data,
             None => return true,
         };
-        if let Some(data) = class_data.properties.get(prop_name) {
+        if let Some(data) = class_data.properties.get(prop_name.as_str()) {
             log::trace!("found {class_name}.{prop_name} on {current_class_name}");
             return match &data.kind {
                 // It's not really clear if this can ever happen but I want to
                 // support it just in case!
                 PropertyKind::Alias { alias_for } => {
-                    should_property_serialize(current_class_name, alias_for)
+                    should_property_serialize(current_class_name, ustr(alias_for))
                 }
                 // Migrations and aliases are happily handled for us by parsers
                 // so we don't really need to handle them.
@@ -103,7 +103,7 @@ fn should_property_serialize(class_name: &str, prop_name: &str) -> bool {
                 kind => unimplemented!("unknown property kind {kind:?}"),
             };
         } else if let Some(super_class) = class_data.superclass.as_ref() {
-            current_class_name = super_class;
+            current_class_name = ustr(super_class);
         } else {
             break;
         }

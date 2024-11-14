@@ -51,11 +51,11 @@ memofs = { version = "0.3.0", path = "crates/memofs" }
 # rbx_reflection_database = { path = "../rbx-dom/rbx_reflection_database" }
 # rbx_xml = { path = "../rbx-dom/rbx_xml" }
 
-rbx_binary = { git = "https://github.com/UpliftGames/rbx-dom.git", rev = "4530e2bf06ede5d00bd22345a3fcbdcd0c7e8308" }
-rbx_dom_weak = { git = "https://github.com/UpliftGames/rbx-dom.git", rev = "4530e2bf06ede5d00bd22345a3fcbdcd0c7e8308" }
-rbx_reflection = { git = "https://github.com/UpliftGames/rbx-dom.git", rev = "4530e2bf06ede5d00bd22345a3fcbdcd0c7e8308" }
-rbx_reflection_database = { git = "https://github.com/UpliftGames/rbx-dom.git", rev = "4530e2bf06ede5d00bd22345a3fcbdcd0c7e8308" }
-rbx_xml = { git = "https://github.com/UpliftGames/rbx-dom.git", rev = "4530e2bf06ede5d00bd22345a3fcbdcd0c7e8308" }
+rbx_binary = { git = "https://github.com/UpliftGames/rbx-dom.git", rev = "a0371d55068147f188548e7423331ae2cc712516" }
+rbx_dom_weak = { git = "https://github.com/UpliftGames/rbx-dom.git", rev = "a0371d55068147f188548e7423331ae2cc712516" }
+rbx_reflection = { git = "https://github.com/UpliftGames/rbx-dom.git", rev = "a0371d55068147f188548e7423331ae2cc712516" }
+rbx_reflection_database = { git = "https://github.com/UpliftGames/rbx-dom.git", rev = "a0371d55068147f188548e7423331ae2cc712516" }
+rbx_xml = { git = "https://github.com/UpliftGames/rbx-dom.git", rev = "a0371d55068147f188548e7423331ae2cc712516" }
 
 # rbx_binary = "0.7.7"
 # rbx_dom_weak = "2.9.0"

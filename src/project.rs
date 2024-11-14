@@ -7,6 +7,7 @@ use std::{
 };
 
 use memofs::Vfs;
+use rbx_dom_weak::Ustr;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -301,7 +302,7 @@ pub struct ProjectNode {
     /// `$className` CANNOT be set if `$path` is set and the instance described
     /// by that path has a ClassName other than Folder.
     #[serde(rename = "$className", skip_serializing_if = "Option::is_none")]
-    pub class_name: Option<String>,
+    pub class_name: Option<Ustr>,
 
     /// If set, defines an ID for the described Instance that can be used
     /// to refer to it for the purpose of referent properties.
@@ -320,7 +321,7 @@ pub struct ProjectNode {
         default,
         skip_serializing_if = "BTreeMap::is_empty"
     )]
-    pub properties: BTreeMap<String, UnresolvedValue>,
+    pub properties: BTreeMap<Ustr, UnresolvedValue>,
 
     #[serde(
         rename = "$attributes",

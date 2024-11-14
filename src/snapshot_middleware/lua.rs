@@ -1,8 +1,11 @@
-use std::{collections::HashMap, path::Path, str};
+use std::{path::Path, str};
 
 use anyhow::Context as _;
 use memofs::{IoResultExt, Vfs};
-use rbx_dom_weak::types::{Enum, Variant};
+use rbx_dom_weak::{
+    types::{Enum, Variant},
+    ustr, HashMapExt as _, UstrMap,
+};
 
 use crate::{
     snapshot::{InstanceContext, InstanceMetadata, InstanceSnapshot},
@@ -47,12 +50,12 @@ pub fn snapshot_lua(
     let contents = vfs.read_to_string_lf_normalized(path)?;
     let contents_str = contents.as_str();
 
-    let mut properties = HashMap::with_capacity(2);
-    properties.insert("Source".to_owned(), contents_str.into());
+    let mut properties = UstrMap::with_capacity(2);
+    properties.insert(ustr("Source"), contents_str.into());
 
     if let Some(run_context) = run_context {
         properties.insert(
-            "RunContext".to_owned(),
+            ustr("RunContext"),
             Enum::from_u32(run_context.to_owned()).into(),
         );
     }
@@ -127,7 +130,7 @@ pub fn syncback_lua<'sync>(
 ) -> anyhow::Result<SyncbackReturn<'sync>> {
     let new_inst = snapshot.new_inst();
 
-    let contents = if let Some(Variant::String(source)) = new_inst.properties.get("Source") {
+    let contents = if let Some(Variant::String(source)) = new_inst.properties.get(&ustr("Source")) {
         source.as_bytes().to_vec()
     } else {
         anyhow::bail!("Scripts must have a `Source` property that is a String")
@@ -137,7 +140,7 @@ pub fn syncback_lua<'sync>(
 
     let meta = AdjacentMetadata::from_syncback_snapshot(snapshot, snapshot.path.clone())?;
     if let Some(mut meta) = meta {
-        meta.properties.remove("Source");
+        meta.properties.remove(&ustr("Source"));
 
         if !meta.is_empty() {
             let parent_location = snapshot.path.parent_err()?;
@@ -167,7 +170,7 @@ pub fn syncback_lua_init<'sync>(
         ScriptType::Module => "init.luau",
     });
 
-    let contents = if let Some(Variant::String(source)) = new_inst.properties.get("Source") {
+    let contents = if let Some(Variant::String(source)) = new_inst.properties.get(&ustr("Source")) {
         source.as_bytes().to_vec()
     } else {
         anyhow::bail!("Scripts must have a `Source` property that is a String")
@@ -178,7 +181,7 @@ pub fn syncback_lua_init<'sync>(
 
     let meta = DirectoryMetadata::from_syncback_snapshot(snapshot, path.clone())?;
     if let Some(mut meta) = meta {
-        meta.properties.remove("Source");
+        meta.properties.remove(&ustr("Source"));
 
         if !meta.is_empty() {
             dir_syncback.fs_snapshot.add_file(
