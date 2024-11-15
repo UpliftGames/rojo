@@ -1,6 +1,6 @@
 use std::{
     borrow::Cow,
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, VecDeque},
     path::Path,
     str,
 };
@@ -16,6 +16,8 @@ use crate::{
     syncback::{filter_properties_preallocated, FsSnapshot, SyncbackReturn, SyncbackSnapshot},
     RojoRef,
 };
+
+use super::{node_should_reserialize, populate_unresolved_properties};
 
 pub fn snapshot_json_model(
     context: &InstanceContext,
@@ -67,17 +69,62 @@ pub fn snapshot_json_model(
 pub fn syncback_json_model<'sync>(
     snapshot: &SyncbackSnapshot<'sync>,
 ) -> anyhow::Result<SyncbackReturn<'sync>> {
+    fn serialize<'sync>(path: &Path, model: &JsonModel) -> anyhow::Result<SyncbackReturn<'sync>> {
+        Ok(SyncbackReturn {
+            fs_snapshot: FsSnapshot::new().with_added_file(
+                path,
+                serde_json::to_vec_pretty(model).context("failed to serialize new JSON Model")?,
+            ),
+            children: Vec::new(),
+            removed_children: Vec::new(),
+        })
+    }
     let mut property_buffer = Vec::with_capacity(snapshot.new_inst().properties.len());
 
-    let mut model = json_model_from_pair(snapshot, &mut property_buffer, snapshot.new);
+    let mut root_model = json_model_from_pair(snapshot, &mut property_buffer, snapshot.new);
     // We don't need the name on the root, but we do for children.
-    model.name = None;
+    root_model.name = None;
+
+    let mut node_queue = VecDeque::new();
+    node_queue.push_back((&root_model, snapshot.old_inst(), Some(snapshot.new_inst())));
+
+    while let Some((model, old_inst, new_inst)) = node_queue.pop_front() {
+        let Some(old_inst) = old_inst else {
+            return serialize(&snapshot.path, &root_model);
+        };
+
+        let Some(new_inst) = new_inst else {
+            return serialize(&snapshot.path, &root_model);
+        };
+
+        if old_inst.class_name() != new_inst.class {
+            return serialize(&snapshot.path, &root_model);
+        }
+
+        if old_inst.name() != new_inst.name {
+            return serialize(&snapshot.path, &root_model);
+        }
+
+        if node_should_reserialize(&model.properties, &model.attributes, old_inst)? {
+            return serialize(&snapshot.path, &root_model);
+        }
+
+        for ((child_model, old_child_ref), new_child_ref) in model
+            .children
+            .iter()
+            .zip(old_inst.children().iter())
+            .zip(new_inst.children().iter())
+        {
+            node_queue.push_back((
+                child_model,
+                snapshot.get_old_instance(*old_child_ref),
+                snapshot.get_new_instance(*new_child_ref),
+            ))
+        }
+    }
 
     Ok(SyncbackReturn {
-        fs_snapshot: FsSnapshot::new().with_added_file(
-            &snapshot.path,
-            serde_json::to_vec_pretty(&model).context("failed to serialize new JSON Model")?,
-        ),
+        fs_snapshot: FsSnapshot::new(),
         children: Vec::new(),
         removed_children: Vec::new(),
     })
@@ -94,36 +141,12 @@ fn json_model_from_pair<'sync>(
 
     filter_properties_preallocated(snapshot.project(), new_inst, prop_buffer);
 
-    let mut properties = BTreeMap::new();
-    let mut attributes = BTreeMap::new();
-    for (name, value) in prop_buffer.drain(..) {
-        match value {
-            Variant::Attributes(attrs) => {
-                for (attr_name, attr_value) in attrs.iter() {
-                    // We (probably) don't want to preserve internal attributes,
-                    // only user defined ones.
-                    if attr_name.starts_with("RBX") {
-                        continue;
-                    }
-                    attributes.insert(
-                        attr_name.clone(),
-                        UnresolvedValue::from_variant_unambiguous(attr_value.clone()),
-                    );
-                }
-            }
-            Variant::SharedString(_) => {
-                log::warn!(
-                "Rojo cannot serialize the property {}.{name} in model.json files.\n\
-                If this is not acceptable, resave the Instance at '{}' manually as an RBXM or RBXMX.", new_inst.class, snapshot.get_new_inst_path(new))
-            }
-            _ => {
-                properties.insert(
-                    name.to_owned(),
-                    UnresolvedValue::from_variant(value.clone(), &new_inst.class, name),
-                );
-            }
-        }
-    }
+    let (properties, attributes) = {
+        let prop_buffer: &_ = prop_buffer;
+        populate_unresolved_properties(snapshot, new_inst, prop_buffer.iter().copied())
+    };
+
+    prop_buffer.clear();
 
     let mut children = Vec::with_capacity(new_inst.children().len());
 

@@ -1,0 +1,10 @@
+{
+  "className": "Part",
+  "properties": {
+    "Size": [
+      1.0,
+      2.0,
+      3.0
+    ]
+  }
+}

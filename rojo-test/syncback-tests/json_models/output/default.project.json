@@ -1,0 +1,17 @@
+{
+  "name": "json_model",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "ChangedClassName": {
+        "$path": "ChangedClassName"
+      },
+      "ChangedProperties": {
+        "$path": "ChangedProperties.model.json"
+      },
+      "NoChangeShouldntReserialize": {
+        "$path": "NoChangeShouldntReserialize.model.json"
+      }
+    }
+  }
+}

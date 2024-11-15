@@ -32,4 +32,6 @@ syncback_basic_test! {
     ignore_trees,
     ignore_paths_removing,
     ignore_trees_removing,
+    remove_default_props,
+    json_models,
 }

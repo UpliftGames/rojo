@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use rbx_dom_weak::{types::Variant, Instance};
 use rbx_reflection::{PropertyKind, PropertySerialization, Scriptability};
 
-use crate::{variant_eq::variant_eq, Project};
+use crate::Project;
 
 /// Returns a map of properties from `inst` that are both allowed under the
 /// user-provided settings, are not their default value, and serialize.
@@ -54,27 +54,11 @@ pub fn filter_properties_preallocated<'inst>(
         false
     };
 
-    if let Some(class_data) = class_data {
-        let defaults = &class_data.default_properties;
-        for (name, value) in &inst.properties {
-            if predicate(name, value) {
-                continue;
-            }
-            if let Some(default) = defaults.get(name.as_str()) {
-                if !variant_eq(value, default) {
-                    allocation.push((name, value));
-                }
-            } else {
-                allocation.push((name, value));
-            }
+    for (name, value) in &inst.properties {
+        if predicate(name, value) {
+            continue;
         }
-    } else {
-        for (name, value) in &inst.properties {
-            if predicate(name, value) {
-                continue;
-            }
-            allocation.push((name, value));
-        }
+        allocation.push((name, value));
     }
 }
 

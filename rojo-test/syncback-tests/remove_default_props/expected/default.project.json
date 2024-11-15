@@ -1,0 +1,23 @@
+{
+  "name": "remove_default_props",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "AdjacentMetadataScript": {
+        "$path": "AdjacentMetadataScript"
+      },
+      "DirectoryMetadataPart": {
+        "$path": "DirectoryMetadataPart"
+      },
+      "JsonModelPart": {
+        "$path": "Part.model.json"
+      },
+      "ProjectFilePart": {
+        "$className": "Part",
+        "$properties": {
+          "Transparency": 1.0
+        }
+      }
+    }
+  }
+}

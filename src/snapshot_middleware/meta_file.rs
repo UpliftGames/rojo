@@ -6,12 +6,14 @@ use std::{
 
 use anyhow::{format_err, Context};
 use memofs::{IoResultExt as _, Vfs};
-use rbx_dom_weak::types::{Attributes, Variant};
+use rbx_dom_weak::types::Attributes;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     resolution::UnresolvedValue, snapshot::InstanceSnapshot, syncback::SyncbackSnapshot, RojoRef,
 };
+
+use super::{node_should_reserialize, populate_unresolved_properties};
 
 /// Represents metadata in a sibling file with the same basename.
 ///
@@ -55,8 +57,6 @@ impl AdjacentMetadata {
         snapshot: &SyncbackSnapshot,
         path: PathBuf,
     ) -> anyhow::Result<Option<Self>> {
-        let mut properties = BTreeMap::new();
-        let mut attributes = BTreeMap::new();
         // TODO make this more granular.
         // I am breaking the cycle of bad TODOs. This is in reference to the fact
         // that right now, this will just not write any metadata at all for
@@ -80,34 +80,16 @@ impl AdjacentMetadata {
             .map(|inst| inst.metadata().ignore_unknown_instances)
             .unwrap_or_default();
 
-        let class = &snapshot.new_inst().class;
-        for (name, value) in snapshot.get_path_filtered_properties(snapshot.new).unwrap() {
-            match value {
-                Variant::Attributes(attrs) => {
-                    for (attr_name, attr_value) in attrs.iter() {
-                        // We (probably) don't want to preserve internal
-                        // attributes, only user defined ones.
-                        if attr_name.starts_with("RBX") {
-                            continue;
-                        }
-                        attributes.insert(
-                            attr_name.clone(),
-                            UnresolvedValue::from_variant_unambiguous(attr_value.clone()),
-                        );
-                    }
-                }
-                Variant::SharedString(_) => {
-                    log::warn!(
-                    "Rojo cannot serialize the property {}.{name} in meta.json files.\n\
-                    If this is not acceptable, resave the Instance at '{}' manually as an RBXM or RBXMX.", class, snapshot.get_new_inst_path(snapshot.new))
-                }
-                _ => {
-                    properties.insert(
-                        name.to_owned(),
-                        UnresolvedValue::from_variant(value.clone(), class, name),
-                    );
-                }
-            }
+        let (properties, attributes) = populate_unresolved_properties(
+            snapshot,
+            snapshot.new_inst(),
+            snapshot.get_path_filtered_properties(snapshot.new).unwrap(),
+        );
+
+        if let Some(old_inst) = snapshot.old_inst() {
+            if !node_should_reserialize(&properties, &attributes, old_inst)? {
+                return Ok(None);
+            };
         }
 
         Ok(Some(Self {
@@ -241,8 +223,6 @@ impl DirectoryMetadata {
         snapshot: &SyncbackSnapshot,
         path: PathBuf,
     ) -> anyhow::Result<Option<Self>> {
-        let mut properties = BTreeMap::new();
-        let mut attributes = BTreeMap::new();
         // TODO make this more granular.
         // I am breaking the cycle of bad TODOs. This is in reference to the fact
         // that right now, this will just not write any metadata at all for
@@ -266,34 +246,16 @@ impl DirectoryMetadata {
             .map(|inst| inst.metadata().ignore_unknown_instances)
             .unwrap_or_default();
 
-        let class = &snapshot.new_inst().class;
-        for (name, value) in snapshot.get_path_filtered_properties(snapshot.new).unwrap() {
-            match value {
-                Variant::Attributes(attrs) => {
-                    for (name, value) in attrs.iter() {
-                        // We (probably) don't want to preserve internal
-                        // attributes, only user defined ones.
-                        if name.starts_with("RBX") {
-                            continue;
-                        }
-                        attributes.insert(
-                            name.to_owned(),
-                            UnresolvedValue::from_variant_unambiguous(value.clone()),
-                        );
-                    }
-                }
-                Variant::SharedString(_) => {
-                    log::warn!(
-                    "Rojo cannot serialize the property {}.{name} in meta.json files.\n\
-                    If this is not acceptable, resave the Instance at '{}' manually as an RBXM or RBXMX.", class, snapshot.get_new_inst_path(snapshot.new))
-                }
-                _ => {
-                    properties.insert(
-                        name.to_owned(),
-                        UnresolvedValue::from_variant(value.clone(), class, name),
-                    );
-                }
-            }
+        let (properties, attributes) = populate_unresolved_properties(
+            snapshot,
+            snapshot.new_inst(),
+            snapshot.get_path_filtered_properties(snapshot.new).unwrap(),
+        );
+
+        if let Some(old_inst) = snapshot.old_inst() {
+            if !node_should_reserialize(&properties, &attributes, old_inst)? {
+                return Ok(None);
+            };
         }
 
         Ok(Some(Self {

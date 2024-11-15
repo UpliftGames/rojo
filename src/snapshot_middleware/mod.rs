@@ -19,17 +19,22 @@ mod txt;
 mod util;
 
 use std::{
+    collections::BTreeMap,
     path::{Path, PathBuf},
     sync::OnceLock,
 };
 
 use anyhow::Context;
 use memofs::{IoResultExt, Vfs};
+use rbx_dom_weak::{types::Variant, Instance};
 use serde::{Deserialize, Serialize};
 
 use crate::{
     glob::Glob,
+    resolution::UnresolvedValue,
     syncback::{SyncbackReturn, SyncbackSnapshot},
+    variant_eq::variant_eq,
+    InstanceWithMeta,
 };
 use crate::{
     snapshot::{InstanceContext, InstanceSnapshot, SyncRule},
@@ -387,4 +392,172 @@ pub fn default_sync_rules() -> &'static [SyncRule] {
             sync_rule!("*.rbxm", Rbxm),
         ]
     })
+}
+
+/// Generates and returns two maps of unresolved properties and attributes,
+/// respectively, appropriate for producing JSON or other file representations
+/// that use unresolved variants. This function ignores any properties that are
+/// at their default values. It also ignores any reserved attributes (i.e. ones
+/// with names starting with `RBX`).
+fn populate_unresolved_properties<'prop, I>(
+    snapshot: &SyncbackSnapshot,
+    new_inst: &Instance,
+    properties: I,
+) -> (
+    BTreeMap<String, UnresolvedValue>,
+    BTreeMap<String, UnresolvedValue>,
+)
+where
+    I: IntoIterator<Item = (&'prop str, &'prop Variant)>,
+{
+    let db = rbx_reflection_database::get();
+    let class_descriptor = db.classes.get(new_inst.class.as_str());
+    let mut new_properties = BTreeMap::new();
+    let mut new_attributes = BTreeMap::new();
+
+    for (name, value) in properties {
+        match value {
+            Variant::Attributes(attrs) => {
+                for (attr_name, attr_value) in attrs.iter() {
+                    // We (probably) don't want to preserve internal attributes,
+                    // only user defined ones.
+                    if attr_name.starts_with("RBX") {
+                        continue;
+                    }
+                    new_attributes.insert(
+                        attr_name.clone(),
+                        UnresolvedValue::from_variant_unambiguous(attr_value.clone()),
+                    );
+                }
+            }
+            Variant::SharedString(_) => {
+                log::warn!(
+                "Rojo cannot serialize the property {}.{name} in JSON files.\n\
+                 If this is not acceptable, resave the Instance at '{}' manually as an RBXM or RBXMX.",
+                new_inst.class, snapshot.get_new_inst_path(new_inst.referent())
+            )
+            }
+            _ => {
+                let new_prop_is_default = if let Some(class_descriptor) = class_descriptor {
+                    if let Some(default) = db.find_default_property(class_descriptor, name) {
+                        variant_eq(value, default)
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                };
+
+                if !new_prop_is_default {
+                    new_properties.insert(
+                        name.to_owned(),
+                        UnresolvedValue::from_variant(value.clone(), &new_inst.class, name),
+                    );
+                }
+            }
+        }
+    }
+
+    (new_properties, new_attributes)
+}
+
+fn node_should_reserialize(
+    node_properties: &BTreeMap<String, UnresolvedValue>,
+    node_attributes: &BTreeMap<String, UnresolvedValue>,
+    instance: InstanceWithMeta,
+) -> anyhow::Result<bool> {
+    for (prop_name, unresolved_node_value) in node_properties {
+        if let Some(inst_value) = instance.properties().get(prop_name) {
+            let node_value = unresolved_node_value
+                .clone()
+                .resolve(instance.class_name(), prop_name)?;
+            if !variant_eq(inst_value, &node_value) {
+                return Ok(true);
+            }
+        } else {
+            return Ok(true);
+        }
+    }
+
+    // At this point, we know that the old instance contains at least all the
+    // properties specified by the new node, and that none of the properties
+    // specified by the new node differ from their old values.
+    //
+    // Because node properties at default values are represented by omission, we
+    // still need to determine whether any properties missing from the new node
+    // are at non-default values on the old instance. Otherwise, we will fail to
+    // reserialize the node when properties change from non-default values to
+    // default values.
+    let db = rbx_reflection_database::get();
+    let maybe_class_descriptor = db.classes.get(instance.class_name());
+    for (prop_name, inst_value) in instance.properties() {
+        // We skip attributes because they are compared later in this function.
+        if prop_name == "Attributes" {
+            continue;
+        }
+
+        // If the new node contains this property, then further checks are
+        // unnecessary, as we've already compared such properties in the
+        // previous loop.
+        if node_properties.contains_key(prop_name) {
+            continue;
+        }
+
+        // If a class descriptor cannot be found, then the reflection database
+        // might be out of date.
+        //
+        // We should always reserialize the node in this case, otherwise we may
+        // fail to reproduce properties of classes unknown to the reflection
+        // database.
+        let Some(class_descriptor) = maybe_class_descriptor else {
+            return Ok(true);
+        };
+
+        // If a default value for this property cannot be found, then the
+        // reflection database might be out of date, or this property simply
+        // does not have a default value.
+        //
+        // We should always reserialize the node in this case, otherwise we may
+        // fail to reproduce properties that do not have defaults in the
+        // reflection database.
+        let Some(default_value) = db.find_default_property(class_descriptor, prop_name) else {
+            return Ok(true);
+        };
+
+        // If the old value for this property is non-default, and the new node does
+        // not specify this property, it means that its value has changed to the
+        // default, and the new node must be reserialized.
+        if !variant_eq(inst_value, default_value) {
+            return Ok(true);
+        }
+    }
+
+    match instance.properties().get("Attributes") {
+        Some(Variant::Attributes(inst_attributes)) => {
+            // This will also catch if one is empty but the other isn't
+            if node_attributes.len() != inst_attributes.len() {
+                Ok(true)
+            } else {
+                for (attr_name, unresolved_node_value) in node_attributes {
+                    if let Some(inst_value) = inst_attributes.get(attr_name.as_str()) {
+                        let node_value = unresolved_node_value.clone().resolve_unambiguous()?;
+                        if !variant_eq(inst_value, &node_value) {
+                            return Ok(true);
+                        }
+                    } else {
+                        return Ok(true);
+                    }
+                }
+                Ok(false)
+            }
+        }
+        Some(_) => Ok(true),
+        None => {
+            if !node_attributes.is_empty() {
+                Ok(true)
+            } else {
+                Ok(false)
+            }
+        }
+    }
 }

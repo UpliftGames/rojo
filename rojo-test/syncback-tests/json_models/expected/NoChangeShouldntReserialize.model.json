@@ -1,0 +1,13 @@
+{
+  "className": "Part",
+  "properties": {
+    "BottomSurface": "Smooth",
+    "Size": [
+      4.0,
+      1.0,
+      2.0
+    ],
+    "TopSurface": "Smooth",
+    "Transparency": 1.0
+  }
+}

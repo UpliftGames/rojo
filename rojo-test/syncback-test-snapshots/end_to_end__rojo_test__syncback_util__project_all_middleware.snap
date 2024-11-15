@@ -17,6 +17,8 @@ added_files:
   - src/text.txt
 added_dirs:
   - src/csv_init
+  - src/dir
+  - src/dir_with_meta
   - src/init_client_script
   - src/init_module_script
   - src/init_server_script

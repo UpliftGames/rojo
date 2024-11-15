@@ -1,0 +1,8 @@
+{
+  "properties": {
+    "CanCollide": false,
+    "Massless": false,
+    "Anchored": true
+  },
+  "className": "Part"
+}

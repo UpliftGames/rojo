@@ -1,0 +1,16 @@
+---
+source: tests/rojo_test/syncback_util.rs
+expression: "visualize_fs_snapshot(&fs_snapshot, &output_path)"
+---
+added_files:
+  - AdjacentMetadataScript/AdjacentMetadataScript.meta.json
+  - AdjacentMetadataScript/AdjacentMetadataScript.server.lua
+  - DirectoryMetadataPart/Part/init.meta.json
+  - Part.model.json
+  - default.project.json
+added_dirs:
+  - AdjacentMetadataScript
+  - DirectoryMetadataPart
+  - DirectoryMetadataPart/Part
+removed_files: []
+removed_dirs: []

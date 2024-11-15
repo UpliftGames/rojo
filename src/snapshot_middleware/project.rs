@@ -1,6 +1,6 @@
 use std::{
     borrow::Cow,
-    collections::{BTreeMap, HashMap, VecDeque},
+    collections::{HashMap, VecDeque},
     path::Path,
 };
 
@@ -14,18 +14,16 @@ use rbx_reflection::ClassTag;
 
 use crate::{
     project::{PathNode, Project, ProjectNode},
-    resolution::UnresolvedValue,
     snapshot::{
-        InstanceContext, InstanceMetadata, InstanceSnapshot, InstanceWithMeta, InstigatingSource,
-        PathIgnoreRule, SyncRule,
+        InstanceContext, InstanceMetadata, InstanceSnapshot, InstigatingSource, PathIgnoreRule,
+        SyncRule,
     },
-    snapshot_middleware::Middleware,
+    snapshot_middleware::{node_should_reserialize, Middleware},
     syncback::{filter_properties, FsSnapshot, SyncbackReturn, SyncbackSnapshot},
-    variant_eq::variant_eq,
     RojoRef,
 };
 
-use super::{emit_legacy_scripts_default, snapshot_from_vfs};
+use super::{emit_legacy_scripts_default, populate_unresolved_properties, snapshot_from_vfs};
 
 pub fn snapshot_project(
     context: &InstanceContext,
@@ -512,7 +510,7 @@ pub fn syncback_project<'sync>(
     let mut fs_snapshot = FsSnapshot::new();
 
     for (node_properties, node_attributes, old_inst) in node_changed_map {
-        if project_node_should_reserialize(node_properties, node_attributes, old_inst)? {
+        if node_should_reserialize(node_properties, node_attributes, old_inst)? {
             fs_snapshot.add_file(project_path, serde_json::to_vec_pretty(&project)?);
             break;
         }
@@ -531,37 +529,10 @@ fn project_node_property_syncback<'inst>(
     new_inst: &Instance,
     node: &mut ProjectNode,
 ) {
-    let properties = &mut node.properties;
-    let mut attributes = BTreeMap::new();
-    for (name, value) in filtered_properties {
-        match value {
-            Variant::Attributes(attrs) => {
-                for (attr_name, attr_value) in attrs.iter() {
-                    // We (probably) don't want to preserve internal attributes,
-                    // only user defined ones.
-                    if attr_name.starts_with("RBX") {
-                        continue;
-                    }
-                    attributes.insert(
-                        attr_name.clone(),
-                        UnresolvedValue::from_variant_unambiguous(attr_value.clone()),
-                    );
-                }
-            }
-            Variant::SharedString(_) => {
-                log::warn!(
-                    "Rojo cannot serialize the property {}.{name} in project files.\n\
-                    If this is not acceptable, resave the Instance at '{}' manually as an RBXM or RBXMX.", new_inst.class, snapshot.get_new_inst_path(new_inst.referent())
-                );
-            }
-            _ => {
-                properties.insert(
-                    name.to_string(),
-                    UnresolvedValue::from_variant(value.clone(), &new_inst.class, name),
-                );
-            }
-        }
-    }
+    let (properties, attributes) =
+        populate_unresolved_properties(snapshot, new_inst, filtered_properties);
+
+    node.properties = properties;
     node.attributes = attributes;
 }
 
@@ -583,54 +554,6 @@ fn project_node_property_syncback_no_path(
 ) {
     let filtered_properties = filter_properties(snapshot.project(), new_inst);
     project_node_property_syncback(snapshot, filtered_properties, new_inst, node)
-}
-
-fn project_node_should_reserialize(
-    node_properties: &BTreeMap<String, UnresolvedValue>,
-    node_attributes: &BTreeMap<String, UnresolvedValue>,
-    instance: InstanceWithMeta,
-) -> anyhow::Result<bool> {
-    for (prop_name, unresolved_node_value) in node_properties {
-        if let Some(inst_value) = instance.properties().get(prop_name) {
-            let node_value = unresolved_node_value
-                .clone()
-                .resolve(instance.class_name(), prop_name)?;
-            if !variant_eq(inst_value, &node_value) {
-                return Ok(true);
-            }
-        } else {
-            return Ok(true);
-        }
-    }
-
-    match instance.properties().get("Attributes") {
-        Some(Variant::Attributes(inst_attributes)) => {
-            // This will also catch if one is empty but the other isn't
-            if node_attributes.len() != inst_attributes.len() {
-                Ok(true)
-            } else {
-                for (attr_name, unresolved_node_value) in node_attributes {
-                    if let Some(inst_value) = inst_attributes.get(attr_name.as_str()) {
-                        let node_value = unresolved_node_value.clone().resolve_unambiguous()?;
-                        if !variant_eq(inst_value, &node_value) {
-                            return Ok(true);
-                        }
-                    } else {
-                        return Ok(true);
-                    }
-                }
-                Ok(false)
-            }
-        }
-        Some(_) => Ok(true),
-        None => {
-            if !node_attributes.is_empty() {
-                Ok(true)
-            } else {
-                Ok(false)
-            }
-        }
-    }
 }
 
 fn infer_class_name(name: &str, parent_class: Option<&str>) -> Option<Cow<'static, str>> {
