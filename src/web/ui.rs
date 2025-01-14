@@ -241,6 +241,11 @@ impl UiService {
             humantime::format_duration(elapsed).to_string()
         };
 
+        let database = rbx_reflection_database::get().unwrap();
+        let database_version = format!(
+            "{}.{}.{}.{}",
+            database.version[0], database.version[1], database.version[2], database.version[3],
+        );
         Self::page(html! {
             <div class="root">
                 <header class="header">
@@ -249,6 +254,8 @@ impl UiService {
                     </a>
                     <div class="stats">
                         { Self::stat_item("Server Version", SERVER_VERSION) }
+                        { Self::stat_item("Reflection Database", database_version)}
+                        { Self::stat_item("Local Database", rbx_reflection_database::get_local().unwrap().is_some().to_string())}
                         { Self::stat_item("Project", project_name) }
                         { Self::stat_item("Server Uptime", uptime) }
                     </div>

@@ -49,7 +49,7 @@ impl UnresolvedValue {
                 Variant::Enum(rbx_enum) => {
                     if let Some(property) = descriptor {
                         if let DataType::Enum(enum_name) = &property.data_type {
-                            let database = rbx_reflection_database::get();
+                            let database = rbx_reflection_database::get().unwrap();
                             if let Some(enum_descriptor) = database.enums.get(enum_name) {
                                 for (variant_name, id) in &enum_descriptor.items {
                                     if *id == rbx_enum.to_u32() {
@@ -149,7 +149,7 @@ impl AmbiguousValue {
 
         match &property.data_type {
             DataType::Enum(enum_name) => {
-                let database = rbx_reflection_database::get();
+                let database = rbx_reflection_database::get().unwrap();
 
                 let enum_descriptor = database.enums.get(enum_name).ok_or_else(|| {
                     format_err!("Unknown enum {}. This is a Rojo bug!", enum_name)
@@ -287,7 +287,7 @@ fn find_descriptor(
     class_name: &str,
     prop_name: &str,
 ) -> Option<&'static PropertyDescriptor<'static>> {
-    let database = rbx_reflection_database::get();
+    let database = rbx_reflection_database::get().unwrap();
     let mut current_class_name = class_name;
 
     loop {
