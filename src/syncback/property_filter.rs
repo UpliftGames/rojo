@@ -34,7 +34,7 @@ pub fn filter_properties_preallocated<'inst>(
         .classes
         .get(inst.class.as_str());
 
-    let predicate = |prop_name: &String, prop_value: &Variant| {
+    let predicate = |prop_name: &str, prop_value: &Variant| {
         // We don't want to serialize Ref or UniqueId properties in JSON files
         if matches!(prop_value, Variant::Ref(_) | Variant::UniqueId(_)) {
             return true;
@@ -44,7 +44,7 @@ pub fn filter_properties_preallocated<'inst>(
         }
         if !sync_unscriptable {
             if let Some(data) = class_data {
-                if let Some(prop_data) = data.properties.get(prop_name.as_str()) {
+                if let Some(prop_data) = data.properties.get(prop_name) {
                     if matches!(prop_data.scriptability, Scriptability::None) {
                         return true;
                     }

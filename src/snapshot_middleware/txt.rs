@@ -46,7 +46,7 @@ pub fn syncback_txt<'sync>(
 ) -> anyhow::Result<SyncbackReturn<'sync>> {
     let new_inst = snapshot.new_inst();
 
-    let contents = if let Some(Variant::String(source)) = new_inst.properties.get("Value") {
+    let contents = if let Some(Variant::String(source)) = new_inst.properties.get(&ustr("Value")) {
         source.as_bytes().to_vec()
     } else {
         anyhow::bail!("StringValues must have a `Value` property that is a String");
@@ -56,7 +56,7 @@ pub fn syncback_txt<'sync>(
 
     let meta = AdjacentMetadata::from_syncback_snapshot(snapshot, snapshot.path.clone())?;
     if let Some(mut meta) = meta {
-        meta.properties.remove("Value");
+        meta.properties.remove(&ustr("Value"));
 
         if !meta.is_empty() {
             let parent = snapshot.path.parent_err()?;

@@ -1,5 +1,5 @@
 use blake3::Hasher;
-use rbx_dom_weak::types::{PhysicalProperties, Variant, Vector3};
+use rbx_dom_weak::types::{ContentType, PhysicalProperties, Variant, Vector3};
 
 macro_rules! round {
     ($value:expr) => {
@@ -64,7 +64,19 @@ pub fn hash_variant(hasher: &mut Hasher, value: &Variant) {
                 )
             }
         }
-        Variant::Content(content) => {
+        Variant::Content(content) => match content.value() {
+            ContentType::None => hash!(hasher, &[0x00]),
+            ContentType::Uri(uri) => {
+                hash!(hasher, &[0x01]);
+                hash!(hasher, uri.as_bytes());
+            }
+            ContentType::Object(referent) => {
+                hash!(hasher, &[0x02]);
+                hash!(hasher, referent.to_string().as_bytes());
+            }
+            value => unimplemented!("cannot hash ContentType {value:?}"),
+        },
+        Variant::ContentId(content) => {
             let s: &str = content.as_ref();
             hash!(hasher, s.as_bytes())
         }

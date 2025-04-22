@@ -7,7 +7,10 @@ use std::{
 
 use anyhow::Context;
 use memofs::Vfs;
-use rbx_dom_weak::types::{Attributes, HashMapExt as _, Ref, Ustr, UstrMap, Variant};
+use rbx_dom_weak::{
+    types::{Attributes, Ref, Variant},
+    ustr, HashMapExt as _, Ustr, UstrMap,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -94,7 +97,7 @@ fn json_model_from_pair<'sync>(
 
     filter_properties_preallocated(snapshot.project(), new_inst, prop_buffer);
 
-    let mut properties = BTreeMap::new();
+    let mut properties = UstrMap::new();
     let mut attributes = BTreeMap::new();
     for (name, value) in prop_buffer.drain(..) {
         match value {
@@ -118,7 +121,7 @@ fn json_model_from_pair<'sync>(
             }
             _ => {
                 properties.insert(
-                    name.to_owned(),
+                    ustr(name),
                     UnresolvedValue::from_variant(value.clone(), &new_inst.class, name),
                 );
             }
@@ -135,7 +138,7 @@ fn json_model_from_pair<'sync>(
         // TODO: Preserve $schema
         schema: None,
         name: Some(new_inst.name.clone()),
-        class_name: new_inst.class.clone(),
+        class_name: new_inst.class,
         children,
         properties,
         attributes,
