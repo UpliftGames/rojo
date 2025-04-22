@@ -7,7 +7,7 @@ use std::{
 
 use anyhow::Context;
 use memofs::Vfs;
-use rbx_dom_weak::types::{Attributes, Ref, Variant};
+use rbx_dom_weak::types::{Attributes, HashMapExt as _, Ref, Ustr, UstrMap, Variant};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -153,7 +153,7 @@ struct JsonModel {
     name: Option<String>,
 
     #[serde(alias = "ClassName")]
-    class_name: String,
+    class_name: Ustr,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     id: Option<String>,
@@ -167,10 +167,10 @@ struct JsonModel {
 
     #[serde(
         alias = "Properties",
-        default = "BTreeMap::new",
-        skip_serializing_if = "BTreeMap::is_empty"
+        default = "UstrMap::new",
+        skip_serializing_if = "HashMap::is_empty"
     )]
-    properties: BTreeMap<String, UnresolvedValue>,
+    properties: UstrMap<UnresolvedValue>,
 
     #[serde(default = "BTreeMap::new", skip_serializing_if = "BTreeMap::is_empty")]
     attributes: BTreeMap<String, UnresolvedValue>,
@@ -178,7 +178,7 @@ struct JsonModel {
 
 impl JsonModel {
     fn into_snapshot(self) -> anyhow::Result<InstanceSnapshot> {
-        let name = self.name.unwrap_or_else(|| self.class_name.clone());
+        let name = self.name.unwrap_or_else(|| self.class_name.to_owned());
         let class_name = self.class_name;
 
         let mut children = Vec::with_capacity(self.children.len());
@@ -186,7 +186,7 @@ impl JsonModel {
             children.push(child.into_snapshot()?);
         }
 
-        let mut properties = HashMap::with_capacity(self.properties.len());
+        let mut properties = UstrMap::with_capacity(self.properties.len());
         for (key, unresolved) in self.properties {
             let value = unresolved.resolve(&class_name, &key)?;
             properties.insert(key, value);
@@ -207,7 +207,7 @@ impl JsonModel {
             snapshot_id: Ref::none(),
             metadata: Default::default(),
             name: Cow::Owned(name),
-            class_name: Cow::Owned(class_name),
+            class_name,
             properties,
             children,
         })
