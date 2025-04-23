@@ -57,6 +57,7 @@ pub fn extension_for_middleware(middleware: Middleware) -> &'static str {
         Middleware::ServerScript => "server.luau",
         Middleware::ClientScript => "client.luau",
         Middleware::ModuleScript => "luau",
+        Middleware::PluginScript => "plugin.lua",
         Middleware::Project => "project.json",
         Middleware::Rbxm => "rbxm",
         Middleware::Rbxmx => "rbxmx",
@@ -65,6 +66,14 @@ pub fn extension_for_middleware(middleware: Middleware) -> &'static str {
         // These are manually specified and not `_` to guard against future
         // middleware additions missing this function.
         Middleware::Ignore => unimplemented!("syncback does not work on Ignore middleware"),
+
+        Middleware::LegacyServerScript
+        | Middleware::LegacyClientScript
+        | Middleware::RunContextServerScript
+        | Middleware::RunContextClientScript => {
+            unimplemented!("the middleware {middleware:?} will never be used for new files")
+        }
+
         Middleware::Dir
         | Middleware::CsvDir
         | Middleware::ServerScriptDir
