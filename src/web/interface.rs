@@ -89,7 +89,7 @@ pub struct InstanceUpdate {
     pub changed_name: Option<String>,
     pub changed_class_name: Option<Ustr>,
 
-    // TODO: Transform from HashMap<String, Option<_>> to something else, since
+    // TODO: Transform from UstrMap<String, Option<_>> to something else, since
     // null will get lost when decoding from JSON in some languages.
     #[serde(default)]
     pub changed_properties: UstrMap<Option<Variant>>,
@@ -122,7 +122,7 @@ pub struct Instance<'a> {
     pub metadata: Option<InstanceMetadata>,
 }
 
-impl<'a> Instance<'a> {
+impl Instance<'_> {
     pub(crate) fn from_rojo_instance(source: InstanceWithMeta<'_>) -> Instance<'_> {
         let properties = source
             .properties()
@@ -160,6 +160,7 @@ pub struct ServerInfoResponse {
     pub protocol_version: u64,
     pub project_name: String,
     pub expected_place_ids: Option<HashSet<u64>>,
+    pub unexpected_place_ids: Option<HashSet<u64>>,
     pub game_id: Option<u64>,
     pub place_id: Option<u64>,
     pub root_instance_id: Ref,

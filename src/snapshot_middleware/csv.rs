@@ -39,10 +39,7 @@ pub fn snapshot_csv(
     let mut snapshot = InstanceSnapshot::new()
         .name(name)
         .class_name("LocalizationTable")
-        .properties(UstrMap::from_iter([(
-            ustr("Contents"),
-            table_contents.into(),
-        )]))
+        .property(ustr("Contents"), table_contents)
         .metadata(
             InstanceMetadata::new()
                 .instigating_source(path)
@@ -319,11 +316,11 @@ Ack,Ack!,,An exclamation of despair,¡Ay!"#,
         )
         .unwrap();
 
-        let mut vfs = Vfs::new(imfs);
+        let vfs = Vfs::new(imfs);
 
         let instance_snapshot = snapshot_csv(
             &InstanceContext::default(),
-            &mut vfs,
+            &vfs,
             Path::new("/foo.csv"),
             "foo",
         )
@@ -351,11 +348,11 @@ Ack,Ack!,,An exclamation of despair,¡Ay!"#,
         )
         .unwrap();
 
-        let mut vfs = Vfs::new(imfs);
+        let vfs = Vfs::new(imfs);
 
         let instance_snapshot = snapshot_csv(
             &InstanceContext::default(),
-            &mut vfs,
+            &vfs,
             Path::new("/foo.csv"),
             "foo",
         )

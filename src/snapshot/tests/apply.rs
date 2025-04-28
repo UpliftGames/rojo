@@ -10,7 +10,7 @@ use crate::{
 
 #[test]
 fn set_name_and_class_name() {
-    let mut redactions = RedactionMap::new();
+    let mut redactions = RedactionMap::default();
 
     let mut tree = empty_tree();
     intern_tree(&tree, &mut redactions);
@@ -37,7 +37,7 @@ fn set_name_and_class_name() {
 
 #[test]
 fn add_property() {
-    let mut redactions = RedactionMap::new();
+    let mut redactions = RedactionMap::default();
 
     let mut tree = empty_tree();
     intern_tree(&tree, &mut redactions);
@@ -64,7 +64,7 @@ fn add_property() {
 
 #[test]
 fn remove_property() {
-    let mut redactions = RedactionMap::new();
+    let mut redactions = RedactionMap::default();
 
     let mut tree = empty_tree();
     intern_tree(&tree, &mut redactions);

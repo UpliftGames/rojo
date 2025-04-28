@@ -2,7 +2,7 @@ use std::{path::Path, str};
 
 use anyhow::Context as _;
 use memofs::{IoResultExt, Vfs};
-use rbx_dom_weak::{types::Variant, ustr, UstrMap};
+use rbx_dom_weak::{types::Variant, ustr};
 
 use crate::{
     snapshot::{InstanceContext, InstanceMetadata, InstanceSnapshot},
@@ -20,14 +20,12 @@ pub fn snapshot_txt(
     let contents = vfs.read_to_string(path)?;
     let contents_str = contents.as_str();
 
-    let properties = UstrMap::from_iter([(ustr("Value"), contents_str.into())]);
-
     let meta_path = path.with_file_name(format!("{}.meta.json", name));
 
     let mut snapshot = InstanceSnapshot::new()
         .name(name)
         .class_name("StringValue")
-        .properties(properties)
+        .property(ustr("Value"), contents_str)
         .metadata(
             InstanceMetadata::new()
                 .instigating_source(path)
@@ -88,11 +86,11 @@ mod test {
         imfs.load_snapshot("/foo.txt", VfsSnapshot::file("Hello there!"))
             .unwrap();
 
-        let mut vfs = Vfs::new(imfs.clone());
+        let vfs = Vfs::new(imfs.clone());
 
         let instance_snapshot = snapshot_txt(
             &InstanceContext::default(),
-            &mut vfs,
+            &vfs,
             Path::new("/foo.txt"),
             "foo",
         )

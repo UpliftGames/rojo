@@ -222,10 +222,10 @@ fn apply_update_child(context: &mut PatchApplyContext, tree: &mut RojoTree, patc
 
                 instance
                     .properties_mut()
-                    .insert(key.clone(), Variant::Ref(new_referent));
+                    .insert(key, Variant::Ref(new_referent));
             }
             Some(ref value) => {
-                instance.properties_mut().insert(key.clone(), value.clone());
+                instance.properties_mut().insert(key, value.clone());
             }
             None => {
                 instance.properties_mut().remove(&key);

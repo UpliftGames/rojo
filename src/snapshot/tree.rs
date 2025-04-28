@@ -102,15 +102,19 @@ impl RojoTree {
 
     pub fn insert_instance(&mut self, parent_ref: Ref, snapshot: InstanceSnapshot) -> Ref {
         // !!!!!!!!!! UGLY HACK !!!!!!!!!!
+        // ! If you are going to change this, go change it in patch_compute/compute_property_patches too
         //
         // This is a set of special cases working around a more general problem upstream
         // in rbx-dom that causes pivots to not build to file correctly, described in
-        // github.com/rojo-rbx/rojo/issues/628.
+        // github.com/rojo-rbx/rojo/issues/628 and github.com/rojo-rbx/rbx-dom/issues/385
         //
         // We need to insert the NeedsPivotMigration property with a value of false on
         // every instance that inherits from Model for pivots to build correctly.
         let hack_needs_pivot_migration = match snapshot.class_name.as_ref() {
+            // This is not a future proof way to do this but the last time a
+            // descendant of Model was added was in 2020 so it's probably fine.
             "Model" | "Actor" | "Tool" | "HopperBin" | "Flag" | "WorldModel" | "Workspace"
+            | "Status"
                 if !snapshot
                     .properties
                     .contains_key(&ustr("NeedsPivotMigration")) =>
@@ -123,8 +127,8 @@ impl RojoTree {
         let builder = InstanceBuilder::empty()
             .with_class(snapshot.class_name)
             .with_name(snapshot.name.into_owned())
-            .with_properties(snapshot.properties)
-            .with_properties(hack_needs_pivot_migration);
+            .with_properties(hack_needs_pivot_migration)
+            .with_properties(snapshot.properties);
 
         let referent = self.inner.insert(parent_ref, builder);
         self.insert_metadata(referent, snapshot.metadata);
@@ -175,7 +179,7 @@ impl RojoTree {
                     // We need to uphold the invariant that each ID can only map
                     // to one referent.
                     if let Some(new) = &metadata.specified_id {
-                        if self.specified_id_to_refs.get(new).len() > 0 {
+                        if !self.specified_id_to_refs.get(new).is_empty() {
                             log::error!("Duplicate user-specified referent '{new}'");
                         }
 
@@ -233,7 +237,7 @@ impl RojoTree {
         }
 
         if let Some(specified_id) = &metadata.specified_id {
-            if self.specified_id_to_refs.get(specified_id).len() > 0 {
+            if !self.specified_id_to_refs.get(specified_id).is_empty() {
                 log::error!("Duplicate user-specified referent '{specified_id}'");
             }
 
@@ -359,8 +363,8 @@ impl InstanceWithMetaMut<'_> {
         self.instance.class
     }
 
-    pub fn set_class_name(&mut self, new_class: Ustr) {
-        self.instance.class = new_class;
+    pub fn set_class_name<'a, S: Into<&'a str>>(&mut self, new_class: S) {
+        self.instance.class = ustr(new_class.into());
     }
 
     pub fn properties(&self) -> &UstrMap<Variant> {

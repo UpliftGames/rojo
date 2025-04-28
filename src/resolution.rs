@@ -2,8 +2,8 @@ use std::borrow::Borrow;
 
 use anyhow::{bail, format_err};
 use rbx_dom_weak::types::{
-    Attributes, CFrame, Color3, Content, ContentType, Enum, Font, MaterialColors, Matrix3, Tags,
-    Variant, VariantType, Vector2, Vector3,
+    Attributes, CFrame, Color3, Content, ContentId, ContentType, Enum, Font, MaterialColors,
+    Matrix3, Tags, Variant, VariantType, Vector2, Vector3,
 };
 use rbx_reflection::{DataType, PropertyDescriptor};
 use serde::{Deserialize, Serialize};
@@ -213,7 +213,7 @@ impl AmbiguousValue {
                     }
                 }
                 (VariantType::ContentId, AmbiguousValue::String(value)) => {
-                    Ok(Content::from(value).into())
+                    Ok(ContentId::from(value).into())
                 }
 
                 (VariantType::Vector2, AmbiguousValue::Array2(value)) => {
@@ -374,10 +374,20 @@ mod test {
             Variant::String("Hello!".into()),
         );
 
-        // String literals can also turn into Content
+        // String literals can also turn into ContentId
         assert_eq!(
             resolve("Sky", "MoonTextureId", "\"rbxassetid://12345\""),
-            Variant::Content("rbxassetid://12345".into()),
+            Variant::ContentId("rbxassetid://12345".into()),
+        );
+
+        // String literals can turn into Content!
+        assert_eq!(
+            resolve(
+                "MeshPart",
+                "MeshContent",
+                "\"rbxasset://totally-a-real-uri.tiff\""
+            ),
+            Variant::Content("rbxasset://totally-a-real-uri.tiff".into())
         );
 
         // What about BinaryString values? For forward-compatibility reasons, we

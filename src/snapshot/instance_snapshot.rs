@@ -4,7 +4,7 @@ use std::borrow::Cow;
 
 use rbx_dom_weak::{
     types::{Ref, Variant},
-    AHashMap, HashMapExt as _, Instance, Ustr, UstrMap, WeakDom,
+    ustr, AHashMap, HashMapExt as _, Instance, Ustr, UstrMap, WeakDom,
 };
 use serde::{Deserialize, Serialize};
 
@@ -44,7 +44,7 @@ impl InstanceSnapshot {
             snapshot_id: Ref::none(),
             metadata: InstanceMetadata::default(),
             name: Cow::Borrowed("DEFAULT"),
-            class_name: Ustr::from("DEFAULT"),
+            class_name: ustr("DEFAULT"),
             properties: UstrMap::new(),
             children: Vec::new(),
         }
@@ -57,7 +57,7 @@ impl InstanceSnapshot {
         }
     }
 
-    pub fn class_name(self, class_name: impl Into<Ustr>) -> Self {
+    pub fn class_name<S: Into<Ustr>>(self, class_name: S) -> Self {
         Self {
             class_name: class_name.into(),
             ..self

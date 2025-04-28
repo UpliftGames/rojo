@@ -130,6 +130,7 @@ fn json_model_from_pair<'sync>(
     }
 
     JsonModel {
+        schema: None,
         name: Some(new_inst.name.clone()),
         class_name: new_inst.class,
         children,
@@ -142,7 +143,10 @@ fn json_model_from_pair<'sync>(
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct JsonModel {
-    #[serde(alias = "Name", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "$schema", skip_serializing_if = "Option::is_none")]
+    schema: Option<String>,
+
+    #[serde(alias = "Name")]
     name: Option<String>,
 
     #[serde(alias = "ClassName")]
@@ -171,7 +175,7 @@ struct JsonModel {
 
 impl JsonModel {
     fn into_snapshot(self) -> anyhow::Result<InstanceSnapshot> {
-        let name = self.name.unwrap_or_else(|| self.class_name.to_string());
+        let name = self.name.unwrap_or_else(|| self.class_name.to_owned());
         let class_name = self.class_name;
 
         let mut children = Vec::with_capacity(self.children.len());
