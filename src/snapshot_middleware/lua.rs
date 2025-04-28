@@ -189,6 +189,7 @@ pub fn syncback_lua_init<'sync>(
         ScriptType::Server => "init.server.luau",
         ScriptType::Client => "init.client.luau",
         ScriptType::Module => "init.luau",
+        _ => anyhow::bail!("the script type {script_type:?} is not implemented for Init yet"),
     });
 
     let contents = if let Some(Variant::String(source)) = new_inst.properties.get(&ustr("Source")) {

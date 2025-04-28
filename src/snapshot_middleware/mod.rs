@@ -277,6 +277,7 @@ impl Middleware {
             Middleware::ServerScript => syncback_lua(snapshot),
             Middleware::ClientScript => syncback_lua(snapshot),
             Middleware::ModuleScript => syncback_lua(snapshot),
+            Middleware::PluginScript => syncback_lua(snapshot),
             Middleware::Rbxm => syncback_rbxm(snapshot),
             Middleware::Rbxmx => syncback_rbxmx(snapshot),
             Middleware::Toml => anyhow::bail!("cannot syncback Toml middleware"),
@@ -287,6 +288,13 @@ impl Middleware {
             Middleware::ClientScriptDir => syncback_lua_init(ScriptType::Client, snapshot),
             Middleware::ModuleScriptDir => syncback_lua_init(ScriptType::Module, snapshot),
             Middleware::CsvDir => syncback_csv_init(snapshot),
+
+            Middleware::LegacyServerScript
+            | Middleware::LegacyClientScript
+            | Middleware::RunContextServerScript
+            | Middleware::RunContextClientScript => {
+                anyhow::bail!("todo: syncback is not implemented for middleware {self:?} yet")
+            }
         }
     }
 
