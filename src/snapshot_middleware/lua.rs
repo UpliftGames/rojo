@@ -39,6 +39,7 @@ pub fn snapshot_lua(
     script_type: ScriptType,
 ) -> anyhow::Result<Option<InstanceSnapshot>> {
     let run_context_enums = &rbx_reflection_database::get()
+        .unwrap()
         .enums
         .get("RunContext")
         .expect("Unable to get RunContext enums!")
