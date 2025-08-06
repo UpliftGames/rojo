@@ -59,7 +59,7 @@ pub fn syncback_txt<'sync>(
     if let Some(mut meta) = meta {
         // StringValues have relatively few properties that we care about, so
         // shifting is fine.
-        meta.properties.shift_remove(&ustr("Value"));
+        meta.properties.remove(&ustr("Value"));
 
         if !meta.is_empty() {
             let parent = snapshot.path.parent_err()?;

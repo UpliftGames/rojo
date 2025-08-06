@@ -1,7 +1,9 @@
-use std::path::{Path, PathBuf};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{format_err, Context};
-use indexmap::IndexMap;
 use memofs::{IoResultExt as _, Vfs};
 use rbx_dom_weak::{
     types::{Attributes, Variant},
@@ -29,11 +31,11 @@ pub struct AdjacentMetadata {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ignore_unknown_instances: Option<bool>,
 
-    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
-    pub properties: IndexMap<Ustr, UnresolvedValue>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub properties: BTreeMap<Ustr, UnresolvedValue>,
 
-    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
-    pub attributes: IndexMap<String, UnresolvedValue>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub attributes: BTreeMap<String, UnresolvedValue>,
 
     #[serde(skip)]
     pub path: PathBuf,
@@ -58,8 +60,8 @@ impl AdjacentMetadata {
         snapshot: &SyncbackSnapshot,
         path: PathBuf,
     ) -> anyhow::Result<Option<Self>> {
-        let mut properties = IndexMap::new();
-        let mut attributes = IndexMap::new();
+        let mut properties = BTreeMap::new();
+        let mut attributes = BTreeMap::new();
         // TODO make this more granular.
         // I am breaking the cycle of bad TODOs. This is in reference to the fact
         // that right now, this will just not write any metadata at all for
@@ -213,11 +215,11 @@ pub struct DirectoryMetadata {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ignore_unknown_instances: Option<bool>,
 
-    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
-    pub properties: IndexMap<Ustr, UnresolvedValue>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub properties: BTreeMap<Ustr, UnresolvedValue>,
 
-    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
-    pub attributes: IndexMap<String, UnresolvedValue>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub attributes: BTreeMap<String, UnresolvedValue>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub class_name: Option<Ustr>,
@@ -248,8 +250,8 @@ impl DirectoryMetadata {
         snapshot: &SyncbackSnapshot,
         path: PathBuf,
     ) -> anyhow::Result<Option<Self>> {
-        let mut properties = IndexMap::new();
-        let mut attributes = IndexMap::new();
+        let mut properties = BTreeMap::new();
+        let mut attributes = BTreeMap::new();
         // TODO make this more granular.
         // I am breaking the cycle of bad TODOs. This is in reference to the fact
         // that right now, this will just not write any metadata at all for

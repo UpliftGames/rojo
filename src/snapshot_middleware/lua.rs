@@ -163,7 +163,7 @@ pub fn syncback_lua<'sync>(
     if let Some(mut meta) = meta {
         // Scripts have relatively few properties that we care about, so shifting
         // is fine.
-        meta.properties.shift_remove(&ustr("Source"));
+        meta.properties.remove(&ustr("Source"));
 
         if !meta.is_empty() {
             let parent_location = snapshot.path.parent_err()?;
@@ -207,7 +207,7 @@ pub fn syncback_lua_init<'sync>(
     if let Some(mut meta) = meta {
         // Scripts have relatively few properties that we care about, so shifting
         // is fine.
-        meta.properties.shift_remove(&ustr("Source"));
+        meta.properties.remove(&ustr("Source"));
 
         if !meta.is_empty() {
             dir_syncback.fs_snapshot.add_file(
