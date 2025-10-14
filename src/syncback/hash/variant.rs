@@ -102,6 +102,7 @@ pub fn hash_variant(hasher: &mut Hasher, value: &Variant) {
         Variant::Int32(n) => n_hash!(hasher, n),
         Variant::Int64(n) => n_hash!(hasher, n),
         Variant::MaterialColors(n) => hash!(hasher, n.encode().as_slice()),
+        Variant::NetAssetRef(nar) => hash!(hasher, nar.hash().as_bytes()),
         Variant::NumberRange(nr) => n_hash!(hasher, round!(nr.max), round!(nr.min)),
         Variant::NumberSequence(seq) => {
             let mut new = Vec::with_capacity(seq.keypoints.len());
@@ -135,11 +136,12 @@ pub fn hash_variant(hasher: &mut Hasher, value: &Variant) {
                 hash!(hasher, &[0x00]);
                 n_hash!(
                     hasher,
-                    round!(custom.density),
-                    round!(custom.friction),
-                    round!(custom.elasticity),
-                    round!(custom.friction_weight),
-                    round!(custom.elasticity_weight)
+                    round!(custom.density()),
+                    round!(custom.friction()),
+                    round!(custom.elasticity()),
+                    round!(custom.friction_weight()),
+                    round!(custom.elasticity_weight()),
+                    round!(custom.acoustic_absorption())
                 )
             }
         },
