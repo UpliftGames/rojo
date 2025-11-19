@@ -30,11 +30,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     glob::Glob,
-    syncback::{SyncbackReturn, SyncbackSnapshot},
-};
-use crate::{
+    project::DEFAULT_PROJECT_NAMES,
     snapshot::{InstanceContext, InstanceSnapshot, SyncRule},
-    syncback::validate_file_name,
+    syncback::{validate_file_name, SyncbackReturn, SyncbackSnapshot},
 };
 
 use self::{
@@ -117,7 +115,6 @@ fn get_dir_middleware<'path>(
     static INIT_PATHS: OnceLock<Vec<(Middleware, &str)>> = OnceLock::new();
     let order = INIT_PATHS.get_or_init(|| {
         vec![
-            (Middleware::Project, "default.project.json"),
             (Middleware::ModuleScriptDir, "init.luau"),
             (Middleware::ModuleScriptDir, "init.lua"),
             (Middleware::ServerScriptDir, "init.server.luau"),
@@ -127,6 +124,13 @@ fn get_dir_middleware<'path>(
             (Middleware::CsvDir, "init.csv"),
         ]
     });
+
+    for default_project_name in DEFAULT_PROJECT_NAMES {
+        let project_path = dir_path.join(default_project_name);
+        if vfs.metadata(&project_path).with_not_found()?.is_some() {
+            return Ok((Middleware::Project, dir_name, project_path));
+        }
+    }
 
     for (middleware, name) in order {
         let test_path = dir_path.join(name);
@@ -411,8 +415,11 @@ pub fn default_sync_rules() -> &'static [SyncRule] {
             sync_rule!("*.plugin.luau", PluginScript, ".plugin.luau"),
             sync_rule!("*.{lua,luau}", ModuleScript),
             sync_rule!("*.project.json", Project, ".project.json"),
+            sync_rule!("*.project.jsonc", Project, ".project.jsonc"),
             sync_rule!("*.model.json", JsonModel, ".model.json"),
+            sync_rule!("*.model.jsonc", JsonModel, ".model.jsonc"),
             sync_rule!("*.json", Json, ".json", "*.meta.json"),
+            sync_rule!("*.jsonc", Json, ".jsonc", "*.meta.jsonc"),
             sync_rule!("*.toml", Toml),
             sync_rule!("*.csv", Csv),
             sync_rule!("*.txt", Text),

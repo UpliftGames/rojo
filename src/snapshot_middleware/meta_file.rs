@@ -10,7 +10,8 @@ use rbx_dom_weak::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    resolution::UnresolvedValue, snapshot::InstanceSnapshot, syncback::SyncbackSnapshot, RojoRef,
+    json, resolution::UnresolvedValue, snapshot::InstanceSnapshot, syncback::SyncbackSnapshot,
+    RojoRef,
 };
 
 /// Represents metadata in a sibling file with the same basename.
@@ -40,8 +41,39 @@ pub struct AdjacentMetadata {
 }
 
 impl AdjacentMetadata {
-    pub fn from_slice(slice: &[u8], path: PathBuf) -> anyhow::Result<Self> {
-        let mut meta: Self = serde_json::from_slice(slice).with_context(|| {
+    /// Attempts to read a meta file for the provided path and name, and if
+    /// one exists applies it.
+    ///
+    /// Also inserts the potential metadata paths into the snapshot's relevant
+    /// paths for convenience purposes.
+    pub fn read_and_apply_all(
+        vfs: &Vfs,
+        path: &Path,
+        name: &str,
+        snapshot: &mut InstanceSnapshot,
+    ) -> anyhow::Result<()> {
+        let meta_path_json = path.with_file_name(format!("{name}.meta.json"));
+        let meta_path_jsonc = path.with_file_name(format!("{name}.meta.jsonc"));
+
+        if let Some(meta_contents) = vfs.read(&meta_path_json).with_not_found()? {
+            let mut metadata = Self::from_slice(&meta_contents, meta_path_json.clone())?;
+            metadata.apply_all(snapshot)?;
+        }
+
+        if let Some(meta_contents) = vfs.read(&meta_path_jsonc).with_not_found()? {
+            let mut metadata = Self::from_slice(&meta_contents, meta_path_json.clone())?;
+            metadata.apply_all(snapshot)?;
+        }
+
+        // Rather than pushing these in the snapshot middleware, we can just do it here.
+        snapshot.metadata.relevant_paths.push(meta_path_json);
+        snapshot.metadata.relevant_paths.push(meta_path_jsonc);
+
+        Ok(())
+    }
+
+    fn from_slice(slice: &[u8], path: PathBuf) -> anyhow::Result<Self> {
+        let mut meta: Self = json::from_slice_with_context(slice, || {
             format!(
                 "File contained malformed .meta.json data: {}",
                 path.display()
@@ -222,8 +254,38 @@ pub struct DirectoryMetadata {
 }
 
 impl DirectoryMetadata {
-    pub fn from_slice(slice: &[u8], path: PathBuf) -> anyhow::Result<Self> {
-        let mut meta: Self = serde_json::from_slice(slice).with_context(|| {
+    /// Attempts to read an `init.meta`` file for the provided path, and if
+    /// one exists applies it.
+    ///
+    /// Also inserts the potential metadata paths into the snapshot's relevant
+    /// paths for convenience purposes.
+    pub fn read_and_apply_all(
+        vfs: &Vfs,
+        path: &Path,
+        snapshot: &mut InstanceSnapshot,
+    ) -> anyhow::Result<()> {
+        let meta_path_json = path.join("init.meta.json");
+        let meta_path_jsonc = path.join("init.meta.jsonc");
+
+        if let Some(meta_contents) = vfs.read(&meta_path_json).with_not_found()? {
+            let mut metadata = Self::from_slice(&meta_contents, meta_path_json.clone())?;
+            metadata.apply_all(snapshot)?;
+        }
+
+        if let Some(meta_contents) = vfs.read(&meta_path_jsonc).with_not_found()? {
+            let mut metadata = Self::from_slice(&meta_contents, meta_path_jsonc.clone())?;
+            metadata.apply_all(snapshot)?;
+        }
+
+        // Rather than pushing these in the snapshot middleware, we can just do it here.
+        snapshot.metadata.relevant_paths.push(meta_path_json);
+        snapshot.metadata.relevant_paths.push(meta_path_jsonc);
+
+        Ok(())
+    }
+
+    fn from_slice(slice: &[u8], path: PathBuf) -> anyhow::Result<Self> {
+        let mut meta: Self = json::from_slice_with_context(slice, || {
             format!(
                 "File contained malformed init.meta.json data: {}",
                 path.display()
@@ -396,31 +458,81 @@ impl DirectoryMetadata {
     }
 }
 
-/// Retrieves the meta file that should be applied for the provided directory,
-/// if it exists.
-pub fn dir_meta(vfs: &Vfs, path: &Path) -> anyhow::Result<Option<DirectoryMetadata>> {
-    let meta_path = path.join("init.meta.json");
+#[cfg(test)]
+mod test {
+    use memofs::{InMemoryFs, VfsSnapshot};
 
-    if let Some(meta_contents) = vfs.read(&meta_path).with_not_found()? {
-        let metadata = DirectoryMetadata::from_slice(&meta_contents, meta_path)?;
-        Ok(Some(metadata))
-    } else {
-        Ok(None)
+    use super::*;
+
+    #[test]
+    fn adjacent_read_json() {
+        let mut imfs = InMemoryFs::new();
+        imfs.load_snapshot(
+            "/foo/bar.meta.json",
+            VfsSnapshot::file(r#"{"id": "manually specified"}"#),
+        )
+        .unwrap();
+
+        let vfs = Vfs::new(imfs);
+        let path = Path::new("/foo/bar.rojo");
+        let mut snapshot = InstanceSnapshot::new();
+
+        AdjacentMetadata::read_and_apply_all(&vfs, path, "bar", &mut snapshot).unwrap();
+
+        insta::assert_yaml_snapshot!(snapshot);
     }
-}
 
-/// Retrieves the meta file that should be applied for the provided file,
-/// if it exists.
-///
-/// The `name` field should be the name the metadata should have.
-pub fn file_meta(vfs: &Vfs, path: &Path, name: &str) -> anyhow::Result<Option<AdjacentMetadata>> {
-    let mut meta_path = path.with_file_name(name);
-    meta_path.set_extension("meta.json");
+    #[test]
+    fn adjacent_read_jsonc() {
+        let mut imfs = InMemoryFs::new();
+        imfs.load_snapshot(
+            "/foo/bar.meta.jsonc",
+            VfsSnapshot::file(r#"{"id": "manually specified"}"#),
+        )
+        .unwrap();
 
-    if let Some(meta_contents) = vfs.read(&meta_path).with_not_found()? {
-        let metadata = AdjacentMetadata::from_slice(&meta_contents, meta_path)?;
-        Ok(Some(metadata))
-    } else {
-        Ok(None)
+        let vfs = Vfs::new(imfs);
+        let path = Path::new("/foo/bar.rojo");
+        let mut snapshot = InstanceSnapshot::new();
+
+        AdjacentMetadata::read_and_apply_all(&vfs, path, "bar", &mut snapshot).unwrap();
+
+        insta::assert_yaml_snapshot!(snapshot);
+    }
+
+    #[test]
+    fn directory_read_json() {
+        let mut imfs = InMemoryFs::new();
+        imfs.load_snapshot(
+            "/foo/init.meta.json",
+            VfsSnapshot::file(r#"{"id": "manually specified"}"#),
+        )
+        .unwrap();
+
+        let vfs = Vfs::new(imfs);
+        let path = Path::new("/foo/");
+        let mut snapshot = InstanceSnapshot::new();
+
+        DirectoryMetadata::read_and_apply_all(&vfs, path, &mut snapshot).unwrap();
+
+        insta::assert_yaml_snapshot!(snapshot);
+    }
+
+    #[test]
+    fn directory_read_jsonc() {
+        let mut imfs = InMemoryFs::new();
+        imfs.load_snapshot(
+            "/foo/init.meta.jsonc",
+            VfsSnapshot::file(r#"{"id": "manually specified"}"#),
+        )
+        .unwrap();
+
+        let vfs = Vfs::new(imfs);
+        let path = Path::new("/foo/");
+        let mut snapshot = InstanceSnapshot::new();
+
+        DirectoryMetadata::read_and_apply_all(&vfs, path, &mut snapshot).unwrap();
+
+        insta::assert_yaml_snapshot!(snapshot);
     }
 }
