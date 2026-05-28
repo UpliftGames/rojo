@@ -36,6 +36,7 @@ Making a new release? Simply add the new header with the version and date undern
 ### Uplift Changes
 
 * Updated rbx-dom for CornerRadius support ([53ad98a])
+* Disabled SoundId to AudioContent migration to prevent round-trip property changes
 
 ### Changes from Upstream
 

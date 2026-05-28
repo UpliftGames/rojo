@@ -57,13 +57,13 @@ memofs = { version = "0.3.0", path = "crates/memofs" }
 # rbx_reflection_database = { path = "../rbx-dom/rbx_reflection_database" }
 # rbx_xml = { path = "../rbx-dom/rbx_xml" }
 
-rbx_binary = { git = "https://github.com/rojo-rbx/rbx-dom.git", rev = "ff23ec90b0cec1ceccdd31db0ab958f103cad48f", features = [
+rbx_binary = { git = "https://github.com/UpliftGames/rbx-dom.git", rev = "e6637e7a0bf9d3464e94daa175cc1d4e50f7d894", features = [
     "unstable_text_format",
 ] }
-rbx_dom_weak = { git = "https://github.com/rojo-rbx/rbx-dom.git", rev = "ff23ec90b0cec1ceccdd31db0ab958f103cad48f" }
-rbx_reflection = { git = "https://github.com/rojo-rbx/rbx-dom.git", rev = "ff23ec90b0cec1ceccdd31db0ab958f103cad48f" }
-rbx_reflection_database = { git = "https://github.com/rojo-rbx/rbx-dom.git", rev = "ff23ec90b0cec1ceccdd31db0ab958f103cad48f" }
-rbx_xml = { git = "https://github.com/rojo-rbx/rbx-dom.git", rev = "ff23ec90b0cec1ceccdd31db0ab958f103cad48f" }
+rbx_dom_weak = { git = "https://github.com/UpliftGames/rbx-dom.git", rev = "e6637e7a0bf9d3464e94daa175cc1d4e50f7d894" }
+rbx_reflection = { git = "https://github.com/UpliftGames/rbx-dom.git", rev = "e6637e7a0bf9d3464e94daa175cc1d4e50f7d894" }
+rbx_reflection_database = { git = "https://github.com/UpliftGames/rbx-dom.git", rev = "e6637e7a0bf9d3464e94daa175cc1d4e50f7d894" }
+rbx_xml = { git = "https://github.com/UpliftGames/rbx-dom.git", rev = "e6637e7a0bf9d3464e94daa175cc1d4e50f7d894" }
 
 anyhow = "1.0.80"
 backtrace = "0.3.69"
